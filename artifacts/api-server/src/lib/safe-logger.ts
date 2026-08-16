@@ -21,7 +21,7 @@
  *   // ✓ familyId logado, medicationName → "[REDACTED]"
  */
 
-import { logger } from "./logger";
+import { logger } from "./logger.ts";
 
 /**
  * Campos que podem aparecer em logs sem risco à privacidade.
