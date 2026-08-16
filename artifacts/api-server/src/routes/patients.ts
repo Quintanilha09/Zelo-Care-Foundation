@@ -1,154 +1,154 @@
-import { Router, type IRouter } from "express";
+import { getAuth } from "../lib/auth-types.ts";
+/**
+ * Pacientes — ZELO.
+ * familyId vem exclusivamente do token JWT (req.user.familyId).
+ * Nunca aceita familyId vindo da URL, corpo ou query string.
+ */
+import { Router } from "express";
 import { eq, and } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { patientsTable } from "@workspace/db";
-import {
-  ListPatientsParams,
-  CreatePatientParams,
-  CreatePatientBody,
-  GetPatientParams,
-  UpdatePatientParams,
-  UpdatePatientBody,
-} from "@workspace/api-zod";
+import { patientsTable, consentRecordsTable } from "@workspace/db";
+import { z } from "zod";
+import { requireAuth } from "../middleware/require-auth";
 import { safeLog } from "../lib/safe-logger";
 import { audit } from "../lib/audit";
 import { Clock } from "../lib/clock";
 
-const router: IRouter = Router();
+const router = Router();
 
-// Todo acesso é isolado por familyId — dado de uma família nunca vaza para outra.
+const CreatePatientBody = z.object({
+  name: z.string().min(1).max(200),
+  birthDate: z.string().optional().nullable(),
+  timezone: z.string().default("America/Sao_Paulo"),
+  notes: z.string().optional().nullable(),
+});
 
-router.get(
-  "/families/:familyId/patients",
-  async (req, res): Promise<void> => {
-    const params = ListPatientsParams.safeParse(req.params);
-    if (!params.success) {
-      res.status(400).json({ error: params.error.message });
-      return;
-    }
-    const patients = await db
-      .select()
-      .from(patientsTable)
-      .where(eq(patientsTable.familyId, params.data.familyId))
-      .orderBy(patientsTable.name);
-    res.json(patients);
+const UpdatePatientBody = z.object({
+  name: z.string().min(1).max(200).optional(),
+  birthDate: z.string().optional().nullable(),
+  timezone: z.string().optional(),
+  notes: z.string().optional().nullable(),
+});
+
+// ── Listar pacientes ──────────────────────────────────────────────────────
+
+router.get("/patients", requireAuth, async (req, res): Promise<void> => {
+  const patients = await db
+    .select()
+    .from(patientsTable)
+    .where(eq(patientsTable.familyId, getAuth(req).familyId))
+    .orderBy(patientsTable.name);
+  res.json(patients);
+});
+
+// ── Criar paciente ─────────────────────────────────────────────────────────
+
+router.post("/patients", requireAuth, async (req, res): Promise<void> => {
+  const body = CreatePatientBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
   }
-);
 
-router.post(
-  "/families/:familyId/patients",
-  async (req, res): Promise<void> => {
-    const params = CreatePatientParams.safeParse(req.params);
-    if (!params.success) {
-      res.status(400).json({ error: params.error.message });
-      return;
-    }
-    const body = CreatePatientBody.safeParse(req.body);
-    if (!body.success) {
-      res.status(400).json({ error: body.error.message });
-      return;
-    }
-    const insertData = {
-      ...body.data,
-      familyId: params.data.familyId,
-      // birthDate vem do Zod como Date | null — converter para string para o driver pg
-      birthDate: body.data.birthDate instanceof Date
-        ? body.data.birthDate.toISOString().slice(0, 10)
-        : (body.data.birthDate as string | null | undefined),
-    };
-    const [patient] = await db
-      .insert(patientsTable)
-      .values(insertData)
-      .returning();
+  // LGPD: exige consentimento de dados de saúde antes de cadastrar paciente
+  const [consent] = await db
+    .select({ id: consentRecordsTable.id })
+    .from(consentRecordsTable)
+    .where(
+      and(
+        eq(consentRecordsTable.userId, getAuth(req).userId),
+        eq(consentRecordsTable.consentType, "health_data_processing"),
+        eq(consentRecordsTable.consentGiven, "true")
+      )
+    )
+    .limit(1);
 
-    safeLog.info(
-      { action: "created", entityType: "patient", familyId: patient.familyId },
-      "Paciente criado"
-    );
-    await audit({
-      familyId: patient.familyId,
-      entityType: "patient",
-      entityId: String(patient.id),
-      action: "created",
-      actorType: "system",
+  if (!consent) {
+    res.status(403).json({
+      error: "Consentimento para tratamento de dados de saúde é necessário antes de cadastrar paciente",
+      code: "MISSING_HEALTH_CONSENT",
     });
-
-    res.status(201).json(patient);
+    return;
   }
-);
 
-router.get(
-  "/families/:familyId/patients/:patientId",
-  async (req, res): Promise<void> => {
-    const params = GetPatientParams.safeParse(req.params);
-    if (!params.success) {
-      res.status(400).json({ error: params.error.message });
-      return;
-    }
-    const [patient] = await db
-      .select()
-      .from(patientsTable)
-      .where(
-        and(
-          eq(patientsTable.id, params.data.patientId),
-          eq(patientsTable.familyId, params.data.familyId)
-        )
-      )
-      .limit(1);
+  const [patient] = await db
+    .insert(patientsTable)
+    .values({ ...body.data, familyId: getAuth(req).familyId })
+    .returning();
 
-    if (!patient) {
-      // Retorna 404 (não 403) para não confirmar existência de recurso de outra família
-      res.status(404).json({ error: "Paciente não encontrado" });
-      return;
-    }
-    res.json(patient);
+  safeLog.info({ action: "created", entityType: "patient", familyId: patient.familyId }, "Paciente criado");
+  await audit({
+    familyId: patient.familyId,
+    entityType: "patient",
+    entityId: String(patient.id),
+    action: "created",
+    actorId: String(getAuth(req).caregiverId),
+    actorType: "caregiver",
+    ipAddress: req.ip,
+  });
+
+  res.status(201).json(patient);
+});
+
+// ── Ler paciente ──────────────────────────────────────────────────────────
+
+router.get("/patients/:patientId", requireAuth, async (req, res): Promise<void> => {
+  const patientId = Number(req.params.patientId);
+  if (isNaN(patientId)) { res.status(400).json({ error: "ID inválido" }); return; }
+
+  const [patient] = await db
+    .select()
+    .from(patientsTable)
+    .where(and(eq(patientsTable.id, patientId), eq(patientsTable.familyId, getAuth(req).familyId)))
+    .limit(1);
+
+  if (!patient) {
+    res.status(404).json({ error: "Paciente não encontrado" });
+    return;
   }
-);
 
-router.patch(
-  "/families/:familyId/patients/:patientId",
-  async (req, res): Promise<void> => {
-    const params = UpdatePatientParams.safeParse(req.params);
-    if (!params.success) {
-      res.status(400).json({ error: params.error.message });
-      return;
-    }
-    const body = UpdatePatientBody.safeParse(req.body);
-    if (!body.success) {
-      res.status(400).json({ error: body.error.message });
-      return;
-    }
+  // Audit de acesso (fire-and-forget)
+  void audit({
+    familyId: getAuth(req).familyId,
+    entityType: "patient",
+    entityId: String(patientId),
+    action: "accessed",
+    actorId: String(getAuth(req).caregiverId),
+    actorType: "caregiver",
+    ipAddress: req.ip,
+  });
 
-    const updateData = {
-      ...body.data,
-      updatedAt: Clock.now(),
-      birthDate: body.data.birthDate instanceof Date
-        ? body.data.birthDate.toISOString().slice(0, 10)
-        : (body.data.birthDate as string | null | undefined),
-    };
-    const [updated] = await db
-      .update(patientsTable)
-      .set(updateData)
-      .where(
-        and(
-          eq(patientsTable.id, params.data.patientId),
-          eq(patientsTable.familyId, params.data.familyId)
-        )
-      )
-      .returning();
+  res.json(patient);
+});
 
-    if (!updated) {
-      res.status(404).json({ error: "Paciente não encontrado" });
-      return;
-    }
+// ── Atualizar paciente ────────────────────────────────────────────────────
 
-    safeLog.info(
-      { action: "updated", entityType: "patient", familyId: updated.familyId },
-      "Paciente atualizado"
-    );
+router.patch("/patients/:patientId", requireAuth, async (req, res): Promise<void> => {
+  const patientId = Number(req.params.patientId);
+  if (isNaN(patientId)) { res.status(400).json({ error: "ID inválido" }); return; }
 
-    res.json(updated);
-  }
-);
+  const body = UpdatePatientBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  const [updated] = await db
+    .update(patientsTable)
+    .set({ ...body.data, updatedAt: Clock.now() })
+    .where(and(eq(patientsTable.id, patientId), eq(patientsTable.familyId, getAuth(req).familyId)))
+    .returning();
+
+  if (!updated) { res.status(404).json({ error: "Paciente não encontrado" }); return; }
+
+  safeLog.info({ action: "updated", entityType: "patient", familyId: updated.familyId }, "Paciente atualizado");
+  await audit({
+    familyId: getAuth(req).familyId,
+    entityType: "patient",
+    entityId: String(patientId),
+    action: "updated",
+    actorId: String(getAuth(req).caregiverId),
+    actorType: "caregiver",
+  });
+
+  res.json(updated);
+});
 
 export default router;

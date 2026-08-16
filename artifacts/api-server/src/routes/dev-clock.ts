@@ -12,10 +12,11 @@
  * correto é não registrar as rotas, não mascarar com 404 no handler.
  */
 
-import { Router, type IRouter } from "express";
+import { Router } from "express";
+import type { Request, Response } from "express";
 import { Clock } from "../lib/clock";
 
-const router: IRouter = Router();
+const router = Router();
 
 /**
  * GET /api/dev/clock — estado atual do relógio

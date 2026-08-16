@@ -9,6 +9,7 @@ import {
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { familiesTable } from "./families";
+import { usersTable } from "./users";
 
 // Papéis de cuidador:
 // - primary_caregiver: responsável principal, acesso total
@@ -29,6 +30,9 @@ export const caregiversTable = pgTable("caregivers", {
     .references(() => familiesTable.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   email: text("email"),
+  // Vínculo com conta de usuário — preenchido no cadastro ou ao aceitar convite.
+  // Nullable: um cuidador pode existir sem conta (pré-convite, dados migrados).
+  userId: integer("user_id").references(() => usersTable.id, { onDelete: "set null" }),
   role: caregiverRoleEnum("role").notNull().default("caregiver"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true })

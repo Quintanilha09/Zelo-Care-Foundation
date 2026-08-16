@@ -1,3 +1,6 @@
-- [ZELO — Decisões críticas de produto](zelo-product-decisions.md) — âmbar nunca vermelho, sem interpretação clínica, dado fictício explícito
-- [ZELO — Setup técnico e armadilhas](zelo-technical-setup.md) — codegen orval, node --experimental-strip-types, tsx para integração
-- [ZELO — Estado da fundação (tabelas e testes)](zelo-foundation-state.md) — 21 tabelas, 41 testes, trigger de imutabilidade, lint de relógio
+ - [ZELO — Decisões críticas de produto](zelo-product-decisions.md) — âmbar nunca vermelho, sem interpretação clínica, dado fictício explícito
+ - [ZELO — Setup técnico e armadilhas](zelo-technical-setup.md) — codegen orval, node --experimental-strip-types, tsx para integração
+ - [ZELO — Estado da fundação (tabelas e testes)](zelo-foundation-state.md) — 21 tabelas, 41 testes, trigger de imutabilidade, lint de relógio
+ - [ZELO — Autenticação JWT e armadilhas de Clock](zelo-jwt-clock-pitfalls.md) — iat deve usar Clock.now(); revokeAll usa segundos; testes precisam de Clock.advance(1001) antes de theft detection
+ - [ZELO — TypeScript Express req.user](zelo-express-augmentation.md) — isolatedModules impede module augmentation; usar getAuth(req) de auth-types.ts
+ - [ZELO — Testes de integração: isolamento e sequência](zelo-integration-test-isolation.md) — --test-concurrency=1 obrigatório; before hooks idempotentes; schema FK set-null não pode ser notNull

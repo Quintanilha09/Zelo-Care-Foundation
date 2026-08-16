@@ -11,7 +11,7 @@ export * from "./health-measurements";
 export * from "./notifications";
 export * from "./audit-log";
 export * from "./subscriptions";
-// fase de fundação — tabelas criadas agora, lógica vem depois
+// identidade e conta
 export * from "./users";
 export * from "./sessions";
 export * from "./refresh-tokens";
@@ -20,3 +20,8 @@ export * from "./caregiver-invites";
 export * from "./subscription-plans";
 export * from "./push-subscriptions";
 export * from "./alert-escalations";
+// autenticação: tokens e fluxos
+export * from "./email-verifications";
+export * from "./password-resets";
+export * from "./export-tokens";
+export * from "./deletion-requests";

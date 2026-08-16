@@ -1,6 +1,11 @@
-import { Router, type IRouter } from "express";
+import { Router } from "express";
 import healthRouter from "./health";
-import familiesRouter from "./families";
+import authRouter from "./auth";
+import consentRouter from "./consent";
+import invitesRouter from "./invites";
+import accountRouter from "./account";
+import activityRouter from "./activity";
+import exportRouter from "./export";
 import patientsRouter from "./patients";
 import caregiversRouter from "./caregivers";
 import medicationsRouter from "./medications";
@@ -9,10 +14,18 @@ import notificationsRouter from "./notifications";
 import auditRouter from "./audit";
 import dashboardRouter from "./dashboard";
 
-const router: IRouter = Router();
+const router = Router();
 
+// Sem autenticação
 router.use(healthRouter);
-router.use(familiesRouter);
+router.use(authRouter);
+router.use(consentRouter);
+
+// Com autenticação (requireAuth em cada rota)
+router.use(invitesRouter);
+router.use(accountRouter);
+router.use(activityRouter);
+router.use(exportRouter);
 router.use(patientsRouter);
 router.use(caregiversRouter);
 router.use(medicationsRouter);
@@ -21,8 +34,7 @@ router.use(notificationsRouter);
 router.use(auditRouter);
 router.use(dashboardRouter);
 
-// Rotas de controle do relógio registradas APENAS fora de produção.
-// Em produção o bloco abaixo não executa — as rotas não existem.
+// Rotas de controle do relógio — APENAS fora de produção
 if (process.env.NODE_ENV !== "production") {
   const { default: devClockRouter } = await import("./dev-clock.js");
   router.use(devClockRouter);

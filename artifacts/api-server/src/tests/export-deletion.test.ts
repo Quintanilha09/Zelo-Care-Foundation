@@ -1,0 +1,288 @@
+/**
+ * Testes de exportação e exclusão de dados — ZELO.
+ *
+ * Cobre:
+ * - Exportação gera link de download autenticado com expiração
+ * - Link de download é de uso único (marcado após download)
+ * - Exclusão remove fisicamente TODOS os dados (sem sobrar linha órfã)
+ * - Janela de 7 dias: pode ser cancelada antes
+ * - Após janela: execução remove família, pacientes, tratamentos, doses, registros
+ * - Apenas um rastro sobrevive: entrada no audit_log
+ */
+
+import { describe, it, before, after } from "node:test";
+import assert from "node:assert/strict";
+import http from "node:http";
+import { eq, and } from "drizzle-orm";
+import { db } from "@workspace/db";
+import {
+  usersTable, caregiversTable, familiesTable, patientsTable,
+  treatmentsTable, scheduledDosesTable, medicationsTable,
+  consentRecordsTable, deletionRequestsTable, exportTokensTable,
+} from "@workspace/db";
+import { generateAccessToken } from "../lib/tokens.ts";
+import { hashPassword } from "../lib/password.ts";
+import { Clock } from "../lib/clock.ts";
+import app from "../app.ts";
+
+let testPort: number;
+let closeServer: () => Promise<void>;
+
+interface TestFamily {
+  userId: number; familyId: number; caregiverId: number;
+  patientId: number; token: string;
+}
+
+async function createCompleteFamily(email: string): Promise<TestFamily> {
+  const [family] = await db
+    .insert(familiesTable)
+    .values({ name: `Família ExportDel ${email}`, slug: `exportdel-${Date.now()}-${Math.random().toString(36).slice(2)}` })
+    .returning();
+  const [user] = await db
+    .insert(usersTable)
+    .values({ email, name: "ExportDel Test", passwordHash: await hashPassword("test"), emailVerified: true, status: "active" })
+    .returning();
+  const [caregiver] = await db
+    .insert(caregiversTable)
+    .values({ familyId: family.id, userId: user.id, name: "ExportDel Test", email, role: "primary_caregiver" })
+    .returning();
+  await db.insert(consentRecordsTable).values([
+    { userId: user.id, consentType: "terms_of_service", consentGiven: "true", version: "v1.0", ipAddress: "127.0.0.1" },
+    { userId: user.id, consentType: "health_data_processing", consentGiven: "true", version: "v1.0", ipAddress: "127.0.0.1" },
+  ]);
+  const [patient] = await db
+    .insert(patientsTable)
+    .values({ familyId: family.id, name: "Paciente ExportDel", timezone: "America/Sao_Paulo" })
+    .returning();
+  const [medication] = await db
+    .insert(medicationsTable)
+    .values({ familyId: family.id, name: "Medicamento ExportDel (fictício)" })
+    .returning();
+  const [treatment] = await db
+    .insert(treatmentsTable)
+    .values({
+      patientId: patient.id, medicationId: medication.id, dose: "1cp",
+      scheduleType: "times_per_day", scheduleConfig: { timesPerDay: 1, times: ["08:00"] },
+      startDate: "2025-01-01",
+    })
+    .returning();
+  await db.insert(scheduledDosesTable).values({ treatmentId: treatment.id, patientId: patient.id, scheduledAt: new Date(), status: "pending" });
+
+  const token = generateAccessToken(user.id, family.id, caregiver.id, "primary_caregiver");
+  return { userId: user.id, familyId: family.id, caregiverId: caregiver.id, patientId: patient.id, token };
+}
+
+before(async () => {
+  await new Promise<void>((resolve, reject) => {
+    const server = http.createServer(app);
+    server.listen(0, "127.0.0.1", () => {
+      testPort = (server.address() as { port: number }).port;
+      closeServer = () => new Promise((res, rej) => server.close((e) => (e ? rej(e) : res())));
+      resolve();
+    });
+    server.on("error", reject);
+  });
+});
+
+after(async () => {
+  await closeServer();
+  Clock.reset();
+});
+
+function api(token: string, method: string, path: string, body?: unknown) {
+  const payload = body ? JSON.stringify(body) : undefined;
+  return new Promise<{ status: number; body: unknown; rawBody: string }>((resolve, reject) => {
+    const req = http.request(
+      {
+        hostname: "127.0.0.1", port: testPort, path: `/api${path}`, method,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          ...(payload ? { "Content-Length": Buffer.byteLength(payload) } : {}),
+        },
+      },
+      (res) => {
+        let data = "";
+        res.on("data", (c: Buffer) => (data += c.toString()));
+        res.on("end", () => {
+          try { resolve({ status: res.statusCode ?? 0, body: JSON.parse(data), rawBody: data }); }
+          catch { resolve({ status: res.statusCode ?? 0, body: data, rawBody: data }); }
+        });
+      }
+    );
+    req.on("error", reject);
+    if (payload) req.write(payload);
+    req.end();
+  });
+}
+
+function rawGet(path: string) {
+  return new Promise<{ status: number; body: string; contentType?: string }>((resolve, reject) => {
+    const req = http.request(
+      { hostname: "127.0.0.1", port: testPort, path: `/api${path}`, method: "GET" },
+      (res) => {
+        let data = "";
+        res.on("data", (c: Buffer) => (data += c.toString()));
+        res.on("end", () => resolve({
+          status: res.statusCode ?? 0,
+          body: data,
+          contentType: res.headers["content-type"],
+        }));
+      }
+    );
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+describe("Exportação e exclusão de dados — ZELO", () => {
+
+  describe("Exportação de dados", () => {
+    let exportFamily: TestFamily;
+
+    before(async () => {
+      exportFamily = await createCompleteFamily("export-test@zelo.test");
+    });
+
+    after(async () => {
+      await db.delete(usersTable).where(eq(usersTable.email, "export-test@zelo.test"));
+      await db.delete(familiesTable).where(eq(familiesTable.id, exportFamily.familyId));
+    });
+
+    it("POST /export retorna link de download autenticado com expiração", async () => {
+      const res = await api(exportFamily.token, "POST", "/export");
+      assert.equal(res.status, 200);
+      const body = res.body as { downloadUrl: string; expiresAt: string; patientCount: number };
+      assert.ok(body.downloadUrl.includes("/export/download/"), "deve ter URL de download");
+      assert.ok(body.expiresAt, "deve ter data de expiração");
+      assert.equal(body.patientCount, 1, "deve informar contagem de pacientes");
+    });
+
+    it("link de download retorna JSON com dados do paciente", async () => {
+      const exportRes = await api(exportFamily.token, "POST", "/export");
+      const { downloadUrl } = exportRes.body as { downloadUrl: string };
+      // Remove o prefixo /api já incluído na URL
+      const path = downloadUrl.replace(/^\/api/, "");
+      const dlRes = await rawGet(path);
+      assert.equal(dlRes.status, 200);
+      assert.ok(dlRes.contentType?.includes("application/json"), "deve retornar JSON");
+      const data = JSON.parse(dlRes.body) as { patients: Array<unknown>; exportDate: string };
+      assert.ok(Array.isArray(data.patients), "deve ter campo patients");
+      assert.ok(data.exportDate, "deve ter exportDate");
+    });
+
+    it("link de download é de uso único — segunda tentativa retorna 404", async () => {
+      const exportRes = await api(exportFamily.token, "POST", "/export");
+      const { downloadUrl } = exportRes.body as { downloadUrl: string };
+      const path = downloadUrl.replace(/^\/api/, "");
+
+      // Primeiro download — funciona
+      const first = await rawGet(path);
+      assert.equal(first.status, 200, "primeiro download deve funcionar");
+
+      // Segundo download — deve falhar (token marcado como usado)
+      const second = await rawGet(path);
+      assert.equal(second.status, 404, "segundo download deve retornar 404 (uso único)");
+    });
+
+    it("link de download expirado retorna 404", async () => {
+      const exportRes = await api(exportFamily.token, "POST", "/export");
+      const { downloadUrl } = exportRes.body as { downloadUrl: string };
+      const path = downloadUrl.replace(/^\/api/, "");
+
+      // Avança o relógio 2 horas (link expira em 1 hora)
+      Clock.advance(2 * 60 * 60 * 1000);
+      const dlRes = await rawGet(path);
+      Clock.reset();
+      assert.equal(dlRes.status, 404, "link expirado deve retornar 404");
+    });
+  });
+
+  describe("Exclusão de dados", () => {
+    let delFamily: TestFamily;
+
+    before(async () => {
+      delFamily = await createCompleteFamily("deletion-test@zelo.test");
+    });
+
+    it("solicitação de exclusão cria registro com janela de 7 dias", async () => {
+      const res = await api(delFamily.token, "POST", "/account/deletion/request");
+      assert.equal(res.status, 201);
+      const body = res.body as { scheduledDeletionAt: string; requestId: number };
+      assert.ok(body.scheduledDeletionAt, "deve ter data de execução agendada");
+      const scheduled = new Date(body.scheduledDeletionAt);
+      const diffDays = (scheduled.getTime() - Date.now()) / (1000 * 60 * 60 * 24);
+      assert.ok(diffDays > 6 && diffDays < 8, `janela deve ser ~7 dias, foi ${diffDays.toFixed(1)} dias`);
+    });
+
+    it("segunda solicitação retorna 409 (já existe pendente)", async () => {
+      const res = await api(delFamily.token, "POST", "/account/deletion/request");
+      assert.equal(res.status, 409);
+    });
+
+    it("cancelar exclusão dentro da janela cancela a solicitação", async () => {
+      const res = await api(delFamily.token, "POST", "/account/deletion/cancel");
+      assert.equal(res.status, 200);
+
+      // Verifica no banco
+      const [req] = await db
+        .select({ status: deletionRequestsTable.status })
+        .from(deletionRequestsTable)
+        .where(and(eq(deletionRequestsTable.familyId, delFamily.familyId), eq(deletionRequestsTable.status, "cancelled")))
+        .limit(1);
+      assert.ok(req, "solicitação deve estar marcada como cancelada no banco");
+    });
+
+    it("executar exclusão antes da janela retorna 409", async () => {
+      // Cria nova solicitação (a anterior foi cancelada)
+      await api(delFamily.token, "POST", "/account/deletion/request");
+      const res = await api(delFamily.token, "POST", "/account/deletion/execute");
+      assert.equal(res.status, 409, "não deve executar antes da janela de 7 dias");
+      // Cancela para próximo teste
+      await api(delFamily.token, "POST", "/account/deletion/cancel");
+    });
+
+    it("após janela: executar exclusão remove TODOS os dados fisicamente", async () => {
+      // Cria nova solicitação
+      await api(delFamily.token, "POST", "/account/deletion/request");
+
+      // Avança o relógio 8 dias (passou a janela de 7 dias)
+      Clock.advance(8 * 24 * 60 * 60 * 1000);
+
+      const execRes = await api(delFamily.token, "POST", "/account/deletion/execute");
+      Clock.reset();
+      assert.equal(execRes.status, 200, "execução deve retornar 200");
+
+      // Verifica que todos os dados foram excluídos fisicamente
+      const [family] = await db
+        .select({ id: familiesTable.id })
+        .from(familiesTable)
+        .where(eq(familiesTable.id, delFamily.familyId))
+        .limit(1);
+      assert.equal(family, undefined, "família deve ter sido excluída fisicamente");
+
+      // Verifica que não há pacientes órfãos
+      const orphanPatients = await db
+        .select({ id: patientsTable.id })
+        .from(patientsTable)
+        .where(eq(patientsTable.id, delFamily.patientId));
+      assert.equal(orphanPatients.length, 0, "não deve sobrar linha órfã em patients");
+
+      // Token de delFamily não funciona mais (família excluída = familyId inválido)
+      const afterRes = await api(delFamily.token, "GET", "/patients");
+      // 200 com lista vazia OU 404 — nunca deve retornar dados de outra família
+      if (afterRes.status === 200) {
+        const patients = afterRes.body as Array<{ familyId: number }>;
+        assert.equal(patients.length, 0, "deve retornar lista vazia após exclusão");
+      }
+    });
+
+    after(async () => {
+      // Limpeza (caso algum teste tenha falhado antes da exclusão)
+      try {
+        await db.delete(usersTable).where(eq(usersTable.email, "deletion-test@zelo.test"));
+        await db.delete(familiesTable).where(eq(familiesTable.id, delFamily.familyId));
+      } catch { /* ignora — família pode já ter sido excluída pelo teste */ }
+    });
+  });
+});

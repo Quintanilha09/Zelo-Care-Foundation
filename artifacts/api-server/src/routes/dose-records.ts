@@ -1,166 +1,145 @@
-import { Router, type IRouter } from "express";
+import { getAuth } from "../lib/auth-types.ts";
+/**
+ * Registros de dose — ZELO.
+ * familyId vem do token JWT. Constraint UNIQUE(scheduled_dose_id) retorna 409.
+ */
+import { Router } from "express";
 import { eq, and, gte, lte } from "drizzle-orm";
 import { db } from "@workspace/db";
-import {
-  doseRecordsTable,
-  scheduledDosesTable,
-  caregiversTable,
-} from "@workspace/db";
-import {
-  ListDoseRecordsParams,
-  ListDoseRecordsQueryParams,
-  CreateDoseRecordParams,
-  CreateDoseRecordBody,
-} from "@workspace/api-zod";
+import { doseRecordsTable, scheduledDosesTable, caregiversTable, patientsTable } from "@workspace/db";
+import { z } from "zod";
+import { requireAuth } from "../middleware/require-auth";
 import { safeLog } from "../lib/safe-logger";
-import { verifyPatientBelongsToFamily } from "../lib/family-access";
 import { audit } from "../lib/audit";
 import { Clock } from "../lib/clock";
 
-const router: IRouter = Router();
+const router = Router();
 
-router.get(
-  "/families/:familyId/patients/:patientId/dose-records",
-  async (req, res): Promise<void> => {
-    const params = ListDoseRecordsParams.safeParse(req.params);
-    const query = ListDoseRecordsQueryParams.safeParse(req.query);
-    if (!params.success || !query.success) {
-      res.status(400).json({ error: "Parâmetros inválidos" });
-      return;
-    }
+const ListQuery = z.object({
+  from: z.string().optional(),
+  to: z.string().optional(),
+});
 
-    const belongs = await verifyPatientBelongsToFamily(
-      params.data.patientId,
-      params.data.familyId
-    );
-    if (!belongs) {
-      res.status(404).json({ error: "Paciente não encontrado" });
-      return;
-    }
+const CreateDoseRecordBody = z.object({
+  scheduledDoseId: z.number().int().positive(),
+  // patientId vem de req.params — não aceitar do body evita confusão
+  takenAt: z.string(),
+  outcome: z.enum(["taken", "skipped"]),
+  notes: z.string().optional().nullable(),
+});
 
-    const conditions = [eq(doseRecordsTable.patientId, params.data.patientId)];
-    if (query.data.from) {
-      conditions.push(gte(doseRecordsTable.takenAt, new Date(query.data.from)));
-    }
-    if (query.data.to) {
-      conditions.push(lte(doseRecordsTable.takenAt, new Date(query.data.to)));
-    }
+// ── Listar registros de dose de um paciente ───────────────────────────────
 
-    const records = await db
-      .select({
-        id: doseRecordsTable.id,
-        scheduledDoseId: doseRecordsTable.scheduledDoseId,
-        patientId: doseRecordsTable.patientId,
-        caregiverId: doseRecordsTable.caregiverId,
-        caregiverName: caregiversTable.name,
-        takenAt: doseRecordsTable.takenAt,
-        outcome: doseRecordsTable.outcome,
-        notes: doseRecordsTable.notes,
-        createdAt: doseRecordsTable.createdAt,
+router.get("/patients/:patientId/dose-records", requireAuth, async (req, res): Promise<void> => {
+  const patientId = Number(req.params.patientId);
+  if (isNaN(patientId)) { res.status(400).json({ error: "ID inválido" }); return; }
+
+  // Verifica isolamento: paciente pertence à família do token
+  const [patient] = await db
+    .select({ id: patientsTable.id })
+    .from(patientsTable)
+    .where(and(eq(patientsTable.id, patientId), eq(patientsTable.familyId, getAuth(req).familyId)))
+    .limit(1);
+  if (!patient) { res.status(404).json({ error: "Paciente não encontrado" }); return; }
+
+  const query = ListQuery.safeParse(req.query);
+  const conditions = [eq(doseRecordsTable.patientId, patientId)];
+  if (query.success && query.data.from) conditions.push(gte(doseRecordsTable.takenAt, new Date(query.data.from)));
+  if (query.success && query.data.to) conditions.push(lte(doseRecordsTable.takenAt, new Date(query.data.to)));
+
+  const records = await db
+    .select({
+      id: doseRecordsTable.id,
+      scheduledDoseId: doseRecordsTable.scheduledDoseId,
+      patientId: doseRecordsTable.patientId,
+      caregiverId: doseRecordsTable.caregiverId,
+      caregiverName: caregiversTable.name,
+      takenAt: doseRecordsTable.takenAt,
+      outcome: doseRecordsTable.outcome,
+      notes: doseRecordsTable.notes,
+      createdAt: doseRecordsTable.createdAt,
+    })
+    .from(doseRecordsTable)
+    .leftJoin(caregiversTable, eq(doseRecordsTable.caregiverId, caregiversTable.id))
+    .where(and(...conditions))
+    .orderBy(doseRecordsTable.takenAt);
+
+  res.json(records);
+});
+
+// ── Registrar dose ────────────────────────────────────────────────────────
+
+router.post("/patients/:patientId/dose-records", requireAuth, async (req, res): Promise<void> => {
+  const patientId = Number(req.params.patientId);
+  if (isNaN(patientId)) { res.status(400).json({ error: "ID inválido" }); return; }
+
+  const body = CreateDoseRecordBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  // Verifica isolamento
+  const [patient] = await db
+    .select({ id: patientsTable.id })
+    .from(patientsTable)
+    .where(and(eq(patientsTable.id, patientId), eq(patientsTable.familyId, getAuth(req).familyId)))
+    .limit(1);
+  if (!patient) { res.status(404).json({ error: "Paciente não encontrado" }); return; }
+
+  // Verifica que a dose agendada pertence ao paciente
+  const [scheduled] = await db
+    .select({ id: scheduledDosesTable.id, patientId: scheduledDosesTable.patientId })
+    .from(scheduledDosesTable)
+    .where(eq(scheduledDosesTable.id, body.data.scheduledDoseId))
+    .limit(1);
+
+  if (!scheduled || scheduled.patientId !== patientId) {
+    res.status(404).json({ error: "Dose agendada não encontrada" });
+    return;
+  }
+
+  try {
+    const [record] = await db
+      .insert(doseRecordsTable)
+      .values({
+        scheduledDoseId: body.data.scheduledDoseId,
+        patientId,
+        caregiverId: getAuth(req).caregiverId,
+        takenAt: new Date(body.data.takenAt),
+        outcome: body.data.outcome,
+        notes: body.data.notes ?? null,
       })
-      .from(doseRecordsTable)
-      .leftJoin(
-        caregiversTable,
-        eq(doseRecordsTable.caregiverId, caregiversTable.id)
-      )
-      .where(and(...conditions))
-      .orderBy(doseRecordsTable.takenAt);
+      .returning();
 
-    res.json(records);
+    await db
+      .update(scheduledDosesTable)
+      .set({ status: body.data.outcome === "taken" ? "taken" : "skipped", updatedAt: Clock.now() })
+      .where(eq(scheduledDosesTable.id, body.data.scheduledDoseId));
+
+    safeLog.info({
+      action: "created", entityType: "dose_record",
+      familyId: getAuth(req).familyId,
+      scheduledDoseId: record.scheduledDoseId,
+      outcome: record.outcome,
+    }, "Dose registrada");
+
+    await audit({
+      familyId: getAuth(req).familyId,
+      entityType: "dose_record",
+      entityId: String(record.id),
+      action: "created",
+      actorId: String(getAuth(req).caregiverId),
+      actorType: "caregiver",
+      ipAddress: req.ip,
+    });
+
+    res.status(201).json(record);
+  } catch (err: unknown) {
+    const pgErr = err as { code?: string; cause?: { code?: string } };
+    if (pgErr?.code === "23505" || pgErr?.cause?.code === "23505") {
+      res.status(409).json({ error: "Dose já registrada para esse horário agendado" });
+      return;
+    }
+    throw err;
   }
-);
-
-// REGRA DE INTEGRIDADE CRÍTICA #2:
-// O banco garante que só existe 1 registro por dose agendada (UNIQUE constraint).
-// Se dois cuidadores tentarem registrar ao mesmo tempo, o segundo recebe 409.
-router.post(
-  "/families/:familyId/patients/:patientId/dose-records",
-  async (req, res): Promise<void> => {
-    const params = CreateDoseRecordParams.safeParse(req.params);
-    if (!params.success) {
-      res.status(400).json({ error: params.error.message });
-      return;
-    }
-    const body = CreateDoseRecordBody.safeParse(req.body);
-    if (!body.success) {
-      res.status(400).json({ error: body.error.message });
-      return;
-    }
-
-    const belongs = await verifyPatientBelongsToFamily(
-      params.data.patientId,
-      params.data.familyId
-    );
-    if (!belongs) {
-      res.status(404).json({ error: "Paciente não encontrado" });
-      return;
-    }
-
-    // Verifica que a dose agendada pertence ao paciente
-    const [scheduled] = await db
-      .select({ id: scheduledDosesTable.id, patientId: scheduledDosesTable.patientId })
-      .from(scheduledDosesTable)
-      .where(eq(scheduledDosesTable.id, body.data.scheduledDoseId))
-      .limit(1);
-
-    if (!scheduled || scheduled.patientId !== params.data.patientId) {
-      res.status(404).json({ error: "Dose agendada não encontrada" });
-      return;
-    }
-
-    try {
-      const [record] = await db
-        .insert(doseRecordsTable)
-        .values({
-          scheduledDoseId: body.data.scheduledDoseId,
-          patientId: params.data.patientId,
-          caregiverId: body.data.caregiverId,
-          takenAt: new Date(body.data.takenAt),
-          outcome: body.data.outcome as "taken" | "skipped",
-          notes: body.data.notes ?? null,
-        })
-        .returning();
-
-      // Atualiza status da dose agendada
-      await db
-        .update(scheduledDosesTable)
-        .set({
-          status: body.data.outcome === "taken" ? "taken" : "skipped",
-          updatedAt: Clock.now(),
-        })
-        .where(eq(scheduledDosesTable.id, body.data.scheduledDoseId));
-
-      safeLog.info(
-        {
-          action: "created",
-          entityType: "dose_record",
-          familyId: params.data.familyId,
-          scheduledDoseId: record.scheduledDoseId,
-          outcome: record.outcome,
-        },
-        "Dose registrada"
-      );
-
-      await audit({
-        familyId: params.data.familyId,
-        entityType: "dose_record",
-        entityId: String(record.id),
-        action: "created",
-        actorId: String(body.data.caregiverId),
-        actorType: "caregiver",
-      });
-
-      res.status(201).json(record);
-    } catch (err: unknown) {
-      // Constraint unique violada — dose já foi registrada
-      const pgErr = err as { code?: string };
-      if (pgErr?.code === "23505") {
-        res.status(409).json({ error: "Dose já registrada para esse horário agendado" });
-        return;
-      }
-      throw err;
-    }
-  }
-);
+});
 
 export default router;

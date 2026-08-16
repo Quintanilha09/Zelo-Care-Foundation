@@ -1,0 +1,225 @@
+import { getAuth } from "../lib/auth-types.ts";
+/**
+ * Rotas de convite de cuidadores — ZELO.
+ * POST /api/invites         — cria convite (primary_caregiver)
+ * POST /api/invites/accept  — aceita convite com token
+ * GET  /api/invites         — lista convites da família
+ * DELETE /api/invites/:id   — revoga convite (primary_caregiver)
+ */
+
+import { Router } from "express";
+import { z } from "zod";
+import { eq, and, gt } from "drizzle-orm";
+import { db } from "@workspace/db";
+import {
+  caregiverInvitesTable,
+  caregiversTable,
+  usersTable,
+  familiesTable,
+} from "@workspace/db";
+import { generateOneTimeToken, hashToken } from "../lib/tokens";
+import { sendCaregiverInviteEmail } from "../lib/email";
+import { requireAuth, requirePrimaryCaregiver } from "../middleware/require-auth";
+import { audit } from "../lib/audit";
+import { safeLog } from "../lib/safe-logger";
+import { Clock } from "../lib/clock";
+
+const router = Router();
+
+// ── Criar convite ─────────────────────────────────────────────────────────
+
+const CreateInviteBody = z.object({
+  invitedEmail: z.string().email().optional(),
+  role: z.enum(["caregiver", "hired_caregiver", "observer"]).default("caregiver"),
+});
+
+router.post("/invites", requirePrimaryCaregiver, async (req, res): Promise<void> => {
+  const body = CreateInviteBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
+
+  const { raw, hash } = generateOneTimeToken();
+  const expiresAt = new Date(Clock.now().getTime() + 7 * 24 * 60 * 60 * 1000); // 7 dias
+
+  const [invite] = await db
+    .insert(caregiverInvitesTable)
+    .values({
+      familyId: getAuth(req).familyId,
+      tokenHash: hash,
+      invitedEmail: body.data.invitedEmail ?? null,
+      role: body.data.role,
+      expiresAt,
+      createdByUserId: getAuth(req).userId,
+    })
+    .returning({ id: caregiverInvitesTable.id, expiresAt: caregiverInvitesTable.expiresAt });
+
+  if (body.data.invitedEmail) {
+    await sendCaregiverInviteEmail(body.data.invitedEmail, raw);
+  }
+
+  await audit({
+    familyId: getAuth(req).familyId,
+    entityType: "caregiver_invite",
+    entityId: String(invite.id),
+    action: "created",
+    actorId: String(getAuth(req).caregiverId),
+    actorType: "caregiver",
+  });
+
+  // Retorna o token cru apenas uma vez — quem criar o convite deve compartilhá-lo
+  res.status(201).json({
+    inviteToken: raw,
+    expiresAt: invite.expiresAt,
+    role: body.data.role,
+    // Link de convite pronto para compartilhar
+    inviteLink: `/convite?token=${raw}`,
+  });
+});
+
+// ── Aceitar convite ───────────────────────────────────────────────────────
+
+const AcceptInviteBody = z.object({
+  token: z.string().min(1),
+  name: z.string().min(2).max(100).optional(),
+});
+
+router.post("/invites/accept", requireAuth, async (req, res): Promise<void> => {
+  const body = AcceptInviteBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
+
+  const tokenHash = hashToken(body.data.token);
+
+  const [invite] = await db
+    .select()
+    .from(caregiverInvitesTable)
+    .where(
+      and(
+        eq(caregiverInvitesTable.tokenHash, tokenHash),
+        eq(caregiverInvitesTable.used, false),
+        eq(caregiverInvitesTable.status, "pending"),
+        gt(caregiverInvitesTable.expiresAt, Clock.now())
+      )
+    )
+    .limit(1);
+
+  if (!invite) {
+    res.status(404).json({ error: "Convite não encontrado, já usado ou expirado" });
+    return;
+  }
+
+  // Verifica se o usuário já é cuidador nesta família
+  const [existing] = await db
+    .select({ id: caregiversTable.id })
+    .from(caregiversTable)
+    .where(
+      and(
+        eq(caregiversTable.userId, getAuth(req).userId),
+        eq(caregiversTable.familyId, invite.familyId)
+      )
+    )
+    .limit(1);
+
+  if (existing) {
+    res.status(409).json({ error: "Você já é cuidador nesta família" });
+    return;
+  }
+
+  // Busca nome do usuário para o cuidador
+  const [user] = await db
+    .select({ name: usersTable.name, email: usersTable.email })
+    .from(usersTable)
+    .where(eq(usersTable.id, getAuth(req).userId))
+    .limit(1);
+
+  const [newCaregiver] = await db.transaction(async (tx) => {
+    // Marca convite como usado
+    await tx.update(caregiverInvitesTable)
+      .set({ used: true, usedAt: Clock.now(), usedByUserId: getAuth(req).userId, status: "accepted" })
+      .where(eq(caregiverInvitesTable.id, invite.id));
+
+    // Cria entrada de cuidador
+    return tx
+      .insert(caregiversTable)
+      .values({
+        familyId: invite.familyId,
+        userId: getAuth(req).userId,
+        name: body.data.name ?? user?.name ?? "Cuidador",
+        email: user?.email ?? null,
+        role: invite.role,
+      })
+      .returning();
+  });
+
+  safeLog.info({ action: "invite_accepted", caregiverId: newCaregiver.id, familyId: invite.familyId }, "Convite aceito");
+  await audit({
+    familyId: invite.familyId,
+    entityType: "caregiver",
+    entityId: String(newCaregiver.id),
+    action: "created",
+    actorId: String(newCaregiver.id),
+    actorType: "caregiver",
+    diff: JSON.stringify({ role: newCaregiver.role }),
+  });
+
+  res.status(201).json({ message: "Convite aceito. Você agora é cuidador nesta família.", caregiver: newCaregiver });
+});
+
+// ── Listar convites ───────────────────────────────────────────────────────
+
+router.get("/invites", requirePrimaryCaregiver, async (req, res): Promise<void> => {
+  const invites = await db
+    .select({
+      id: caregiverInvitesTable.id,
+      invitedEmail: caregiverInvitesTable.invitedEmail,
+      role: caregiverInvitesTable.role,
+      status: caregiverInvitesTable.status,
+      expiresAt: caregiverInvitesTable.expiresAt,
+      createdAt: caregiverInvitesTable.createdAt,
+    })
+    .from(caregiverInvitesTable)
+    .where(eq(caregiverInvitesTable.familyId, getAuth(req).familyId));
+
+  res.json(invites);
+});
+
+// ── Revogar convite ───────────────────────────────────────────────────────
+
+router.delete("/invites/:inviteId", requirePrimaryCaregiver, async (req, res): Promise<void> => {
+  const inviteId = Number(req.params.inviteId);
+  if (isNaN(inviteId)) { res.status(400).json({ error: "ID inválido" }); return; }
+
+  const [updated] = await db
+    .update(caregiverInvitesTable)
+    .set({ status: "revoked" })
+    .where(
+      and(
+        eq(caregiverInvitesTable.id, inviteId),
+        eq(caregiverInvitesTable.familyId, getAuth(req).familyId),
+        eq(caregiverInvitesTable.used, false)
+      )
+    )
+    .returning({ id: caregiverInvitesTable.id });
+
+  if (!updated) {
+    res.status(404).json({ error: "Convite não encontrado" });
+    return;
+  }
+
+  await audit({
+    familyId: getAuth(req).familyId,
+    entityType: "caregiver_invite",
+    entityId: String(inviteId),
+    action: "deleted",
+    actorId: String(getAuth(req).caregiverId),
+    actorType: "caregiver",
+  });
+
+  res.status(204).send();
+});
+
+export default router;

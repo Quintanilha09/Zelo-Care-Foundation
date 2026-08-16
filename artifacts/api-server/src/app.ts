@@ -1,3 +1,4 @@
+// Types augmentation — must be referenced before express is imported
 import express, { type Express } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
