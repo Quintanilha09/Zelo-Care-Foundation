@@ -1,0 +1,2 @@
+- [ZELO — Decisões críticas de produto](zelo-product-decisions.md) — âmbar nunca vermelho, sem interpretação clínica, dado fictício explícito
+- [ZELO — Setup técnico e armadilhas](zelo-technical-setup.md) — codegen orval, node --experimental-strip-types, tsx para integração

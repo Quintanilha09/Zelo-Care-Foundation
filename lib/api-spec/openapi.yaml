@@ -3,20 +3,48 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: ZELO — API de cuidado compartilhado
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
-    description: Health operations
+    description: Health check
+  - name: families
+    description: Famílias (tenants)
+  - name: patients
+    description: Pacientes
+  - name: caregivers
+    description: Cuidadores
+  - name: medications
+    description: Medicamentos
+  - name: treatments
+    description: Tratamentos e posologias
+  - name: scheduled-doses
+    description: Doses agendadas
+  - name: dose-records
+    description: Registros de dose tomada
+  - name: stock
+    description: Estoque de medicamento
+  - name: appointments
+    description: Consultas médicas
+  - name: health-measurements
+    description: Aferições de saúde (pressão, glicemia, peso)
+  - name: notifications
+    description: Notificações
+  - name: audit
+    description: Log de auditoria imutável
+  - name: subscriptions
+    description: Planos e assinaturas
+  - name: dashboard
+    description: Resumos e painel
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,13 +52,1160 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  # ── Famílias ─────────────────────────────────────────────────────────────
+  /families:
+    get:
+      operationId: listFamilies
+      tags: [families]
+      summary: Lista famílias (admin)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Family"
+    post:
+      operationId: createFamily
+      tags: [families]
+      summary: Cria família/tenant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FamilyInput"
+      responses:
+        "201":
+          description: Criada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Family"
+
+  /families/{familyId}:
+    get:
+      operationId: getFamily
+      tags: [families]
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: number } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Family"
+        "404":
+          description: Não encontrada
+
+  # ── Pacientes ─────────────────────────────────────────────────────────────
+  /families/{familyId}/patients:
+    get:
+      operationId: listPatients
+      tags: [patients]
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: number } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Patient"
+    post:
+      operationId: createPatient
+      tags: [patients]
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: number } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatientInput"
+      responses:
+        "201":
+          description: Criado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Patient"
+
+  /families/{familyId}/patients/{patientId}:
+    get:
+      operationId: getPatient
+      tags: [patients]
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: number } }
+        - { name: patientId, in: path, required: true, schema: { type: number } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Patient"
+        "404":
+          description: Não encontrado
+    patch:
+      operationId: updatePatient
+      tags: [patients]
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: number } }
+        - { name: patientId, in: path, required: true, schema: { type: number } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatientUpdate"
+      responses:
+        "200":
+          description: Atualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Patient"
+
+  # ── Cuidadores ────────────────────────────────────────────────────────────
+  /families/{familyId}/caregivers:
+    get:
+      operationId: listCaregivers
+      tags: [caregivers]
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: number } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Caregiver"
+    post:
+      operationId: createCaregiver
+      tags: [caregivers]
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: number } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CaregiverInput"
+      responses:
+        "201":
+          description: Criado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Caregiver"
+
+  /families/{familyId}/caregivers/{caregiverId}:
+    get:
+      operationId: getCaregiver
+      tags: [caregivers]
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: number } }
+        - { name: caregiverId, in: path, required: true, schema: { type: number } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Caregiver"
+        "404":
+          description: Não encontrado
+    patch:
+      operationId: updateCaregiver
+      tags: [caregivers]
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: number } }
+        - { name: caregiverId, in: path, required: true, schema: { type: number } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CaregiverUpdate"
+      responses:
+        "200":
+          description: Atualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Caregiver"
+
+  # ── Medicamentos ──────────────────────────────────────────────────────────
+  /families/{familyId}/medications:
+    get:
+      operationId: listMedications
+      tags: [medications]
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: number } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Medication"
+    post:
+      operationId: createMedication
+      tags: [medications]
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: number } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MedicationInput"
+      responses:
+        "201":
+          description: Criado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Medication"
+
+  /families/{familyId}/medications/{medicationId}:
+    get:
+      operationId: getMedication
+      tags: [medications]
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: number } }
+        - { name: medicationId, in: path, required: true, schema: { type: number } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Medication"
+        "404":
+          description: Não encontrado
+
+  # ── Tratamentos ───────────────────────────────────────────────────────────
+  /families/{familyId}/patients/{patientId}/treatments:
+    get:
+      operationId: listTreatments
+      tags: [treatments]
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: number } }
+        - { name: patientId, in: path, required: true, schema: { type: number } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Treatment"
+    post:
+      operationId: createTreatment
+      tags: [treatments]
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: number } }
+        - { name: patientId, in: path, required: true, schema: { type: number } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TreatmentInput"
+      responses:
+        "201":
+          description: Criado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Treatment"
+
+  /families/{familyId}/patients/{patientId}/treatments/{treatmentId}:
+    get:
+      operationId: getTreatment
+      tags: [treatments]
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: number } }
+        - { name: patientId, in: path, required: true, schema: { type: number } }
+        - { name: treatmentId, in: path, required: true, schema: { type: number } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Treatment"
+        "404":
+          description: Não encontrado
+    patch:
+      operationId: updateTreatment
+      tags: [treatments]
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: number } }
+        - { name: patientId, in: path, required: true, schema: { type: number } }
+        - { name: treatmentId, in: path, required: true, schema: { type: number } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TreatmentUpdate"
+      responses:
+        "200":
+          description: Atualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Treatment"
+
+  # ── Doses Agendadas ───────────────────────────────────────────────────────
+  /families/{familyId}/patients/{patientId}/scheduled-doses:
+    get:
+      operationId: listScheduledDoses
+      tags: [scheduled-doses]
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: number } }
+        - { name: patientId, in: path, required: true, schema: { type: number } }
+        - name: date
+          in: query
+          required: false
+          schema: { type: string, format: date }
+          description: Filtra por data (YYYY-MM-DD no fuso do paciente)
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [pending, taken, skipped, late]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScheduledDose"
+
+  /families/{familyId}/patients/{patientId}/scheduled-doses/{scheduledDoseId}:
+    get:
+      operationId: getScheduledDose
+      tags: [scheduled-doses]
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: number } }
+        - { name: patientId, in: path, required: true, schema: { type: number } }
+        - { name: scheduledDoseId, in: path, required: true, schema: { type: number } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduledDose"
+        "404":
+          description: Não encontrada
+
+  # ── Registros de Dose ─────────────────────────────────────────────────────
+  /families/{familyId}/patients/{patientId}/dose-records:
+    get:
+      operationId: listDoseRecords
+      tags: [dose-records]
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: number } }
+        - { name: patientId, in: path, required: true, schema: { type: number } }
+        - name: from
+          in: query
+          required: false
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          required: false
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DoseRecord"
+    post:
+      operationId: createDoseRecord
+      tags: [dose-records]
+      summary: Registra dose tomada (idempotente por scheduled_dose_id)
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: number } }
+        - { name: patientId, in: path, required: true, schema: { type: number } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DoseRecordInput"
+      responses:
+        "201":
+          description: Registrada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DoseRecord"
+        "409":
+          description: Dose já registrada para esse horário agendado
+
+  # ── Estoque ───────────────────────────────────────────────────────────────
+  /families/{familyId}/patients/{patientId}/stock:
+    get:
+      operationId: listStock
+      tags: [stock]
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: number } }
+        - { name: patientId, in: path, required: true, schema: { type: number } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StockEntry"
+    post:
+      operationId: upsertStock
+      tags: [stock]
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: number } }
+        - { name: patientId, in: path, required: true, schema: { type: number } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StockEntryInput"
+      responses:
+        "200":
+          description: Atualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StockEntry"
+
+  # ── Consultas ─────────────────────────────────────────────────────────────
+  /families/{familyId}/patients/{patientId}/appointments:
+    get:
+      operationId: listAppointments
+      tags: [appointments]
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: number } }
+        - { name: patientId, in: path, required: true, schema: { type: number } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Appointment"
+    post:
+      operationId: createAppointment
+      tags: [appointments]
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: number } }
+        - { name: patientId, in: path, required: true, schema: { type: number } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppointmentInput"
+      responses:
+        "201":
+          description: Criada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Appointment"
+
+  /families/{familyId}/patients/{patientId}/appointments/{appointmentId}:
+    get:
+      operationId: getAppointment
+      tags: [appointments]
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: number } }
+        - { name: patientId, in: path, required: true, schema: { type: number } }
+        - { name: appointmentId, in: path, required: true, schema: { type: number } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Appointment"
+        "404":
+          description: Não encontrada
+    patch:
+      operationId: updateAppointment
+      tags: [appointments]
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: number } }
+        - { name: patientId, in: path, required: true, schema: { type: number } }
+        - { name: appointmentId, in: path, required: true, schema: { type: number } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppointmentUpdate"
+      responses:
+        "200":
+          description: Atualizada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Appointment"
+
+  # ── Aferições de Saúde ────────────────────────────────────────────────────
+  /families/{familyId}/patients/{patientId}/health-measurements:
+    get:
+      operationId: listHealthMeasurements
+      tags: [health-measurements]
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: number } }
+        - { name: patientId, in: path, required: true, schema: { type: number } }
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [blood_pressure, blood_glucose, weight, temperature, oxygen_saturation, heart_rate, other]
+        - name: from
+          in: query
+          required: false
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          required: false
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: OK — registros brutos sem interpretação médica
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HealthMeasurement"
+    post:
+      operationId: createHealthMeasurement
+      tags: [health-measurements]
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: number } }
+        - { name: patientId, in: path, required: true, schema: { type: number } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HealthMeasurementInput"
+      responses:
+        "201":
+          description: Registrada (sem interpretação médica)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthMeasurement"
+
+  # ── Notificações ──────────────────────────────────────────────────────────
+  /families/{familyId}/notifications:
+    get:
+      operationId: listNotifications
+      tags: [notifications]
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: number } }
+        - name: unreadOnly
+          in: query
+          required: false
+          schema: { type: boolean }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Notification"
+
+  /families/{familyId}/notifications/{notificationId}/ack:
+    post:
+      operationId: ackNotification
+      tags: [notifications]
+      summary: Marca notificação como tocada pelo usuário
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: number } }
+        - { name: notificationId, in: path, required: true, schema: { type: number } }
+      responses:
+        "200":
+          description: Atualizada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Notification"
+
+  # ── Audit Log ─────────────────────────────────────────────────────────────
+  /families/{familyId}/audit-log:
+    get:
+      operationId: listAuditLog
+      tags: [audit]
+      summary: Log de auditoria imutável — somente leitura
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: number } }
+        - name: from
+          in: query
+          required: false
+          schema: { type: string, format: date-time }
+        - name: entityType
+          in: query
+          required: false
+          schema: { type: string }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: number, default: 50, maximum: 200 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuditLogEntry"
+
+  # ── Assinaturas ───────────────────────────────────────────────────────────
+  /families/{familyId}/subscription:
+    get:
+      operationId: getSubscription
+      tags: [subscriptions]
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: number } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Subscription"
+        "404":
+          description: Sem assinatura ativa
+
+  # ── Dashboard / resumos ───────────────────────────────────────────────────
+  /families/{familyId}/dashboard:
+    get:
+      operationId: getFamilyDashboard
+      tags: [dashboard]
+      summary: Resumo do painel da família
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: number } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FamilyDashboard"
+
+  /families/{familyId}/patients/{patientId}/today-doses:
+    get:
+      operationId: getTodayDoses
+      tags: [dashboard]
+      summary: Doses de hoje do paciente (fuso do paciente)
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: number } }
+        - { name: patientId, in: path, required: true, schema: { type: number } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TodayDoseSummary"
+
+  /families/{familyId}/patients/{patientId}/adherence-stats:
+    get:
+      operationId: getAdherenceStats
+      tags: [dashboard]
+      summary: Estatísticas de adesão por período
+      parameters:
+        - { name: familyId, in: path, required: true, schema: { type: number } }
+        - { name: patientId, in: path, required: true, schema: { type: number } }
+        - name: days
+          in: query
+          required: false
+          schema: { type: number, default: 30 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdherenceStats"
+
+  # ── Design Reference ──────────────────────────────────────────────────────
+  /design-tokens:
+    get:
+      operationId: getDesignTokens
+      tags: [health]
+      summary: Tokens do sistema de design (referência interna)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DesignTokens"
+
 components:
   schemas:
     HealthStatus:
       type: object
+      required: [status]
       properties:
+        status: { type: string }
+
+    # ── Family ──────────────────────────────────────────────────────────────
+    Family:
+      type: object
+      required: [id, name, slug, createdAt]
+      properties:
+        id:        { type: number }
+        name:      { type: string }
+        slug:      { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: ["string", "null"], format: date-time }
+
+    FamilyInput:
+      type: object
+      required: [name, slug]
+      properties:
+        name: { type: string, minLength: 1 }
+        slug: { type: string, minLength: 2, pattern: "^[a-z0-9-]+$" }
+
+    # ── Patient ─────────────────────────────────────────────────────────────
+    Patient:
+      type: object
+      required: [id, familyId, name, timezone, createdAt]
+      properties:
+        id:           { type: number }
+        familyId:     { type: number }
+        name:         { type: string }
+        birthDate:    { type: ["string", "null"], format: date }
+        timezone:     { type: string, description: "IANA timezone (ex: America/Sao_Paulo)" }
+        notes:        { type: ["string", "null"] }
+        createdAt:    { type: string, format: date-time }
+        updatedAt:    { type: ["string", "null"], format: date-time }
+
+    PatientInput:
+      type: object
+      required: [name, timezone]
+      properties:
+        name:      { type: string, minLength: 1 }
+        birthDate: { type: ["string", "null"], format: date }
+        timezone:  { type: string, minLength: 1, description: "IANA timezone obrigatório" }
+        notes:     { type: ["string", "null"] }
+
+    PatientUpdate:
+      type: object
+      properties:
+        name:      { type: string, minLength: 1 }
+        birthDate: { type: ["string", "null"], format: date }
+        timezone:  { type: string }
+        notes:     { type: ["string", "null"] }
+
+    # ── Caregiver ────────────────────────────────────────────────────────────
+    Caregiver:
+      type: object
+      required: [id, familyId, name, role, createdAt]
+      properties:
+        id:        { type: number }
+        familyId:  { type: number }
+        name:      { type: string }
+        email:     { type: ["string", "null"] }
+        role:
+          type: string
+          enum: [primary_caregiver, caregiver, hired_caregiver, observer]
+          description: "primary_caregiver=responsável principal; observer=parente distante que só acompanha"
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: ["string", "null"], format: date-time }
+
+    CaregiverInput:
+      type: object
+      required: [name, role]
+      properties:
+        name:  { type: string, minLength: 1 }
+        email: { type: ["string", "null"] }
+        role:
+          type: string
+          enum: [primary_caregiver, caregiver, hired_caregiver, observer]
+
+    CaregiverUpdate:
+      type: object
+      properties:
+        name:  { type: string }
+        email: { type: ["string", "null"] }
+        role:
+          type: string
+          enum: [primary_caregiver, caregiver, hired_caregiver, observer]
+
+    # ── Medication ───────────────────────────────────────────────────────────
+    Medication:
+      type: object
+      required: [id, familyId, name, form, createdAt]
+      properties:
+        id:             { type: number }
+        familyId:       { type: number }
+        name:           { type: string }
+        activeIngredient: { type: ["string", "null"] }
+        form:
+          type: string
+          enum: [tablet, capsule, liquid, injection, patch, drops, inhaler, other]
+        strength:       { type: ["string", "null"], description: "ex: 50mg, 5mg/ml" }
+        notes:          { type: ["string", "null"] }
+        createdAt:      { type: string, format: date-time }
+
+    MedicationInput:
+      type: object
+      required: [name, form]
+      properties:
+        name:             { type: string, minLength: 1 }
+        activeIngredient: { type: ["string", "null"] }
+        form:
+          type: string
+          enum: [tablet, capsule, liquid, injection, patch, drops, inhaler, other]
+        strength: { type: ["string", "null"] }
+        notes:    { type: ["string", "null"] }
+
+    # ── Treatment ────────────────────────────────────────────────────────────
+    Treatment:
+      type: object
+      required: [id, patientId, medicationId, scheduleType, status, startDate, createdAt]
+      properties:
+        id:           { type: number }
+        patientId:    { type: number }
+        medicationId: { type: number }
+        medicationName: { type: string }
+        dose:         { type: ["string", "null"], description: "ex: 1 comprimido, 5ml" }
+        scheduleType:
+          type: string
+          enum: [times_per_day, every_n_hours, specific_weekdays, alternate_days, cycle_with_pause]
+        scheduleConfig:
+          type: object
+          description: "JSON livre conforme scheduleType. ex: {timesPerDay:2, times:['08:00','20:00']}"
+          additionalProperties: true
+        startDate:    { type: string, format: date }
+        endDate:      { type: ["string", "null"], format: date }
         status:
           type: string
-      required:
-        - status
+          enum: [active, paused, finished, cancelled]
+        instructions: { type: ["string", "null"] }
+        createdAt:    { type: string, format: date-time }
+        updatedAt:    { type: ["string", "null"], format: date-time }
 
+    TreatmentInput:
+      type: object
+      required: [medicationId, scheduleType, scheduleConfig, startDate]
+      properties:
+        medicationId:   { type: number }
+        dose:           { type: ["string", "null"] }
+        scheduleType:
+          type: string
+          enum: [times_per_day, every_n_hours, specific_weekdays, alternate_days, cycle_with_pause]
+        scheduleConfig:
+          type: object
+          additionalProperties: true
+        startDate:    { type: string, format: date }
+        endDate:      { type: ["string", "null"], format: date }
+        instructions: { type: ["string", "null"] }
+
+    TreatmentUpdate:
+      type: object
+      properties:
+        dose:           { type: ["string", "null"] }
+        scheduleConfig: { type: object, additionalProperties: true }
+        endDate:        { type: ["string", "null"], format: date }
+        status:
+          type: string
+          enum: [active, paused, finished, cancelled]
+        instructions:   { type: ["string", "null"] }
+
+    # ── ScheduledDose ────────────────────────────────────────────────────────
+    ScheduledDose:
+      type: object
+      required: [id, treatmentId, patientId, scheduledAt, status]
+      properties:
+        id:           { type: number }
+        treatmentId:  { type: number }
+        patientId:    { type: number }
+        medicationName: { type: string }
+        dose:         { type: ["string", "null"] }
+        scheduledAt:  { type: string, format: date-time, description: "UTC. Converter para fuso do paciente ao exibir." }
+        status:
+          type: string
+          enum: [pending, taken, skipped, late]
+        doseRecord:   { $ref: "#/components/schemas/DoseRecord", nullable: true }
+
+    # ── DoseRecord ───────────────────────────────────────────────────────────
+    DoseRecord:
+      type: object
+      required: [id, scheduledDoseId, patientId, caregiverId, takenAt, createdAt]
+      properties:
+        id:              { type: number }
+        scheduledDoseId: { type: number }
+        patientId:       { type: number }
+        caregiverId:     { type: number }
+        caregiverName:   { type: string }
+        takenAt:         { type: string, format: date-time }
+        outcome:
+          type: string
+          enum: [taken, skipped]
+        notes:           { type: ["string", "null"] }
+        createdAt:       { type: string, format: date-time }
+
+    DoseRecordInput:
+      type: object
+      required: [scheduledDoseId, caregiverId, takenAt, outcome]
+      properties:
+        scheduledDoseId: { type: number }
+        caregiverId:     { type: number }
+        takenAt:         { type: string, format: date-time }
+        outcome:
+          type: string
+          enum: [taken, skipped]
+        notes: { type: ["string", "null"] }
+
+    # ── StockEntry ───────────────────────────────────────────────────────────
+    StockEntry:
+      type: object
+      required: [id, patientId, medicationId, quantityRemaining, unit, updatedAt]
+      properties:
+        id:                { type: number }
+        patientId:         { type: number }
+        medicationId:      { type: number }
+        medicationName:    { type: string }
+        quantityRemaining: { type: number }
+        unit:              { type: string, description: "comprimidos, ml, unidades" }
+        lowStockThreshold: { type: ["number", "null"] }
+        updatedAt:         { type: string, format: date-time }
+
+    StockEntryInput:
+      type: object
+      required: [medicationId, quantityRemaining, unit]
+      properties:
+        medicationId:      { type: number }
+        quantityRemaining: { type: number, minimum: 0 }
+        unit:              { type: string }
+        lowStockThreshold: { type: ["number", "null"] }
+
+    # ── Appointment ──────────────────────────────────────────────────────────
+    Appointment:
+      type: object
+      required: [id, patientId, specialty, scheduledAt, createdAt]
+      properties:
+        id:          { type: number }
+        patientId:   { type: number }
+        specialty:   { type: string }
+        doctorName:  { type: ["string", "null"] }
+        location:    { type: ["string", "null"] }
+        scheduledAt: { type: string, format: date-time }
+        notes:       { type: ["string", "null"] }
+        status:
+          type: string
+          enum: [scheduled, completed, cancelled, rescheduled]
+        createdAt:   { type: string, format: date-time }
+        updatedAt:   { type: ["string", "null"], format: date-time }
+
+    AppointmentInput:
+      type: object
+      required: [specialty, scheduledAt]
+      properties:
+        specialty:  { type: string, minLength: 1 }
+        doctorName: { type: ["string", "null"] }
+        location:   { type: ["string", "null"] }
+        scheduledAt: { type: string, format: date-time }
+        notes:      { type: ["string", "null"] }
+
+    AppointmentUpdate:
+      type: object
+      properties:
+        specialty:   { type: string }
+        doctorName:  { type: ["string", "null"] }
+        location:    { type: ["string", "null"] }
+        scheduledAt: { type: string, format: date-time }
+        notes:       { type: ["string", "null"] }
+        status:
+          type: string
+          enum: [scheduled, completed, cancelled, rescheduled]
+
+    # ── HealthMeasurement ────────────────────────────────────────────────────
+    HealthMeasurement:
+      type: object
+      required: [id, patientId, type, measuredAt, createdAt]
+      description: "Registro bruto sem interpretação médica. Sem faixas de referência, sem alertas, sem cores de risco."
+      properties:
+        id:         { type: number }
+        patientId:  { type: number }
+        type:
+          type: string
+          enum: [blood_pressure, blood_glucose, weight, temperature, oxygen_saturation, heart_rate, other]
+        value:      { type: ["string", "null"], description: "Valor bruto como string, ex: 120/80, 98.6, 75.2" }
+        unit:       { type: ["string", "null"], description: "ex: mmHg, mg/dL, kg, °C, %, bpm" }
+        measuredAt: { type: string, format: date-time }
+        notes:      { type: ["string", "null"] }
+        caregiverId: { type: ["number", "null"] }
+        createdAt:  { type: string, format: date-time }
+
+    HealthMeasurementInput:
+      type: object
+      required: [type, measuredAt]
+      properties:
+        type:
+          type: string
+          enum: [blood_pressure, blood_glucose, weight, temperature, oxygen_saturation, heart_rate, other]
+        value:      { type: ["string", "null"] }
+        unit:       { type: ["string", "null"] }
+        measuredAt: { type: string, format: date-time }
+        notes:      { type: ["string", "null"] }
+        caregiverId: { type: ["number", "null"] }
+
+    # ── Notification ─────────────────────────────────────────────────────────
+    Notification:
+      type: object
+      required: [id, familyId, type, title, createdAt]
+      properties:
+        id:          { type: number }
+        familyId:    { type: number }
+        patientId:   { type: ["number", "null"] }
+        caregiverId: { type: ["number", "null"] }
+        type:
+          type: string
+          enum: [dose_reminder, dose_late, appointment_reminder, low_stock, system]
+        title:       { type: string }
+        body:        { type: ["string", "null"] }
+        sentAt:      { type: ["string", "null"], format: date-time }
+        deliveredAt: { type: ["string", "null"], format: date-time }
+        ackedAt:     { type: ["string", "null"], format: date-time, description: "quando o usuário tocou na notificação" }
+        escalationLevel: { type: number, description: "0=primeiro envio; 1=15min; 2=30min; 3=60min" }
+        createdAt:   { type: string, format: date-time }
+
+    # ── AuditLogEntry ─────────────────────────────────────────────────────────
+    AuditLogEntry:
+      type: object
+      required: [id, familyId, entityType, entityId, action, actorId, actorType, createdAt]
+      description: "Imutável. Nunca pode ser editado nem apagado."
+      properties:
+        id:          { type: number }
+        familyId:    { type: number }
+        entityType:  { type: string }
+        entityId:    { type: string }
+        action:      { type: string, enum: [created, updated, deleted, accessed] }
+        actorId:     { type: ["string", "null"] }
+        actorType:   { type: string, enum: [caregiver, system] }
+        diff:        { type: ["string", "null"], description: "JSON das mudanças (campos não sensíveis)" }
+        ipAddress:   { type: ["string", "null"] }
+        userAgent:   { type: ["string", "null"] }
+        createdAt:   { type: string, format: date-time }
+
+    # ── Subscription ─────────────────────────────────────────────────────────
+    Subscription:
+      type: object
+      required: [id, familyId, plan, status, createdAt]
+      properties:
+        id:        { type: number }
+        familyId:  { type: number }
+        plan:      { type: string, enum: [free, basic, premium] }
+        status:    { type: string, enum: [active, trialing, past_due, cancelled] }
+        expiresAt: { type: ["string", "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+
+    # ── Dashboard ─────────────────────────────────────────────────────────────
+    FamilyDashboard:
+      type: object
+      required: [familyId, patientCount, caregiverCount, pendingDosesToday, takenDosesToday, lateDoses]
+      properties:
+        familyId:         { type: number }
+        patientCount:     { type: number }
+        caregiverCount:   { type: number }
+        pendingDosesToday: { type: number }
+        takenDosesToday:  { type: number }
+        lateDoses:        { type: number }
+        upcomingAppointments: { type: number }
+        lowStockItems:    { type: number }
+
+    TodayDoseSummary:
+      type: object
+      required: [date, patientTimezone, totalDoses, takenDoses, pendingDoses, lateDoses, doses]
+      properties:
+        date:            { type: string, format: date }
+        patientTimezone: { type: string }
+        totalDoses:      { type: number }
+        takenDoses:      { type: number }
+        pendingDoses:    { type: number }
+        lateDoses:       { type: number }
+        doses:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScheduledDose"
+
+    AdherenceStats:
+      type: object
+      required: [patientId, periodDays, totalScheduled, totalTaken, totalSkipped, totalLate, adherenceRate]
+      properties:
+        patientId:      { type: number }
+        periodDays:     { type: number }
+        totalScheduled: { type: number }
+        totalTaken:     { type: number }
+        totalSkipped:   { type: number }
+        totalLate:      { type: number }
+        adherenceRate:  { type: number, description: "0.0 a 1.0" }
+
+    # ── Design Tokens ─────────────────────────────────────────────────────────
+    DesignTokens:
+      type: object
+      required: [colors, typography, spacing]
+      description: "Sistema de design ZELO — referência interna"
+      properties:
+        colors:
+          type: object
+          properties:
+            zeloCalmGreen:   { type: string }
+            zeloAmber:       { type: string }
+            zeloBackground:  { type: string }
+            zeloSurface:     { type: string }
+            zeloText:        { type: string }
+            zeloTextMuted:   { type: string }
+        typography:
+          type: object
+          properties:
+            baseSize:       { type: string }
+            bodySize:       { type: string }
+            headingFont:    { type: string }
+            bodyFont:       { type: string }
+        spacing:
+          type: object
+          properties:
+            touchTarget:    { type: string, description: "mínimo 48px para usuários com presbiopia" }
+            sectionGap:     { type: string }

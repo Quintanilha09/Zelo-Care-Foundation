@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "ZELO"
+description = "ZELO é um app de cuidado compartilhado em português do Brasil. Acompanha remédios, consultas e rotinas de um idoso e mostra para a família inteira que foi feito. Progressive Web App instalável, multi-tenant com isolamento por família, modelo de dados completo para gestão de cuidado."
+version = "1.0.0"
+id = "artifacts/zelo"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 22427
+
+[services.development]
+run = "pnpm --filter @workspace/zelo run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/zelo", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/zelo/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "22427"
+BASE_PATH = "/"
