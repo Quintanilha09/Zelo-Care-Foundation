@@ -172,12 +172,36 @@ router.post("/auth/register", registerLimiter, async (req, res): Promise<void> =
     tokenHash: verifyHash,
     expiresAt: new Date(Clock.now().getTime() + 24 * 60 * 60 * 1000), // 24h
   });
-  await sendVerificationEmail(body.data.email, verifyRaw);
+
+  if (process.env.NODE_ENV !== "production") {
+    // ── DEV ONLY: auto-verificação imediata ──────────────────────────────
+    // Em produção este bloco não existe — o usuário DEVE clicar no link de e-mail.
+    // Em desenvolvimento não há provedor de e-mail real, então a conta é ativada
+    // aqui mesmo e o token é exibido no console para uso manual se necessário.
+    await db.transaction(async (tx) => {
+      await tx.update(emailVerificationsTable)
+        .set({ used: true, usedAt: Clock.now() })
+        .where(eq(emailVerificationsTable.userId, userId));
+      await tx.update(usersTable)
+        .set({ emailVerified: true, status: "active" })
+        .where(eq(usersTable.id, userId));
+    });
+    safeLog.info(
+      { action: "dev_auto_verify", userId, familyId },
+      `[DEV] Conta auto-verificada — token (caso queira testar o fluxo manual): ${verifyRaw}`,
+    );
+  } else {
+    // ── PRODUÇÃO: envio real de e-mail ───────────────────────────────────
+    await sendVerificationEmail(body.data.email, verifyRaw);
+  }
 
   safeLog.info({ action: "register", userId, familyId, caregiverId }, "Novo usuário cadastrado");
   await audit({ familyId, entityType: "user", entityId: String(userId), action: "created", actorType: "system", ipAddress: ip });
 
-  res.status(201).json({ message: "Conta criada. Verifique seu e-mail para ativar a conta." });
+  const devMessage = process.env.NODE_ENV !== "production"
+    ? " Conta ativada automaticamente — faça login agora."
+    : " Verifique seu e-mail para ativar a conta.";
+  res.status(201).json({ message: `Conta criada.${devMessage}` });
 });
 
 // ── VERIFICAÇÃO DE E-MAIL ─────────────────────────────────────────────────
@@ -235,6 +259,12 @@ router.post("/auth/login", loginByIpLimiter, loginByEmailLimiter, async (req, re
     .from(usersTable)
     .where(eq(usersTable.email, body.data.email.toLowerCase()))
     .limit(1);
+
+  // Conta criada via Google OAuth não tem senha — bloqueia antes de chamar verifyPassword
+  if (user?.passwordHash === "!") {
+    res.status(401).json({ error: "Esta conta usa login com Google. Clique em 'Entrar com Google'." });
+    return;
+  }
 
   // Timing-safe: mesmo que o usuário não exista, executa o verify para evitar timing attack
   const dummyHash = "$argon2id$v=19$m=65536,t=3,p=1$dummysalt1234567$dummyhash123456789012345678901234";

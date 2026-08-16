@@ -1,6 +1,7 @@
 import { Router } from "express";
 import healthRouter from "./health";
 import authRouter from "./auth";
+import googleAuthRouter from "./google-auth";
 import consentRouter from "./consent";
 import invitesRouter from "./invites";
 import accountRouter from "./account";
@@ -19,6 +20,7 @@ const router = Router();
 // Sem autenticação
 router.use(healthRouter);
 router.use(authRouter);
+router.use(googleAuthRouter);
 router.use(consentRouter);
 
 // Com autenticação (requireAuth em cada rota)

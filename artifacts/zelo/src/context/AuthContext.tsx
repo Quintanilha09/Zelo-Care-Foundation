@@ -56,14 +56,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // Ao montar: tenta restaurar sessão via refresh token
+  // Ao montar: tenta restaurar sessão — inclui troca de oauth_code do Google
   useEffect(() => {
     const init = async () => {
       setIsLoading(true);
-      if (getStoredRefreshToken()) {
+
+      // Verifica se o Google redirecionou de volta com um login code
+      const params = new URLSearchParams(window.location.search);
+      const oauthCode = params.get("oauth_code");
+
+      if (oauthCode) {
+        // Remove o code da URL imediatamente (não fica no histórico do navegador)
+        window.history.replaceState({}, "", window.location.pathname);
+        try {
+          const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+          const res = await fetch(`${BASE}/api/auth/google/exchange`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ code: oauthCode }),
+          });
+          if (res.ok) {
+            const tokens = await res.json() as { accessToken: string; refreshToken: string; expiresIn: number };
+            setTokens(tokens);
+            await loadMe();
+          }
+        } catch { /* sem tokens — usuário verá a tela de login normalmente */ }
+      } else if (getStoredRefreshToken()) {
         const ok = await refreshSession();
         if (ok) await loadMe();
       }
+
       setIsLoading(false);
     };
     void init();
