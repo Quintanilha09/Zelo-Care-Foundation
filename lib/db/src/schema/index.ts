@@ -11,3 +11,12 @@ export * from "./health-measurements";
 export * from "./notifications";
 export * from "./audit-log";
 export * from "./subscriptions";
+// fase de fundação — tabelas criadas agora, lógica vem depois
+export * from "./users";
+export * from "./sessions";
+export * from "./refresh-tokens";
+export * from "./consent-records";
+export * from "./caregiver-invites";
+export * from "./subscription-plans";
+export * from "./push-subscriptions";
+export * from "./alert-escalations";

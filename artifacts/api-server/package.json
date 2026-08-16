@@ -9,8 +9,9 @@
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --experimental-strip-types --test src/tests/clock.test.ts src/tests/safe-logger.test.ts",
-    "test:all": "tsx --test src/tests/clock.test.ts src/tests/safe-logger.test.ts src/tests/integrity.test.ts",
-    "seed": "tsx src/seed.ts"
+    "test:all": "tsx --test src/tests/clock.test.ts src/tests/safe-logger.test.ts src/tests/integrity.test.ts src/tests/audit-immutability.test.ts src/tests/dev-clock-routes.test.ts src/tests/seed-idempotency.test.ts",
+    "seed": "tsx src/seed.ts",
+    "lint:clock": "bash scripts/check-clock-usage.sh"
   },
   "dependencies": {
     "@workspace/api-zod": "workspace:*",
