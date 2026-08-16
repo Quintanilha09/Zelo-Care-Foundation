@@ -57,10 +57,13 @@ export function revokeAllAccessTokensForUser(userId: number): void {
 export function isAccessTokenRevoked(payload: AccessTokenPayload): boolean {
   if (revokedJtis.has(payload.jti)) return true;
   const logoutAtSec = userLogoutAt.get(payload.userId);
-  // Usa < (não <=): tokens emitidos NO MESMO SEGUNDO que o logout-all
-  // ainda são válidos — JWT iat tem resolução de 1s, não dá pra distinguir
-  // "emitido antes ou depois" dentro do mesmo segundo.
-  if (logoutAtSec !== undefined && payload.iat < logoutAtSec) return true;
+  // Usa <= (não <): JWT iat tem resolução de 1 segundo, então um token
+  // emitido no MESMO segundo que a revogação é indistinguível de "emitido
+  // antes". Quando essa ambiguidade existe, erramos para o lado seguro —
+  // trata como revogado. O custo é raro (força um re-login legítimo que por
+  // coincidência caiu no mesmo segundo); o benefício é que revogar cuidador
+  // (Fase 03) tem efeito realmente imediato, sem essa janela de 1s de escape.
+  if (logoutAtSec !== undefined && payload.iat <= logoutAtSec) return true;
   return false;
 }
 

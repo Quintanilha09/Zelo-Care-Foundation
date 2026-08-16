@@ -107,43 +107,65 @@ function api(token: string, method: string, path: string, body?: unknown) {
 
 describe("Consentimento LGPD — ZELO", () => {
 
-  it("sem consentimento de dados de saúde, criar paciente retorna 403 com código MISSING_HEALTH_CONSENT", async () => {
+  // A partir da Fase 03, o consentimento de dados de saúde é POR PACIENTE,
+  // capturado inline na própria requisição de criação — não é mais um estado
+  // prévio da conta que a rota consulta. Cada paciente tem seu próprio
+  // registro, com quem consentiu (o próprio titular ou um representante legal).
+
+  it("criar paciente sem healthConsent no corpo retorna 400 (validação)", async () => {
     const res = await api(userWithoutConsent.token, "POST", "/patients", {
       name: "Paciente Sem Consent", timezone: "America/Sao_Paulo",
     });
-    assert.equal(res.status, 403, "deve bloquear criação sem consentimento de saúde");
-    const body = res.body as { code?: string };
-    assert.equal(body.code, "MISSING_HEALTH_CONSENT", "deve retornar código específico");
+    assert.equal(res.status, 400, "deve rejeitar por falta de healthConsent");
   });
 
-  it("com consentimento de dados de saúde, criar paciente retorna 201", async () => {
+  it("com healthConsent no corpo, criar paciente retorna 201 e grava consent_records vinculado a ele", async () => {
     const res = await api(userWithConsent.token, "POST", "/patients", {
-      name: "Paciente Com Consent", timezone: "America/Sao_Paulo",
+      name: "Paciente Com Consent",
+      timezone: "America/Sao_Paulo",
+      healthConsent: { givenBy: "self", version: "v1.0" },
     });
-    assert.equal(res.status, 201, "deve permitir criar paciente com consentimento");
+    assert.equal(res.status, 201, "deve permitir criar paciente com consentimento inline");
     const body = res.body as { id: number; familyId: number };
     assert.equal(body.familyId, userWithConsent.familyId);
-    // Limpa
-    await db.delete(patientsTable).where(eq(patientsTable.id, body.id));
-  });
 
-  it("consentimento registrado contém userId, versão, IP e timestamp", async () => {
-    const records = await db
+    const [record] = await db
       .select()
       .from(consentRecordsTable)
       .where(
         and(
-          eq(consentRecordsTable.userId, userWithConsent.userId),
+          eq(consentRecordsTable.patientId, body.id),
           eq(consentRecordsTable.consentType, "health_data_processing")
         )
       );
-    assert.ok(records.length >= 1, "deve ter pelo menos um registro de consentimento de saúde");
-    const record = records[0];
+    assert.ok(record, "deve existir consentimento vinculado a este paciente especificamente");
+    assert.equal(record.givenBy, "self");
     assert.equal(record.consentGiven, "true");
     assert.equal(record.version, "v1.0");
     assert.ok(record.ipAddress, "deve ter ipAddress");
     assert.ok(record.createdAt, "deve ter createdAt");
     assert.ok(!("updatedAt" in record), "consentimento não tem updatedAt (imutável)");
+
+    // Limpa
+    await db.delete(patientsTable).where(eq(patientsTable.id, body.id));
+  });
+
+  it("consentimento como representante legal é registrado corretamente", async () => {
+    const res = await api(userWithConsent.token, "POST", "/patients", {
+      name: "Paciente Representado",
+      timezone: "America/Sao_Paulo",
+      healthConsent: { givenBy: "legal_representative", version: "v1.0" },
+    });
+    assert.equal(res.status, 201);
+    const body = res.body as { id: number };
+
+    const [record] = await db
+      .select({ givenBy: consentRecordsTable.givenBy })
+      .from(consentRecordsTable)
+      .where(eq(consentRecordsTable.patientId, body.id));
+    assert.equal(record.givenBy, "legal_representative");
+
+    await db.delete(patientsTable).where(eq(patientsTable.id, body.id));
   });
 
   it("dois tipos de consentimento são separados e independentes", async () => {

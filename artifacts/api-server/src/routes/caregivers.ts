@@ -6,18 +6,33 @@ import { getAuth } from "../lib/auth-types.ts";
 import { Router } from "express";
 import { eq, and } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { caregiversTable } from "@workspace/db";
+import { caregiversTable, pushSubscriptionsTable } from "@workspace/db";
 import { z } from "zod";
 import { requireAuth, requirePrimaryCaregiver } from "../middleware/require-auth";
 import { audit } from "../lib/audit";
 import { Clock } from "../lib/clock";
+import { countPrimaryCaregivers } from "../lib/capabilities";
+import { revokeAllAccessTokensForUser } from "../lib/tokens";
+import { safeLog } from "../lib/safe-logger";
 
 const router = Router();
 
+// Permite promover para primary_caregiver (sempre seguro — nunca reduz o
+// número de principais) mas a proteção contra REBAIXAR o último principal
+// acontece na rota, não aqui no schema.
 const UpdateCaregiverBody = z.object({
   name: z.string().min(2).max(100).optional(),
-  role: z.enum(["caregiver", "hired_caregiver", "observer"]).optional(),
+  role: z.enum(["primary_caregiver", "caregiver", "hired_caregiver", "observer"]).optional(),
 });
+
+/** Revoga sessão ativa e push do usuário — reaproveitado por PATCH (rebaixar) e DELETE. */
+async function revokeCaregiverAccess(userId: number | null, familyId: number): Promise<void> {
+  if (userId === null) return; // cuidador sem conta vinculada (pré-convite) — nada a revogar
+  revokeAllAccessTokensForUser(userId);
+  await db
+    .delete(pushSubscriptionsTable)
+    .where(and(eq(pushSubscriptionsTable.userId, userId), eq(pushSubscriptionsTable.familyId, familyId)));
+}
 
 router.get("/caregivers", requireAuth, async (req, res): Promise<void> => {
   const caregivers = await db
@@ -50,12 +65,28 @@ router.patch("/caregivers/:caregiverId", requirePrimaryCaregiver, async (req, re
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
 
   const [before] = await db
-    .select({ role: caregiversTable.role })
+    .select({ role: caregiversTable.role, userId: caregiversTable.userId })
     .from(caregiversTable)
     .where(and(eq(caregiversTable.id, caregiverId), eq(caregiversTable.familyId, getAuth(req).familyId)))
     .limit(1);
 
   if (!before) { res.status(404).json({ error: "Cuidador não encontrado" }); return; }
+
+  const roleChanging = body.data.role !== undefined && body.data.role !== before.role;
+  const isDemotionFromPrimary = roleChanging && before.role === "primary_caregiver";
+
+  if (isDemotionFromPrimary) {
+    // Sempre existe ao menos 1 cuidador principal por família — contado de
+    // verdade, não como efeito colateral de "não pode remover a si mesmo".
+    const remaining = await countPrimaryCaregivers(getAuth(req).familyId, caregiverId);
+    if (remaining === 0) {
+      res.status(400).json({
+        error: "Não é possível rebaixar o último cuidador principal da família",
+        code: "LAST_PRIMARY_CAREGIVER",
+      });
+      return;
+    }
+  }
 
   const [updated] = await db
     .update(caregiversTable)
@@ -63,7 +94,12 @@ router.patch("/caregivers/:caregiverId", requirePrimaryCaregiver, async (req, re
     .where(and(eq(caregiversTable.id, caregiverId), eq(caregiversTable.familyId, getAuth(req).familyId)))
     .returning();
 
-  if (body.data.role && body.data.role !== before.role) {
+  if (roleChanging) {
+    // Token de acesso já emitido carrega o papel antigo por até 15 minutos —
+    // revoga para forçar reautenticação com o papel novo na hora.
+    await revokeCaregiverAccess(before.userId, getAuth(req).familyId);
+
+    safeLog.info({ action: "role_changed", entityType: "caregiver", familyId: getAuth(req).familyId }, "Papel de cuidador alterado");
     await audit({
       familyId: getAuth(req).familyId,
       entityType: "caregiver",
@@ -88,12 +124,36 @@ router.delete("/caregivers/:caregiverId", requirePrimaryCaregiver, async (req, r
     return;
   }
 
+  const [target] = await db
+    .select({ role: caregiversTable.role, userId: caregiversTable.userId })
+    .from(caregiversTable)
+    .where(and(eq(caregiversTable.id, caregiverId), eq(caregiversTable.familyId, getAuth(req).familyId)))
+    .limit(1);
+
+  if (!target) { res.status(404).json({ error: "Cuidador não encontrado" }); return; }
+
+  if (target.role === "primary_caregiver") {
+    const remaining = await countPrimaryCaregivers(getAuth(req).familyId, caregiverId);
+    if (remaining === 0) {
+      res.status(400).json({
+        error: "Não é possível remover o último cuidador principal da família",
+        code: "LAST_PRIMARY_CAREGIVER",
+      });
+      return;
+    }
+  }
+
   const [deleted] = await db
     .delete(caregiversTable)
     .where(and(eq(caregiversTable.id, caregiverId), eq(caregiversTable.familyId, getAuth(req).familyId)))
     .returning({ id: caregiversTable.id });
 
   if (!deleted) { res.status(404).json({ error: "Cuidador não encontrado" }); return; }
+
+  // Revogação com efeito imediato: sessão ativa e push somem na hora,
+  // não só na próxima expiração natural do token.
+  await revokeCaregiverAccess(target.userId, getAuth(req).familyId);
+  safeLog.info({ action: "revoked", entityType: "caregiver", familyId: getAuth(req).familyId }, "Cuidador revogado");
 
   await audit({
     familyId: getAuth(req).familyId,

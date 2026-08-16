@@ -240,9 +240,12 @@ describe("Isolamento entre famílias — ZELO", () => {
 
   it("POST /patients — família A cria paciente para si mesma (não para B)", async () => {
     // Testar que POST usa o familyId do token, não de outra família
-    const res = await api(tokenA, "POST", "/patients", { name: "Paciente Novo A", timezone: "America/Sao_Paulo" });
-    // Aceita 201 (criou para família A) ou 403 (sem consent) — nunca cria para B
-    assert.ok(res.status === 201 || res.status === 403, `esperava 201 ou 403, recebeu ${res.status}`);
+    const res = await api(tokenA, "POST", "/patients", {
+      name: "Paciente Novo A",
+      timezone: "America/Sao_Paulo",
+      healthConsent: { givenBy: "self", version: "v1.0" },
+    });
+    assert.equal(res.status, 201, `esperava 201, recebeu ${res.status}`);
     if (res.status === 201) {
       const created = res.body as { familyId: number; id: number };
       assert.equal(created.familyId, familyAId, "paciente criado deve pertencer à família A");

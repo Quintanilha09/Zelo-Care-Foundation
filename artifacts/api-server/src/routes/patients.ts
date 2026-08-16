@@ -16,11 +16,18 @@ import { Clock } from "../lib/clock";
 
 const router = Router();
 
+// O consentimento de dado de saúde é POR PACIENTE, não da conta — o titular
+// pode ser diferente a cada paciente cadastrado (o próprio idoso, ou um filho
+// consentindo como representante legal quando ele não decide mais sozinho).
 const CreatePatientBody = z.object({
   name: z.string().min(1).max(200),
   birthDate: z.string().optional().nullable(),
   timezone: z.string().default("America/Sao_Paulo"),
   notes: z.string().optional().nullable(),
+  healthConsent: z.object({
+    givenBy: z.enum(["self", "legal_representative"]),
+    version: z.string().min(1),
+  }),
 });
 
 const UpdatePatientBody = z.object({
@@ -31,12 +38,19 @@ const UpdatePatientBody = z.object({
 });
 
 // ── Listar pacientes ──────────────────────────────────────────────────────
+// Por padrão só mostra ativos; ?archived=true lista os arquivados.
 
 router.get("/patients", requireAuth, async (req, res): Promise<void> => {
+  const showArchived = req.query.archived === "true";
   const patients = await db
     .select()
     .from(patientsTable)
-    .where(eq(patientsTable.familyId, getAuth(req).familyId))
+    .where(
+      and(
+        eq(patientsTable.familyId, getAuth(req).familyId),
+        eq(patientsTable.archived, showArchived)
+      )
+    )
     .orderBy(patientsTable.name);
   res.json(patients);
 });
@@ -50,31 +64,30 @@ router.post("/patients", requireAuth, async (req, res): Promise<void> => {
     return;
   }
 
-  // LGPD: exige consentimento de dados de saúde antes de cadastrar paciente
-  const [consent] = await db
-    .select({ id: consentRecordsTable.id })
-    .from(consentRecordsTable)
-    .where(
-      and(
-        eq(consentRecordsTable.userId, getAuth(req).userId),
-        eq(consentRecordsTable.consentType, "health_data_processing"),
-        eq(consentRecordsTable.consentGiven, "true")
-      )
-    )
-    .limit(1);
+  const { healthConsent, ...patientData } = body.data;
 
-  if (!consent) {
-    res.status(403).json({
-      error: "Consentimento para tratamento de dados de saúde é necessário antes de cadastrar paciente",
-      code: "MISSING_HEALTH_CONSENT",
+  const [patient] = await db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(patientsTable)
+      .values({ ...patientData, familyId: getAuth(req).familyId })
+      .returning();
+
+    // Consentimento de dado de saúde específico deste paciente — sempre um
+    // INSERT novo, nunca reaproveita consentimento de outro paciente ou da
+    // conta. É isso que torna o consentimento auditável por titular.
+    await tx.insert(consentRecordsTable).values({
+      userId: getAuth(req).userId,
+      patientId: created.id,
+      givenBy: healthConsent.givenBy,
+      consentType: "health_data_processing",
+      consentGiven: "true",
+      version: healthConsent.version,
+      ipAddress: req.ip ?? "unknown",
+      userAgent: req.get("user-agent") ?? undefined,
     });
-    return;
-  }
 
-  const [patient] = await db
-    .insert(patientsTable)
-    .values({ ...body.data, familyId: getAuth(req).familyId })
-    .returning();
+    return [created];
+  });
 
   safeLog.info({ action: "created", entityType: "patient", familyId: patient.familyId }, "Paciente criado");
   await audit({
@@ -88,6 +101,40 @@ router.post("/patients", requireAuth, async (req, res): Promise<void> => {
   });
 
   res.status(201).json(patient);
+});
+
+// ── Arquivar / reativar paciente ────────────────────────────────────────────
+// Arquivar suspende doses futuras sem apagar nada. Exclusão de verdade é
+// outro fluxo (LGPD, export-deletion) — este endpoint nunca faz DELETE.
+
+const ArchivePatientBody = z.object({ archived: z.boolean() });
+
+router.post("/patients/:patientId/archive", requireAuth, async (req, res): Promise<void> => {
+  const patientId = Number(req.params.patientId);
+  if (isNaN(patientId)) { res.status(400).json({ error: "ID inválido" }); return; }
+
+  const body = ArchivePatientBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  const [updated] = await db
+    .update(patientsTable)
+    .set({ archived: body.data.archived, updatedAt: Clock.now() })
+    .where(and(eq(patientsTable.id, patientId), eq(patientsTable.familyId, getAuth(req).familyId)))
+    .returning();
+
+  if (!updated) { res.status(404).json({ error: "Paciente não encontrado" }); return; }
+
+  await audit({
+    familyId: getAuth(req).familyId,
+    entityType: "patient",
+    entityId: String(patientId),
+    action: "updated",
+    actorId: String(getAuth(req).caregiverId),
+    actorType: "caregiver",
+    diff: JSON.stringify({ archived: body.data.archived }),
+  });
+
+  res.json(updated);
 });
 
 // ── Ler paciente ──────────────────────────────────────────────────────────

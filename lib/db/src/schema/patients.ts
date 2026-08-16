@@ -5,6 +5,7 @@ import {
   integer,
   timestamp,
   date,
+  boolean,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
@@ -21,6 +22,9 @@ export const patientsTable = pgTable("patients", {
   birthDate: date("birth_date", { mode: "string" }),
   timezone: text("timezone").notNull(), // ex: "America/Sao_Paulo"
   notes: text("notes"),
+  // Arquivar suspende doses futuras sem apagar histórico. Nunca DELETE aqui —
+  // exclusão de verdade é o fluxo de LGPD (export-deletion), não este campo.
+  archived: boolean("archived").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
