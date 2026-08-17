@@ -18,7 +18,8 @@ import {
 } from "@workspace/db";
 import { generateAccessToken } from "../lib/tokens.ts";
 import { hashPassword } from "../lib/password.ts";
-import { generateDosesForTreatment } from "../lib/dose-generation.ts";
+import { generateDosesForTreatment, extendActiveTreatmentWindows, reconcileDoseQueue } from "../lib/dose-generation.ts";
+import { boss, QUEUE_DOSE_SCHEDULED } from "../lib/queue.ts";
 import { Clock } from "../lib/clock.ts";
 import app from "../app.ts";
 
@@ -99,6 +100,7 @@ before(async () => {
 after(async () => {
   Clock.reset();
   await closeServer();
+  await boss.stop({ graceful: false });
   await db.delete(familiesTable).where(eq(familiesTable.id, familyId));
 });
 
@@ -198,6 +200,85 @@ describe("Geração de dose ao criar tratamento", () => {
 
     const after = await db.select().from(scheduledDosesTable).where(eq(scheduledDosesTable.treatmentId, treatmentId));
     assert.equal(after.length, 0, "pausar deve cancelar todas as doses futuras pendentes");
+
+    await db.delete(treatmentsTable).where(eq(treatmentsTable.id, treatmentId));
+  });
+});
+
+describe("Fila de jobs (pg-boss) — ZELO-18", () => {
+  it("criar tratamento enfileira um evento DoseScheduled por dose nova, na mesma transação", async () => {
+    const createRes = await api("POST", `/patients/${patientId}/treatments`, {
+      medicationId,
+      scheduleConfig: { scheduleType: "times_per_day", times: ["08:00"] },
+      startDate: Clock.todayInTimezone("America/Sao_Paulo"),
+    });
+    const { id: treatmentId } = createRes.body as { id: number };
+
+    const doses = await db.select().from(scheduledDosesTable).where(eq(scheduledDosesTable.treatmentId, treatmentId));
+    assert.ok(doses.length > 0);
+
+    const jobs = await boss.findJobs(QUEUE_DOSE_SCHEDULED, { data: { treatmentId } });
+    assert.equal(jobs.length, doses.length, "deve existir exatamente 1 job DoseScheduled por dose criada");
+
+    await db.delete(treatmentsTable).where(eq(treatmentsTable.id, treatmentId));
+  });
+
+  it("time-travel: adiantar 15 dias e rodar o job de manutenção estende a janela sozinha", async () => {
+    const createRes = await api("POST", `/patients/${patientId}/treatments`, {
+      medicationId,
+      scheduleConfig: { scheduleType: "times_per_day", times: ["08:00"] },
+      startDate: Clock.todayInTimezone("America/Sao_Paulo"),
+    });
+    const { id: treatmentId } = createRes.body as { id: number };
+
+    const before = await db.select().from(scheduledDosesTable).where(eq(scheduledDosesTable.treatmentId, treatmentId));
+    const maxBefore = Math.max(...before.map((d) => d.scheduledAt.getTime()));
+
+    // Simula 15 dias passando sem nenhuma edição do tratamento — sem o job
+    // diário, a janela de 14 dias original teria secado.
+    Clock.advance(15 * 86_400_000);
+    await extendActiveTreatmentWindows();
+
+    const after = await db.select().from(scheduledDosesTable).where(eq(scheduledDosesTable.treatmentId, treatmentId));
+    const maxAfter = Math.max(...after.map((d) => d.scheduledAt.getTime()));
+
+    assert.ok(after.length > before.length, "deveriam existir doses novas depois do job de manutenção");
+    assert.ok(maxAfter > maxBefore, "a janela deveria ter avançado para além do que existia antes");
+
+    Clock.reset();
+    await db.delete(treatmentsTable).where(eq(treatmentsTable.id, treatmentId));
+  });
+
+  it("reconcileDoseQueue recria o evento de uma dose pendente cujo job sumiu da fila", async () => {
+    const createRes = await api("POST", `/patients/${patientId}/treatments`, {
+      medicationId,
+      scheduleConfig: { scheduleType: "times_per_day", times: ["08:00"] },
+      startDate: Clock.todayInTimezone("America/Sao_Paulo"),
+    });
+    const { id: treatmentId } = createRes.body as { id: number };
+
+    const [dose] = await db
+      .select()
+      .from(scheduledDosesTable)
+      .where(eq(scheduledDosesTable.treatmentId, treatmentId))
+      .orderBy(scheduledDosesTable.scheduledAt)
+      .limit(1);
+
+    const before = await boss.findJobs(QUEUE_DOSE_SCHEDULED, { data: { scheduledDoseId: dose.id } });
+    assert.equal(before.length, 1);
+
+    // Simula o job tendo sumido da fila (ex: expirado, apagado manualmente)
+    // sem que a dose em si tenha sido tocada — é exatamente o cenário que a
+    // reconciliação existe para consertar.
+    await boss.deleteJob(QUEUE_DOSE_SCHEDULED, before[0].id);
+    const afterDelete = await boss.findJobs(QUEUE_DOSE_SCHEDULED, { data: { scheduledDoseId: dose.id } });
+    assert.equal(afterDelete.length, 0, "job deveria ter sumido de propósito, para o teste");
+
+    const resent = await reconcileDoseQueue();
+    assert.ok(resent >= 1, "reconciliação deveria ter reenviado pelo menos o evento da dose sem job");
+
+    const afterReconcile = await boss.findJobs(QUEUE_DOSE_SCHEDULED, { data: { scheduledDoseId: dose.id } });
+    assert.equal(afterReconcile.length, 1, "job deveria ter sido recriado pela reconciliação");
 
     await db.delete(treatmentsTable).where(eq(treatmentsTable.id, treatmentId));
   });

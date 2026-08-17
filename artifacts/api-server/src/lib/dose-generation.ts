@@ -7,24 +7,34 @@
  * constraint UNIQUE(treatment_id, scheduled_at) no banco (Fase 01). Rodar
  * esta função várias vezes para o mesmo tratamento nunca duplica dose.
  *
- * LIMITAÇÃO CONHECIDA: a janela só é gerada na criação/edição do tratamento,
- * ainda não existe o job diário que estende a janela conforme o tempo passa
- * (isso é a parte do pg-boss desta história, que fica pra próxima rodada).
- * Um tratamento contínuo antigo, sem edição, vai ficar sem dose nova depois
- * de 14 dias até esse job existir.
+ * A inserção das doses e o envio do evento DoseScheduled (fila pg-boss)
+ * acontecem NA MESMA TRANSAÇÃO Postgres (via fromDrizzle) — dose e job
+ * não podem divergir: se o processo cai no meio, o commit nunca acontece
+ * e nenhum dos dois existe. Isso elimina a classe de bug "dose existe mas
+ * job sumiu" que a história pedia.
+ *
+ * A janela rolante de 14 dias é estendida por extendActiveTreatmentWindows,
+ * chamada pelo job diário registrado em lib/queue.ts. Funciona porque
+ * generateDosesForTreatment já calcula a janela a partir de Clock.now() —
+ * chamar de novo mais tarde naturalmente cobre os dias seguintes, sem
+ * lógica extra de "extensão".
  */
 import { and, eq, gte } from "drizzle-orm";
+import { sql } from "drizzle-orm";
+import { fromDrizzle } from "pg-boss";
 import { db } from "@workspace/db";
 import { treatmentsTable, patientsTable, scheduledDosesTable } from "@workspace/db";
 import { expandSchedule } from "@workspace/scheduling";
 import type { ScheduleConfig } from "@workspace/scheduling";
 import { Clock } from "./clock.ts";
+import { boss, QUEUE_DOSE_SCHEDULED, ensureQueueStarted } from "./queue.ts";
 
 export const DOSE_WINDOW_DAYS = 14;
 
 /**
  * Gera e persiste as doses dos próximos DOSE_WINDOW_DAYS dias para um
  * tratamento. Idempotente: pode ser chamada quantas vezes for preciso.
+ * Emite um evento DoseScheduled por dose nova (não por dose já existente).
  */
 export async function generateDosesForTreatment(treatmentId: number): Promise<number> {
   const [row] = await db
@@ -55,23 +65,92 @@ export async function generateDosesForTreatment(treatmentId: number): Promise<nu
 
   if (dates.length === 0) return 0;
 
-  const inserted = await db
-    .insert(scheduledDosesTable)
-    .values(
-      dates.map((scheduledAt) => ({
-        treatmentId,
-        patientId: row.treatment.patientId,
-        scheduledAt,
-        dose: row.treatment.dose,
-      }))
-    )
-    // A constraint UNIQUE(treatment_id, scheduled_at) do banco é quem garante
-    // idempotência de verdade — isto aqui só evita o erro 23505 subir até o
-    // chamador quando a dose já existe.
-    .onConflictDoNothing()
-    .returning({ id: scheduledDosesTable.id });
+  await ensureQueueStarted();
 
-  return inserted.length;
+  return db.transaction(async (tx) => {
+    const inserted = await tx
+      .insert(scheduledDosesTable)
+      .values(
+        dates.map((scheduledAt) => ({
+          treatmentId,
+          patientId: row.treatment.patientId,
+          scheduledAt,
+          dose: row.treatment.dose,
+        }))
+      )
+      // A constraint UNIQUE(treatment_id, scheduled_at) do banco é quem garante
+      // idempotência de verdade — isto aqui só evita o erro 23505 subir até o
+      // chamador quando a dose já existe.
+      .onConflictDoNothing()
+      .returning({ id: scheduledDosesTable.id, scheduledAt: scheduledDosesTable.scheduledAt });
+
+    if (inserted.length > 0) {
+      await boss.insert(
+        QUEUE_DOSE_SCHEDULED,
+        inserted.map((d) => ({
+          data: { scheduledDoseId: d.id, treatmentId, patientId: row.treatment.patientId, scheduledAt: d.scheduledAt.toISOString() },
+          singletonKey: `dose-${d.id}`,
+        })),
+        { db: fromDrizzle(tx, sql) }
+      );
+    }
+
+    return inserted.length;
+  });
+}
+
+/**
+ * Job diário (chamado pelo worker registrado em lib/queue.ts): estende a
+ * janela rolante de todo tratamento ativo. Não precisa de lógica própria de
+ * "extensão" — chamar generateDosesForTreatment de novo, mais tarde, já
+ * cobre os dias seguintes porque a janela é calculada a partir de
+ * Clock.now() no momento da chamada.
+ */
+export async function extendActiveTreatmentWindows(): Promise<{ treatmentId: number; created: number }[]> {
+  const activeTreatments = await db
+    .select({ id: treatmentsTable.id })
+    .from(treatmentsTable)
+    .where(eq(treatmentsTable.status, "active"));
+
+  const results: { treatmentId: number; created: number }[] = [];
+  for (const t of activeTreatments) {
+    const created = await generateDosesForTreatment(t.id);
+    results.push({ treatmentId: t.id, created });
+  }
+  return results;
+}
+
+/**
+ * Rede de segurança: para toda dose pendente futura, garante que existe um
+ * job DoseScheduled correspondente na fila, reenviando o que faltar.
+ * Chamada uma vez ao subir o processo (index.ts). Segura de rodar quantas
+ * vezes for preciso — a policy "exclusive" da fila (lib/queue.ts) rejeita
+ * silenciosamente o reenvio quando já existe job ativo ou na fila para o
+ * mesmo singletonKey (`dose-${id}`), então isto nunca duplica evento.
+ */
+export async function reconcileDoseQueue(): Promise<number> {
+  await ensureQueueStarted();
+
+  const pendingFutureDoses = await db
+    .select({
+      id: scheduledDosesTable.id,
+      treatmentId: scheduledDosesTable.treatmentId,
+      patientId: scheduledDosesTable.patientId,
+      scheduledAt: scheduledDosesTable.scheduledAt,
+    })
+    .from(scheduledDosesTable)
+    .where(and(eq(scheduledDosesTable.status, "pending"), gte(scheduledDosesTable.scheduledAt, Clock.now())));
+
+  let resent = 0;
+  for (const d of pendingFutureDoses) {
+    const id = await boss.send(
+      QUEUE_DOSE_SCHEDULED,
+      { scheduledDoseId: d.id, treatmentId: d.treatmentId, patientId: d.patientId, scheduledAt: d.scheduledAt.toISOString() },
+      { singletonKey: `dose-${d.id}` }
+    );
+    if (id !== null) resent += 1;
+  }
+  return resent;
 }
 
 /**

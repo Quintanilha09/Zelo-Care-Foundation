@@ -1,5 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { startQueue, stopQueue } from "./lib/queue";
+import { extendActiveTreatmentWindows, reconcileDoseQueue } from "./lib/dose-generation";
 
 const rawPort = process.env["PORT"];
 
@@ -15,7 +17,20 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-app.listen(port, (err) => {
+await startQueue({
+  extendWindows: async () => {
+    await extendActiveTreatmentWindows();
+  },
+});
+
+// Rede de segurança contra crash no meio de uma geração de dose anterior:
+// garante que toda dose pendente futura tem um job DoseScheduled correspondente.
+const reconciled = await reconcileDoseQueue();
+if (reconciled > 0) {
+  logger.warn({ reconciled }, "Reconciliação da fila de doses reenviou eventos faltando");
+}
+
+const server = app.listen(port, (err) => {
   if (err) {
     logger.error({ err }, "Error listening on port");
     process.exit(1);
@@ -23,3 +38,11 @@ app.listen(port, (err) => {
 
   logger.info({ port }, "Server listening");
 });
+
+for (const signal of ["SIGTERM", "SIGINT"] as const) {
+  process.on(signal, () => {
+    server.close(() => {
+      void stopQueue().finally(() => process.exit(0));
+    });
+  });
+}

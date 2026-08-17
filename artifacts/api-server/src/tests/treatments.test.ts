@@ -14,6 +14,7 @@ import { db } from "@workspace/db";
 import { usersTable, caregiversTable, familiesTable, patientsTable, medicationsTable, treatmentsTable } from "@workspace/db";
 import { generateAccessToken } from "../lib/tokens.ts";
 import { hashPassword } from "../lib/password.ts";
+import { boss } from "../lib/queue.ts";
 import app from "../app.ts";
 
 let testPort: number;
@@ -92,6 +93,9 @@ before(async () => {
 
 after(async () => {
   await closeServer();
+  // Criar tratamento aciona geração de dose, que sobe o pg-boss (lib/queue.ts)
+  // sob demanda — precisa ser parado ou o processo do teste não encerra.
+  await boss.stop({ graceful: false });
   await db.delete(familiesTable).where(eq(familiesTable.id, familyId));
 });
 
