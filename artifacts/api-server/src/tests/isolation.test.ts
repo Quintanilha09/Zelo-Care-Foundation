@@ -20,7 +20,7 @@ import { db } from "@workspace/db";
 import {
   usersTable, caregiversTable, familiesTable, patientsTable,
   treatmentsTable, scheduledDosesTable, medicationsTable,
-  notificationsTable, consentRecordsTable,
+  notificationsTable, consentRecordsTable, photoExtractionsTable,
 } from "@workspace/db";
 import { generateAccessToken } from "../lib/tokens.ts";
 import { hashPassword } from "../lib/password.ts";
@@ -67,6 +67,9 @@ const PROTECTED_ROUTES = new Set([
   "POST /patients/:id/treatments/preview",
   "GET /treatments/:id",
   "PATCH /treatments/:id",
+  "POST /medication-photos/extract",
+  "POST /medication-photos/:id/confirm",
+  "POST /medication-photos/:id/discard",
 ]);
 
 // Conjunto preenchido pelos testes — o meta-test verifica cobertura total
@@ -469,6 +472,44 @@ describe("Isolamento entre famílias — ZELO", () => {
 
   it("PATCH /treatments/:id — família A não edita tratamento de B", async () => {
     await assertIsolated("PATCH /treatments/:id", "PATCH", `/treatments/${treatmentBId}`, { dose: "hackeado" });
+  });
+
+  it("POST /medication-photos/extract — cria extração para a família do token (ZELO-21)", async (t) => {
+    covered("POST /medication-photos/extract");
+    if (!process.env.ANTHROPIC_API_KEY) {
+      t.skip("ANTHROPIC_API_KEY não configurada neste ambiente — testado de verdade em medication-photos.test.ts onde a chave existir");
+      return;
+    }
+  });
+
+  it("POST /medication-photos/:id/confirm — família A não confirma extração de B", async () => {
+    const [extraction] = await db
+      .insert(photoExtractionsTable)
+      .values({
+        familyId: familyBId, uploadedByCaregiverId: caregiverBId,
+        photoData: "ZmFrZQ==", mimeType: "image/jpeg", sizeBytes: 5,
+        extractedFields: { name: null, concentration: null, form: null, posologyText: null },
+        confidence: { name: 0, concentration: 0, form: 0, posologyText: 0 },
+      })
+      .returning();
+    await assertIsolated("POST /medication-photos/:id/confirm", "POST", `/medication-photos/${extraction.id}/confirm`, {
+      confirmedFields: { name: "hackeado", concentration: null, form: null, posologyText: null },
+    });
+    await db.delete(photoExtractionsTable).where(eq(photoExtractionsTable.id, extraction.id));
+  });
+
+  it("POST /medication-photos/:id/discard — família A não descarta extração de B", async () => {
+    const [extraction] = await db
+      .insert(photoExtractionsTable)
+      .values({
+        familyId: familyBId, uploadedByCaregiverId: caregiverBId,
+        photoData: "ZmFrZQ==", mimeType: "image/jpeg", sizeBytes: 5,
+        extractedFields: { name: null, concentration: null, form: null, posologyText: null },
+        confidence: { name: 0, concentration: 0, form: 0, posologyText: 0 },
+      })
+      .returning();
+    await assertIsolated("POST /medication-photos/:id/discard", "POST", `/medication-photos/${extraction.id}/discard`);
+    await db.delete(photoExtractionsTable).where(eq(photoExtractionsTable.id, extraction.id));
   });
 
   // ── META-TEST: verifica cobertura total de isolamento ─────────────────

@@ -15,7 +15,22 @@ import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select";
 import { authFetch } from "@/lib/auth-client";
-import { X, Plus, CalendarCheck } from "lucide-react";
+import { X, Plus, CalendarCheck, Camera, AlertTriangle } from "lucide-react";
+
+// Abaixo disso, o campo pré-preenchido pela foto some — a spec é clara:
+// nunca preencher chute silenciosamente, confiança baixa força o cuidador
+// a digitar (o campo fica vazio e destacado, não errado e escondido).
+const CONFIDENCE_THRESHOLD = 0.6;
+
+interface ExtractedFields {
+  name: string | null;
+  concentration: string | null;
+  form: string | null;
+  posologyText: string | null;
+}
+interface ExtractionConfidence {
+  name: number; concentration: number; form: number; posologyText: number;
+}
 
 type ScheduleType = "times_per_day" | "every_n_hours" | "specific_weekdays" | "alternate_days" | "cycle_with_pause";
 
@@ -83,6 +98,16 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  // Cadastro por foto (ZELO-21) — sempre opcional e aditivo: os campos
+  // manuais acima continuam disponíveis e funcionam sozinhos, com ou sem foto.
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
+  const [photoExtractionId, setPhotoExtractionId] = useState<number | null>(null);
+  const [photoExtracting, setPhotoExtracting] = useState(false);
+  const [photoError, setPhotoError] = useState("");
+  const [lowConfidenceFields, setLowConfidenceFields] = useState<Set<string>>(new Set());
+  const [posologyHint, setPosologyHint] = useState<string | null>(null);
+  const [retainPhoto, setRetainPhoto] = useState(false);
+
   function buildScheduleConfig() {
     switch (scheduleType) {
       case "times_per_day":
@@ -97,6 +122,66 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
         return { scheduleType, onDays, offDays, times };
     }
   }
+
+  const handlePhotoSelect = async (file: File) => {
+    setPhotoError("");
+    setPhotoPreviewUrl(URL.createObjectURL(file));
+    setPhotoExtracting(true);
+    setLowConfidenceFields(new Set());
+    setPosologyHint(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("photo", file);
+      const res = await authFetch("/api/medication-photos/extract", { method: "POST", body: formData });
+
+      if (!res.ok) {
+        // Foto ilegível ou falha de API: mensagem calma, formulário manual
+        // continua do jeito que já estava — nada do que foi digitado se perde.
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        setPhotoError(data.error ?? "Não conseguimos ler essa foto. Pode preencher manualmente.");
+        setPhotoExtracting(false);
+        return;
+      }
+
+      const data = (await res.json()) as { extractionId: number; fields: ExtractedFields; confidence: ExtractionConfidence };
+      setPhotoExtractionId(data.extractionId);
+
+      const lowConf = new Set<string>();
+      if (data.confidence.name >= CONFIDENCE_THRESHOLD && data.fields.name) {
+        setMedicationName(data.fields.name);
+      } else if (data.fields.name || data.confidence.name < CONFIDENCE_THRESHOLD) {
+        lowConf.add("name");
+      }
+
+      const doseParts = [data.confidence.concentration >= CONFIDENCE_THRESHOLD ? data.fields.concentration : null,
+        data.confidence.form >= CONFIDENCE_THRESHOLD ? data.fields.form : null].filter(Boolean);
+      if (doseParts.length > 0) setDose(doseParts.join(" "));
+      if (data.confidence.concentration < CONFIDENCE_THRESHOLD) lowConf.add("concentration");
+      if (data.confidence.form < CONFIDENCE_THRESHOLD) lowConf.add("form");
+
+      setLowConfidenceFields(lowConf);
+      // Posologia da foto é só um texto de apoio — nunca mapeada sozinha pro
+      // padrão estruturado abaixo; o cuidador escolhe o padrão certo com base nela.
+      if (data.fields.posologyText) setPosologyHint(data.fields.posologyText);
+    } catch {
+      setPhotoError("Não conseguimos ler essa foto. Pode preencher manualmente.");
+    } finally {
+      setPhotoExtracting(false);
+    }
+  };
+
+  const handleRemovePhoto = () => {
+    if (photoExtractionId) {
+      void authFetch(`/api/medication-photos/${photoExtractionId}/discard`, { method: "POST" });
+    }
+    setPhotoPreviewUrl(null);
+    setPhotoExtractionId(null);
+    setPhotoError("");
+    setLowConfidenceFields(new Set());
+    setPosologyHint(null);
+    setRetainPhoto(false);
+  };
 
   const handlePreview = async () => {
     setPreviewLoading(true);
@@ -148,6 +233,19 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
         const data = (await res.json()) as { error?: string };
         throw new Error(data.error ?? "Erro ao cadastrar tratamento");
       }
+
+      // Registra o que o cuidador de fato manteve/corrigiu — só pra calibrar
+      // a taxa de acerto por campo depois. Nunca cria nada por si só.
+      if (photoExtractionId) {
+        void authFetch(`/api/medication-photos/${photoExtractionId}/confirm`, {
+          method: "POST",
+          body: JSON.stringify({
+            confirmedFields: { name: medicationName.trim(), concentration: null, form: null, posologyText: posologyHint },
+            retainPhoto,
+          }),
+        });
+      }
+
       onCreated();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro");
@@ -158,14 +256,65 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
+      <div className="rounded-lg border border-dashed p-4 space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <Label htmlFor="tf-photo" className="flex items-center gap-2 cursor-pointer text-[15px] font-medium">
+            <Camera className="w-4 h-4" /> Cadastrar por foto da caixa ou da receita (opcional)
+          </Label>
+          <input
+            id="tf-photo"
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) void handlePhotoSelect(f); e.target.value = ""; }}
+          />
+          {!photoPreviewUrl && (
+            <Button type="button" variant="outline" size="sm" onClick={() => document.getElementById("tf-photo")?.click()}>
+              Escolher foto
+            </Button>
+          )}
+        </div>
+
+        {photoPreviewUrl && (
+          <div className="flex items-start gap-3">
+            <img src={photoPreviewUrl} alt="Foto do medicamento" className="w-24 h-24 object-cover rounded-lg border shrink-0" />
+            <div className="flex-1 space-y-2">
+              {photoExtracting && <p className="text-sm text-muted-foreground">Lendo a foto…</p>}
+              {!photoExtracting && posologyHint && (
+                <p className="text-sm text-muted-foreground">Texto da receita: <span className="italic">"{posologyHint}"</span></p>
+              )}
+              <Button type="button" variant="ghost" size="sm" className="gap-1 h-auto p-0 text-muted-foreground" onClick={handleRemovePhoto}>
+                <X className="w-3.5 h-3.5" /> Remover foto / prefiro digitar
+              </Button>
+              {!photoExtracting && photoExtractionId && (
+                <label className="flex items-center gap-1.5 cursor-pointer text-sm">
+                  <Checkbox checked={retainPhoto} onCheckedChange={(c) => setRetainPhoto(c === true)} />
+                  Guardar esta foto (por padrão, ela é descartada depois de salvar)
+                </label>
+              )}
+            </div>
+          </div>
+        )}
+
+        {photoError && (
+          <p className="text-sm text-zelo-amber-fg flex items-center gap-1"><AlertTriangle className="w-3.5 h-3.5" /> {photoError}</p>
+        )}
+      </div>
+
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2 col-span-2">
           <Label htmlFor="tf-med">Medicamento</Label>
           <Input id="tf-med" value={medicationName} onChange={(e) => setMedicationName(e.target.value)} required autoFocus />
+          {lowConfidenceFields.has("name") && (
+            <p className="text-xs text-zelo-amber-fg flex items-center gap-1"><AlertTriangle className="w-3.5 h-3.5" /> Não deu pra ler isso na foto com confiança — confira e preencha.</p>
+          )}
         </div>
         <div className="space-y-2 col-span-2">
           <Label htmlFor="tf-dose">Dose (texto livre — "1 comprimido", "5ml"…)</Label>
           <Input id="tf-dose" value={dose} onChange={(e) => setDose(e.target.value)} placeholder="1 comprimido" />
+          {(lowConfidenceFields.has("concentration") || lowConfidenceFields.has("form")) && (
+            <p className="text-xs text-zelo-amber-fg flex items-center gap-1"><AlertTriangle className="w-3.5 h-3.5" /> Não deu pra ler isso na foto com confiança — confira e preencha.</p>
+          )}
         </div>
       </div>
 

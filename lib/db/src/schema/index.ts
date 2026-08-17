@@ -3,6 +3,7 @@ export * from "./patients";
 export * from "./caregivers";
 export * from "./medications";
 export * from "./treatments";
+export * from "./photo-extractions";
 export * from "./scheduled-doses";
 export * from "./dose-records";
 export * from "./stock";

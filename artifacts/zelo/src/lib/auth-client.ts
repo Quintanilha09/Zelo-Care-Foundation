@@ -88,10 +88,15 @@ export async function authFetch(
     }
   }
 
+  // FormData (upload de arquivo) precisa que o navegador defina o
+  // Content-Type sozinho, com o boundary certo — nunca fixar "application/json"
+  // nesse caso, ou o multipart quebra.
+  const isFormData = init.body instanceof FormData;
+
   return fetch(`${BASE}${path}`, {
     ...init,
     headers: {
-      "Content-Type": "application/json",
+      ...(isFormData ? {} : { "Content-Type": "application/json" }),
       Authorization: `Bearer ${_accessToken}`,
       ...(init.headers ?? {}),
     },
