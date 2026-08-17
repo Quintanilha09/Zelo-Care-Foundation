@@ -20,7 +20,7 @@ import { db } from "@workspace/db";
 import {
   usersTable, caregiversTable, familiesTable, patientsTable,
   treatmentsTable, scheduledDosesTable, medicationsTable,
-  notificationsTable, consentRecordsTable, photoExtractionsTable,
+  notificationsTable, consentRecordsTable, photoExtractionsTable, doseRecordsTable,
 } from "@workspace/db";
 import { generateAccessToken } from "../lib/tokens.ts";
 import { hashPassword } from "../lib/password.ts";
@@ -37,6 +37,7 @@ const PROTECTED_ROUTES = new Set([
   "PATCH /patients/:id",
   "GET /patients/:id/dose-records",
   "POST /patients/:id/dose-records",
+  "POST /patients/:id/dose-records/:recordId/undo",
   "GET /patients/:id/today-doses",
   "GET /patients/:id/adherence-stats",
   "GET /caregivers",
@@ -288,6 +289,17 @@ describe("Isolamento entre famílias — ZELO", () => {
     await assertIsolated("POST /patients/:id/dose-records", "POST", `/patients/${patientBId}/dose-records`, {
       scheduledDoseId: doseAId, takenAt: new Date().toISOString(), outcome: "taken",
     });
+  });
+
+  it("POST /patients/:id/dose-records/:recordId/undo — família A não desfaz registro de B", async () => {
+    const [scheduledB] = await db.select().from(scheduledDosesTable).where(eq(scheduledDosesTable.patientId, patientBId)).limit(1);
+    const [recordB] = await db.insert(doseRecordsTable).values({
+      scheduledDoseId: scheduledB.id, patientId: patientBId, caregiverId: caregiverBId, takenAt: new Date(), outcome: "taken",
+    }).returning();
+
+    await assertIsolated("POST /patients/:id/dose-records/:recordId/undo", "POST", `/patients/${patientBId}/dose-records/${recordB.id}/undo`);
+
+    await db.delete(doseRecordsTable).where(eq(doseRecordsTable.id, recordB.id));
   });
 
   it("GET /caregivers — família A não vê cuidadores de B em listagem", async () => {

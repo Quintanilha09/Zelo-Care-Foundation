@@ -3,6 +3,7 @@ import { logger } from "./lib/logger";
 import { startQueue, stopQueue } from "./lib/queue";
 import { extendActiveTreatmentWindows, reconcileDoseQueue } from "./lib/dose-generation";
 import { runTreatmentLifecycleJob } from "./lib/treatment-lifecycle";
+import { decrementStockForDoseTaken } from "./lib/stock";
 
 const rawPort = process.env["PORT"];
 
@@ -24,6 +25,9 @@ await startQueue({
   },
   runTreatmentLifecycle: async () => {
     await runTreatmentLifecycleJob();
+  },
+  onDoseTaken: async ({ patientId, medicationId }) => {
+    await decrementStockForDoseTaken(patientId, medicationId);
   },
 });
 

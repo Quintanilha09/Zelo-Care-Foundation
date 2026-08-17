@@ -19,12 +19,16 @@
  * - QUEUE_TREATMENT_LIFECYCLE: job diário (cron) que fecha tratamento
  *   vencido, avisa véspera de fim, e lembra revisão de tratamento contínuo
  *   (ZELO-20). Horário deslocado 5min do de doses só pra não competir à toa.
+ * - QUEUE_DOSE_TAKEN: um evento por dose registrada como tomada (ZELO-23).
+ *   Decrementa estoque sem o módulo de registro de dose conhecer o de
+ *   estoque — só publica o evento, quem decrementa é um worker separado.
  */
 import { PgBoss } from "pg-boss";
 
 export const QUEUE_DOSE_SCHEDULED = "dose-scheduled";
 export const QUEUE_EXTEND_DOSE_WINDOW = "extend-dose-window";
 export const QUEUE_TREATMENT_LIFECYCLE = "treatment-lifecycle";
+export const QUEUE_DOSE_TAKEN = "dose-taken";
 
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL must be set. Did you forget to provision a database?");
@@ -48,6 +52,7 @@ export const boss = new PgBoss({
 export async function ensureQueueStarted(): Promise<void> {
   await boss.start();
   await boss.createQueue(QUEUE_DOSE_SCHEDULED, { policy: "exclusive" });
+  await boss.createQueue(QUEUE_DOSE_TAKEN, { policy: "standard" });
 }
 
 /**
@@ -62,6 +67,7 @@ export async function ensureQueueStarted(): Promise<void> {
 export async function startQueue(handlers: {
   extendWindows: () => Promise<void>;
   runTreatmentLifecycle: () => Promise<void>;
+  onDoseTaken: (data: { patientId: number; medicationId: number }) => Promise<void>;
 }): Promise<void> {
   await ensureQueueStarted();
 
@@ -78,6 +84,11 @@ export async function startQueue(handlers: {
   });
   await boss.work(QUEUE_TREATMENT_LIFECYCLE, async () => {
     await handlers.runTreatmentLifecycle();
+  });
+  await boss.work(QUEUE_DOSE_TAKEN, async (jobs) => {
+    for (const job of jobs) {
+      await handlers.onDoseTaken(job.data as { patientId: number; medicationId: number });
+    }
   });
 }
 

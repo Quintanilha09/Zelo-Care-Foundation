@@ -13,7 +13,7 @@ import { scheduledDosesTable } from "./scheduled-doses";
 import { patientsTable } from "./patients";
 import { caregiversTable } from "./caregivers";
 
-export const doseOutcomeEnum = pgEnum("dose_outcome", ["taken", "skipped"]);
+export const doseOutcomeEnum = pgEnum("dose_outcome", ["taken", "skipped", "postponed"]);
 
 // REGRA DE INTEGRIDADE CRÍTICA #2:
 // É estruturalmente impossível existir mais de um registro de resultado
@@ -37,6 +37,10 @@ export const doseRecordsTable = pgTable(
       .references(() => caregiversTable.id),
     takenAt: timestamp("taken_at", { withTimezone: true }).notNull(),
     outcome: doseOutcomeEnum("outcome").notNull().default("taken"),
+    // Só preenchido quando outcome="postponed" — o novo horário que o
+    // cuidador pediu. Puramente informativo nesta história (sem
+    // reagendamento automático nem notificação — fora de escopo aqui).
+    postponedTo: timestamp("postponed_to", { withTimezone: true }),
     notes: text("notes"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

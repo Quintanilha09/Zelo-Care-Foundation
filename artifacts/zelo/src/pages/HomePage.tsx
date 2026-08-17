@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select";
-import { CheckCircle2, AlertCircle, Package, CalendarClock, WifiOff, Pill, Plus } from "lucide-react";
+import { CheckCircle2, AlertCircle, Package, CalendarClock, WifiOff, Pill, Plus, Undo2 } from "lucide-react";
 
 interface Patient { id: number; name: string; timezone: string; archived: boolean; }
 
@@ -104,6 +104,12 @@ export default function HomePage() {
 
   const currentPatient = activePatients.find((p) => p.id === selectedPatientId);
 
+  // Desfazer fica disponível por 60s depois de UM registro que a própria
+  // requisição venceu — undoableRecordId aponta pra qual dose_record, não
+  // pra dose agendada, já que desfazer é sobre o registro em si.
+  const [undoableRecordId, setUndoableRecordId] = useState<number | null>(null);
+  const [raceMessage, setRaceMessage] = useState<string | null>(null);
+
   const handleSwitchPatient = async (idStr: string) => {
     const id = Number(idStr);
     setSelectedPatientId(id);
@@ -112,11 +118,36 @@ export default function HomePage() {
 
   const handleRegister = async (doseId: number, outcome: "taken" | "skipped") => {
     if (!selectedPatientId) return;
+    setRaceMessage(null);
+    // Otimista: a interface já reage antes da resposta do servidor voltar,
+    // e reconcilia (ou se ajusta com uma mensagem simpática) quando ela chega.
+    queryClient.setQueryData<HomeData | undefined>(["home", selectedPatientId], (prev) =>
+      prev ? { ...prev, doses: prev.doses.map((d) => (d.id === doseId ? { ...d, status: outcome } : d)) } : prev
+    );
+
     const res = await authFetch(`/api/patients/${selectedPatientId}/dose-records`, {
       method: "POST",
       body: JSON.stringify({ scheduledDoseId: doseId, takenAt: new Date().toISOString(), outcome }),
     });
-    if (res.ok) void queryClient.invalidateQueries({ queryKey: ["home", selectedPatientId] });
+    const body = (await res.json().catch(() => null)) as { id: number; wonRace: boolean; message?: string } | null;
+    void queryClient.invalidateQueries({ queryKey: ["home", selectedPatientId] });
+
+    if (res.ok && body?.wonRace) {
+      setUndoableRecordId(body.id);
+      setTimeout(() => setUndoableRecordId((cur) => (cur === body.id ? null : cur)), 60_000);
+    } else if (res.ok && body && !body.wonRace) {
+      // Outro cuidador venceu a corrida — ajusta com mensagem simpática, não erro.
+      setRaceMessage(body.message ?? "Essa dose já foi registrada por outra pessoa.");
+    }
+  };
+
+  const handleUndo = async () => {
+    if (!selectedPatientId || !undoableRecordId) return;
+    const res = await authFetch(`/api/patients/${selectedPatientId}/dose-records/${undoableRecordId}/undo`, { method: "POST" });
+    if (res.ok) {
+      setUndoableRecordId(null);
+      void queryClient.invalidateQueries({ queryKey: ["home", selectedPatientId] });
+    }
   };
 
   const now = Date.now();
@@ -162,6 +193,13 @@ export default function HomePage() {
             <p className="text-foreground font-medium">Nenhum paciente ainda</p>
             <p className="text-muted-foreground text-sm mt-1 mb-4">Cadastre a primeira pessoa que você cuida.</p>
             <Link href="/pacientes"><Button className="gap-2"><Plus className="w-4 h-4" /> Cadastrar paciente</Button></Link>
+          </div>
+        )}
+
+        {raceMessage && (
+          <div className="flex items-center justify-between gap-2 text-sm bg-muted rounded-lg px-3 py-2">
+            <span>{raceMessage}</span>
+            <Button variant="ghost" size="sm" onClick={() => setRaceMessage(null)}>OK</Button>
           </div>
         )}
 
@@ -229,7 +267,14 @@ export default function HomePage() {
 
             {jaFoi.length > 0 && (
               <div className="space-y-2">
-                <h3 className="text-sm font-medium text-muted-foreground">Já foi</h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-medium text-muted-foreground">Já foi</h3>
+                  {!isObserver && undoableRecordId && (
+                    <Button variant="ghost" size="sm" className="gap-1 h-auto py-1" onClick={() => void handleUndo()}>
+                      <Undo2 className="w-3.5 h-3.5" /> Desfazer
+                    </Button>
+                  )}
+                </div>
                 {jaFoi.map((d) => (
                   <div key={d.id} className="flex items-center justify-between px-4 py-3 rounded-lg border bg-zelo-green-bg/40 text-[15px]">
                     <span>✓ {d.medicationName} {d.scheduledLocalTime}</span>
