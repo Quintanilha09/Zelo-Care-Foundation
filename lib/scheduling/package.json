@@ -1,0 +1,19 @@
+{
+  "name": "@workspace/scheduling",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test src/recurrence.test.ts"
+  },
+  "dependencies": {
+    "luxon": "catalog:"
+  },
+  "devDependencies": {
+    "@types/luxon": "catalog:",
+    "@types/node": "catalog:"
+  }
+}
