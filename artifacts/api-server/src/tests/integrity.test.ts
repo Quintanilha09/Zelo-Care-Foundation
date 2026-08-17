@@ -92,7 +92,7 @@ describe("Integridade #1 — Dose agendada duplicada é impossível no banco", (
   it("insere a primeira dose agendada com sucesso", async () => {
     const [dose] = await db
       .insert(scheduledDosesTable)
-      .values({ treatmentId, patientId, scheduledAt })
+      .values({ treatmentId, patientId, scheduledAt, scheduledLocalDate: "2025-06-15", scheduledLocalTime: "08:00" })
       .returning();
     scheduledDoseId = dose.id;
     assert.ok(dose.id > 0, "Primeira dose deve ser inserida com sucesso");
@@ -100,7 +100,7 @@ describe("Integridade #1 — Dose agendada duplicada é impossível no banco", (
 
   it("rejeita segunda dose idêntica (mesmo treatment, mesmo horário) com erro de constraint", async () => {
     await assert.rejects(
-      () => db.insert(scheduledDosesTable).values({ treatmentId, patientId, scheduledAt }).returning(),
+      () => db.insert(scheduledDosesTable).values({ treatmentId, patientId, scheduledAt, scheduledLocalDate: "2025-06-15", scheduledLocalTime: "08:00" }).returning(),
       (err: unknown) => {
         // Drizzle pode envolver o erro pg — verificar em err ou em err.cause
         const e = err as { code?: string; message?: string; cause?: { code?: string; message?: string } };
@@ -120,7 +120,7 @@ describe("Integridade #1 — Dose agendada duplicada é impossível no banco", (
     const differentTime = new Date("2025-06-15T20:00:00.000Z");
     const [dose] = await db
       .insert(scheduledDosesTable)
-      .values({ treatmentId, patientId, scheduledAt: differentTime })
+      .values({ treatmentId, patientId, scheduledAt: differentTime, scheduledLocalDate: "2025-06-15", scheduledLocalTime: "20:00" })
       .returning();
     assert.ok(dose.id > 0, "Dose com horário diferente deve ser permitida");
     await db.delete(scheduledDosesTable).where(eq(scheduledDosesTable.id, dose.id));

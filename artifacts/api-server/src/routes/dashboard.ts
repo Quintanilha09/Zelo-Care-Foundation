@@ -9,6 +9,7 @@ import { db } from "@workspace/db";
 import { patientsTable, caregiversTable, scheduledDosesTable, appointmentsTable, stockEntriesTable } from "@workspace/db";
 import { requireAuth } from "../middleware/require-auth";
 import { Clock } from "../lib/clock";
+import { localDayBoundsUtc } from "@workspace/scheduling";
 
 const router = Router();
 
@@ -81,8 +82,10 @@ router.get("/patients/:patientId/today-doses", requireAuth, async (req, res): Pr
   if (!patient) { res.status(404).json({ error: "Paciente não encontrado" }); return; }
 
   const todayInPatientTz = Clock.todayInTimezone(patient.timezone);
-  const todayStart = new Date(`${todayInPatientTz}T00:00:00`);
-  const todayEnd = new Date(`${todayInPatientTz}T23:59:59`);
+  // ZELO-19: nunca `new Date(`${data}T00:00:00`)` — sem offset, isso é
+  // interpretado no fuso do PROCESSO, não no do paciente. localDayBoundsUtc
+  // delimita o dia civil corretamente, independente do TZ do servidor.
+  const { start: todayStart, end: todayEnd } = localDayBoundsUtc(todayInPatientTz, patient.timezone);
 
   const doses = await db
     .select()

@@ -18,13 +18,20 @@
  * generateDosesForTreatment já calcula a janela a partir de Clock.now() —
  * chamar de novo mais tarde naturalmente cobre os dias seguintes, sem
  * lógica extra de "extensão".
+ *
+ * ZELO-19: cada dose guarda scheduledLocalDate/scheduledLocalTime (fuso do
+ * paciente) ao lado de scheduledAt (UTC) — ver lib/scheduling/src/timezone.ts.
+ * Se o fuso do paciente mudar, quem chama este módulo é a rota de paciente
+ * (routes/patients.ts): limpa as pendentes futuras e gera de novo, o que
+ * naturalmente reinterpreta o mesmo horário de parede (ex: "8:00") no fuso
+ * novo, porque generateDosesForTreatment sempre lê o fuso atual do paciente.
  */
 import { and, eq, gte } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import { fromDrizzle } from "pg-boss";
 import { db } from "@workspace/db";
 import { treatmentsTable, patientsTable, scheduledDosesTable } from "@workspace/db";
-import { expandSchedule } from "@workspace/scheduling";
+import { expandSchedule, toLocalDateTime } from "@workspace/scheduling";
 import type { ScheduleConfig } from "@workspace/scheduling";
 import { Clock } from "./clock.ts";
 import { boss, QUEUE_DOSE_SCHEDULED, ensureQueueStarted } from "./queue.ts";
@@ -71,12 +78,17 @@ export async function generateDosesForTreatment(treatmentId: number): Promise<nu
     const inserted = await tx
       .insert(scheduledDosesTable)
       .values(
-        dates.map((scheduledAt) => ({
-          treatmentId,
-          patientId: row.treatment.patientId,
-          scheduledAt,
-          dose: row.treatment.dose,
-        }))
+        dates.map((scheduledAt) => {
+          const { localDate, localTime } = toLocalDateTime(scheduledAt, row.patientTimezone);
+          return {
+            treatmentId,
+            patientId: row.treatment.patientId,
+            scheduledAt,
+            scheduledLocalDate: localDate,
+            scheduledLocalTime: localTime,
+            dose: row.treatment.dose,
+          };
+        })
       )
       // A constraint UNIQUE(treatment_id, scheduled_at) do banco é quem garante
       // idempotência de verdade — isto aqui só evita o erro 23505 subir até o

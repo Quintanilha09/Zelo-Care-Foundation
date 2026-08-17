@@ -7,12 +7,13 @@ import { getAuth } from "../lib/auth-types.ts";
 import { Router } from "express";
 import { eq, and } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { patientsTable, consentRecordsTable } from "@workspace/db";
+import { patientsTable, consentRecordsTable, treatmentsTable } from "@workspace/db";
 import { z } from "zod";
 import { requireAuth } from "../middleware/require-auth";
 import { safeLog } from "../lib/safe-logger";
 import { audit } from "../lib/audit";
 import { Clock } from "../lib/clock";
+import { clearFuturePendingDoses, generateDosesForTreatment } from "../lib/dose-generation.ts";
 
 const router = Router();
 
@@ -177,6 +178,13 @@ router.patch("/patients/:patientId", requireAuth, async (req, res): Promise<void
   const body = UpdatePatientBody.safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
 
+  const [before] = await db
+    .select({ timezone: patientsTable.timezone })
+    .from(patientsTable)
+    .where(and(eq(patientsTable.id, patientId), eq(patientsTable.familyId, getAuth(req).familyId)))
+    .limit(1);
+  if (!before) { res.status(404).json({ error: "Paciente não encontrado" }); return; }
+
   const [updated] = await db
     .update(patientsTable)
     .set({ ...body.data, updatedAt: Clock.now() })
@@ -184,6 +192,27 @@ router.patch("/patients/:patientId", requireAuth, async (req, res): Promise<void
     .returning();
 
   if (!updated) { res.status(404).json({ error: "Paciente não encontrado" }); return; }
+
+  // ZELO-19: o fuso mudou — "8:00" continua sendo "8:00", só que agora no
+  // relógio de parede do fuso novo. Regenera as doses futuras AINDA
+  // PENDENTES (nunca as já registradas) de todo tratamento ativo do
+  // paciente, para que reflitam o novo fuso em vez do antigo, já expirado.
+  if (body.data.timezone && body.data.timezone !== before.timezone) {
+    const activeTreatments = await db
+      .select({ id: treatmentsTable.id })
+      .from(treatmentsTable)
+      .where(and(eq(treatmentsTable.patientId, patientId), eq(treatmentsTable.status, "active")));
+
+    for (const t of activeTreatments) {
+      await clearFuturePendingDoses(t.id);
+      await generateDosesForTreatment(t.id);
+    }
+
+    safeLog.info(
+      { action: "timezone_changed", entityType: "patient", familyId: updated.familyId, treatmentsRegenerated: activeTreatments.length },
+      "Fuso do paciente alterado — doses futuras regeneradas"
+    );
+  }
 
   safeLog.info({ action: "updated", entityType: "patient", familyId: updated.familyId }, "Paciente atualizado");
   await audit({

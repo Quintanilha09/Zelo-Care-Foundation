@@ -7,7 +7,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "test": "node --experimental-strip-types --test src/recurrence.test.ts"
+    "test": "node --experimental-strip-types --test src/recurrence.test.ts src/timezone.test.ts"
   },
   "dependencies": {
     "luxon": "catalog:"

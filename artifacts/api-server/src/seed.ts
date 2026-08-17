@@ -123,10 +123,10 @@ async function seed() {
   // ── Doses agendadas para hoje ─────────────────────────────────────────────
   const todayStr = new Date().toISOString().slice(0, 10);
   const doses = [
-    { treatmentId: t1.id, patientId: patient.id, scheduledAt: new Date(`${todayStr}T11:00:00.000Z`), status: "taken" as const },
-    { treatmentId: t2.id, patientId: patient.id, scheduledAt: new Date(`${todayStr}T11:00:00.000Z`), status: "taken" as const },
-    { treatmentId: t2.id, patientId: patient.id, scheduledAt: new Date(`${todayStr}T23:00:00.000Z`), status: "pending" as const },
-    { treatmentId: t3.id, patientId: patient.id, scheduledAt: new Date(`${todayStr}T15:00:00.000Z`), status: "pending" as const },
+    { treatmentId: t1.id, patientId: patient.id, scheduledAt: new Date(`${todayStr}T11:00:00.000Z`), scheduledLocalDate: todayStr, scheduledLocalTime: "08:00", status: "taken" as const },
+    { treatmentId: t2.id, patientId: patient.id, scheduledAt: new Date(`${todayStr}T11:00:00.000Z`), scheduledLocalDate: todayStr, scheduledLocalTime: "08:00", status: "taken" as const },
+    { treatmentId: t2.id, patientId: patient.id, scheduledAt: new Date(`${todayStr}T23:00:00.000Z`), scheduledLocalDate: todayStr, scheduledLocalTime: "20:00", status: "pending" as const },
+    { treatmentId: t3.id, patientId: patient.id, scheduledAt: new Date(`${todayStr}T15:00:00.000Z`), scheduledLocalDate: todayStr, scheduledLocalTime: "12:00", status: "pending" as const },
   ];
   for (const dose of doses) await db.insert(scheduledDosesTable).values(dose);
   console.log(`✓ ${doses.length} doses agendadas (2 tomadas ✓, 2 pendentes ○)`);

@@ -139,7 +139,10 @@ async function setupFamily(label: string, email: string) {
 
   const [dose] = await db
     .insert(scheduledDosesTable)
-    .values({ treatmentId: treatment.id, patientId: patient.id, scheduledAt: new Date(), status: "pending" })
+    .values({
+      treatmentId: treatment.id, patientId: patient.id, scheduledAt: new Date(),
+      scheduledLocalDate: "2025-01-01", scheduledLocalTime: "08:00", status: "pending",
+    })
     .returning();
 
   const [notif] = await db

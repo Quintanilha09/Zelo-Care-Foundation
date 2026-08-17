@@ -66,7 +66,10 @@ async function createCompleteFamily(email: string): Promise<TestFamily> {
       startDate: "2025-01-01",
     })
     .returning();
-  await db.insert(scheduledDosesTable).values({ treatmentId: treatment.id, patientId: patient.id, scheduledAt: new Date(), status: "pending" });
+  await db.insert(scheduledDosesTable).values({
+    treatmentId: treatment.id, patientId: patient.id, scheduledAt: new Date(),
+    scheduledLocalDate: "2025-01-01", scheduledLocalTime: "08:00", status: "pending",
+  });
 
   const token = generateAccessToken(user.id, family.id, caregiver.id, "primary_caregiver");
   return { userId: user.id, familyId: family.id, caregiverId: caregiver.id, patientId: patient.id, token };

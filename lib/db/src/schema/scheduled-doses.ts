@@ -6,6 +6,7 @@ import {
   pgEnum,
   unique,
   text,
+  date,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
@@ -35,6 +36,11 @@ export const scheduledDosesTable = pgTable(
       .notNull()
       .references(() => patientsTable.id, { onDelete: "cascade" }),
     scheduledAt: timestamp("scheduled_at", { withTimezone: true }).notNull(),
+    // Guardado ao lado de scheduledAt (UTC, usado pela fila): a intenção do
+    // usuário ("8:00 no relógio de parede do paciente"), imune a uma futura
+    // mudança de regra de fuso — ver lib/scheduling/src/timezone.ts (ZELO-19).
+    scheduledLocalDate: date("scheduled_local_date", { mode: "string" }).notNull(),
+    scheduledLocalTime: text("scheduled_local_time").notNull(),
     status: scheduledDoseStatusEnum("status").notNull().default("pending"),
     dose: text("dose"), // cópia do treatment.dose no momento do agendamento
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

@@ -1,4 +1,5 @@
 export { expandSchedule } from "./recurrence.ts";
+export { toLocalDateTime, localDayBoundsUtc } from "./timezone.ts";
 export type {
   ScheduleType,
   ScheduleConfig,

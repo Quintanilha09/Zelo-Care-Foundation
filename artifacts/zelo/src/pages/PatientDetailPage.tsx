@@ -32,6 +32,7 @@ interface ScheduledDose {
   id: number;
   treatmentId: number;
   scheduledAt: string;
+  scheduledLocalTime: string;
   status: "pending" | "taken" | "skipped" | "late";
   dose: string | null;
 }
@@ -72,6 +73,13 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
   const { data: todayDoses } = useQuery({ queryKey: ["today-doses", params.id], queryFn: () => fetchTodayDoses(params.id) });
 
   const medicationByTreatment = new Map((treatments ?? []).map((t) => [t.id, { name: t.medicationName, dose: t.dose }]));
+
+  // ZELO-19: o horário exibido vem pronto do servidor (scheduledLocalTime,
+  // já no fuso do paciente) — nunca reconvertido no navegador do cuidador,
+  // que pode estar em outro fuso. Quando os dois fusos divergem, um aviso
+  // discreto deixa claro de quem é aquele "8:00".
+  const caregiverTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const showTzHint = !!patient && caregiverTz !== patient.timezone;
 
   const handleCreated = () => {
     setOpen(false);
@@ -121,7 +129,7 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
             <h3 className="text-sm font-medium text-muted-foreground">Hoje</h3>
             {todayDoses.map((d) => {
               const med = medicationByTreatment.get(d.treatmentId);
-              const time = new Date(d.scheduledAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+              const time = showTzHint ? `${d.scheduledLocalTime} (horário de ${patient!.name})` : d.scheduledLocalTime;
               return (
                 <div key={d.id} className="space-y-2">
                   <DoseCard
