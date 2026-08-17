@@ -22,14 +22,21 @@ import { X, Plus, CalendarCheck, Camera, AlertTriangle } from "lucide-react";
 // a digitar (o campo fica vazio e destacado, não errado e escondido).
 const CONFIDENCE_THRESHOLD = 0.6;
 
+interface ScheduleGuess {
+  type: "times_per_day" | "every_n_hours" | null;
+  intervalHours: number | null;
+  timesPerDay: number | null;
+  durationDays: number | null;
+}
 interface ExtractedFields {
   name: string | null;
   concentration: string | null;
   form: string | null;
   posologyText: string | null;
+  scheduleGuess: ScheduleGuess;
 }
 interface ExtractionConfidence {
-  name: number; concentration: number; form: number; posologyText: number;
+  name: number; concentration: number; form: number; posologyText: number; scheduleGuess: number;
 }
 
 type ScheduleType = "times_per_day" | "every_n_hours" | "specific_weekdays" | "alternate_days" | "cycle_with_pause";
@@ -41,6 +48,26 @@ const SCHEDULE_LABELS: Record<ScheduleType, string> = {
   alternate_days: "Dias alternados",
   cycle_with_pause: "Ciclo com pausa",
 };
+
+// Só usado quando a foto diz "N vezes ao dia" sem os horários exatos do
+// relógio (a receita raramente diz isso) — um ponto de partida razoável e
+// facilmente ajustável, nunca uma dose ou intervalo inventado.
+const DEFAULT_TIMES_BY_COUNT: Record<number, string[]> = {
+  1: ["08:00"], 2: ["08:00", "20:00"], 3: ["08:00", "14:00", "20:00"], 4: ["06:00", "12:00", "18:00", "00:00"],
+};
+function defaultTimesForCount(n: number): string[] {
+  if (DEFAULT_TIMES_BY_COUNT[n]) return DEFAULT_TIMES_BY_COUNT[n];
+  const stepMin = (24 * 60) / n;
+  return Array.from({ length: n }, (_, i) => {
+    const total = Math.round((8 * 60 + i * stepMin) % (24 * 60));
+    return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+  });
+}
+function addDaysToDate(dateISO: string, days: number): string {
+  const d = new Date(`${dateISO}T00:00:00`);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
 
 const WEEKDAYS = [
   { value: 0, label: "Dom" }, { value: 1, label: "Seg" }, { value: 2, label: "Ter" },
@@ -107,6 +134,7 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
   const [lowConfidenceFields, setLowConfidenceFields] = useState<Set<string>>(new Set());
   const [posologyHint, setPosologyHint] = useState<string | null>(null);
   const [retainPhoto, setRetainPhoto] = useState(false);
+  const [scheduleGuessApplied, setScheduleGuessApplied] = useState(false);
 
   function buildScheduleConfig() {
     switch (scheduleType) {
@@ -161,9 +189,26 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
       if (data.confidence.form < CONFIDENCE_THRESHOLD) lowConf.add("form");
 
       setLowConfidenceFields(lowConf);
-      // Posologia da foto é só um texto de apoio — nunca mapeada sozinha pro
-      // padrão estruturado abaixo; o cuidador escolhe o padrão certo com base nela.
       if (data.fields.posologyText) setPosologyHint(data.fields.posologyText);
+
+      // Quando a receita ESCREVE o intervalo/frequência/duração, isso já é
+      // extração — pré-seleciona o padrão certo pra poupar o cuidador de
+      // calcular horário na mão. Confiança baixa (ou nada escrito) deixa os
+      // padrões manuais de sempre intactos, sem chute.
+      const guess = data.fields.scheduleGuess;
+      if (data.confidence.scheduleGuess >= CONFIDENCE_THRESHOLD && guess?.type) {
+        if (guess.type === "every_n_hours" && guess.intervalHours) {
+          setScheduleType("every_n_hours");
+          setIntervalHours(guess.intervalHours);
+        } else if (guess.type === "times_per_day" && guess.timesPerDay) {
+          setScheduleType("times_per_day");
+          setTimes(defaultTimesForCount(guess.timesPerDay));
+        }
+        if (guess.durationDays) {
+          setEndDate(addDaysToDate(startDate, guess.durationDays - 1));
+        }
+        setScheduleGuessApplied(true);
+      }
     } catch {
       setPhotoError("Não conseguimos ler essa foto. Pode preencher manualmente.");
     } finally {
@@ -181,6 +226,7 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
     setLowConfidenceFields(new Set());
     setPosologyHint(null);
     setRetainPhoto(false);
+    setScheduleGuessApplied(false);
   };
 
   const handlePreview = async () => {
@@ -240,7 +286,15 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
         void authFetch(`/api/medication-photos/${photoExtractionId}/confirm`, {
           method: "POST",
           body: JSON.stringify({
-            confirmedFields: { name: medicationName.trim(), concentration: null, form: null, posologyText: posologyHint },
+            confirmedFields: {
+              name: medicationName.trim(), concentration: null, form: null, posologyText: posologyHint,
+              scheduleType,
+              intervalHours: scheduleType === "every_n_hours" ? intervalHours : null,
+              timesPerDay: scheduleType === "times_per_day" ? times.length : null,
+              durationDays: endDate
+                ? Math.round((new Date(`${endDate}T00:00:00`).getTime() - new Date(`${startDate}T00:00:00`).getTime()) / 86_400_000) + 1
+                : null,
+            },
             retainPhoto,
           }),
         });
@@ -320,7 +374,10 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
 
       <div className="space-y-2">
         <Label>Padrão de posologia</Label>
-        <Select value={scheduleType} onValueChange={(v) => { setScheduleType(v as ScheduleType); setPreview(null); }}>
+        {scheduleGuessApplied && (
+          <p className="text-xs text-zelo-green-fg">Preenchido a partir da receita — confira antes de salvar.</p>
+        )}
+        <Select value={scheduleType} onValueChange={(v) => { setScheduleType(v as ScheduleType); setPreview(null); setScheduleGuessApplied(false); }}>
           <SelectTrigger><SelectValue /></SelectTrigger>
           <SelectContent>
             {Object.entries(SCHEDULE_LABELS).map(([value, label]) => (

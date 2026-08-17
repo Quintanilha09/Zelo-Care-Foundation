@@ -7,6 +7,13 @@
  * incompleta, nunca opina sobre o medicamento. Isto é OCR assistido, não
  * uma recomendação clínica.
  *
+ * scheduleGuess é a exceção deliberada à regra "nunca mapear posologia pra
+ * estrutura": quando a receita ESCREVE explicitamente "de 8 em 8 horas" ou
+ * "por 7 dias", isso já é extração — o modelo só está lendo um número que
+ * está lá, não inventando um. O que continua proibido é completar uma
+ * posologia que NÃO diz o intervalo/duração — nesse caso scheduleGuess.type
+ * fica null, e o formulário continua com os padrões manuais de sempre.
+ *
  * Usa tool-use forçado (tool_choice) em vez de pedir "responda em JSON" em
  * texto livre — é o jeito confiável de garantir a forma exata da resposta,
  * sem depender do modelo formatar prosa corretamente.
@@ -15,12 +22,25 @@ import Anthropic from "@anthropic-ai/sdk";
 
 const VISION_MODEL = "claude-haiku-4-5-20251001";
 
+export type ScheduleGuessType = "times_per_day" | "every_n_hours" | null;
+
+export interface ScheduleGuess {
+  type: ScheduleGuessType;
+  /** Só para type "every_n_hours" — ex: "de 8 em 8 horas" -> 8. */
+  intervalHours: number | null;
+  /** Só para type "times_per_day" — ex: "2 vezes ao dia" -> 2. A receita raramente diz o horário exato do relógio, só a contagem. */
+  timesPerDay: number | null;
+  /** Duração do tratamento em dias, se escrita (ex: "por 7 dias" -> 7). Usada para calcular a data de fim a partir do início escolhido pelo cuidador. */
+  durationDays: number | null;
+}
+
 export interface ExtractedMedicationFields {
   name: string | null;
   concentration: string | null;
   form: string | null;
-  /** Posologia como está impressa/legível, texto livre — nunca mapeada para um scheduleConfig estruturado. */
+  /** Posologia como está impressa/legível, texto livre — sempre mostrada ao cuidador como apoio, além do scheduleGuess estruturado. */
   posologyText: string | null;
+  scheduleGuess: ScheduleGuess;
 }
 
 export interface ExtractionConfidence {
@@ -28,6 +48,8 @@ export interface ExtractionConfidence {
   concentration: number;
   form: number;
   posologyText: number;
+  /** Confiança do bundle inteiro de scheduleGuess (type + intervalHours/timesPerDay + durationDays juntos). */
+  scheduleGuess: number;
 }
 
 export interface ExtractionResult {
@@ -49,23 +71,40 @@ const EXTRACTION_TOOL: Anthropic.Tool = {
         type: ["string", "null"],
         description: "Posologia exatamente como impressa ou escrita na receita (ex: '1 comprimido de 8 em 8 horas'), ou null se não houver ou for ilegível. NUNCA complete uma posologia parcial nem sugira uma.",
       },
+      scheduleGuess: {
+        type: "object",
+        description:
+          "Estrutura a posologia SÓ quando o intervalo/frequência/duração está EXPLICITAMENTE escrito no texto — isso é extração, não invenção, desde que o número venha do texto. Se a receita não diz um intervalo ou frequência claros, type deve ser null e os outros campos também null. NUNCA calcule ou sugira um intervalo que não está escrito.",
+        properties: {
+          type: {
+            type: ["string", "null"],
+            enum: ["times_per_day", "every_n_hours", null],
+            description: "'every_n_hours' se o texto diz um intervalo em horas (ex: 'de 8 em 8 horas', 'a cada 12 horas'). 'times_per_day' se diz uma contagem por dia sem intervalo em horas (ex: '2 vezes ao dia'). null se não há frequência clara escrita.",
+          },
+          intervalHours: { type: ["number", "null"], description: "Só quando type='every_n_hours': o número de horas exatamente como escrito." },
+          timesPerDay: { type: ["number", "null"], description: "Só quando type='times_per_day': a contagem exatamente como escrita." },
+          durationDays: { type: ["number", "null"], description: "Duração do tratamento em dias, só se escrita explicitamente (ex: 'por 7 dias' -> 7). null se não escrita." },
+        },
+        required: ["type", "intervalHours", "timesPerDay", "durationDays"],
+      },
       confidence: {
         type: "object",
-        description: "Confiança de 0 a 1 para cada campo acima, refletindo o quão claramente legível cada um estava na imagem.",
+        description: "Confiança de 0 a 1 para cada campo acima, refletindo o quão claramente legível/inequívoco cada um estava no texto.",
         properties: {
           name: { type: "number", minimum: 0, maximum: 1 },
           concentration: { type: "number", minimum: 0, maximum: 1 },
           form: { type: "number", minimum: 0, maximum: 1 },
           posologyText: { type: "number", minimum: 0, maximum: 1 },
+          scheduleGuess: { type: "number", minimum: 0, maximum: 1, description: "Confiança do scheduleGuess inteiro — baixa se o intervalo/frequência não estava claro e inequívoco no texto." },
         },
-        required: ["name", "concentration", "form", "posologyText"],
+        required: ["name", "concentration", "form", "posologyText", "scheduleGuess"],
       },
     },
-    required: ["name", "concentration", "form", "posologyText", "confidence"],
+    required: ["name", "concentration", "form", "posologyText", "scheduleGuess", "confidence"],
   },
 };
 
-const SYSTEM_PROMPT = `Você lê fotos de caixas de medicamento ou receitas médicas para preencher um formulário de cadastro. Seu único trabalho é EXTRAIR texto visível — nunca inferir, completar, sugerir ou opinar sobre o medicamento, a dose ou o tratamento. Se algo não está claramente legível na imagem, o campo correspondente deve ser null com confiança 0. Você não é um profissional de saúde e sua resposta não pode conter nenhuma recomendação clínica.`;
+const SYSTEM_PROMPT = `Você lê fotos de caixas de medicamento ou receitas médicas para preencher um formulário de cadastro. Seu único trabalho é EXTRAIR texto visível — nunca inferir, completar, sugerir ou opinar sobre o medicamento, a dose ou o tratamento. Isso vale também para scheduleGuess: só preencha quando o intervalo/frequência/duração estiver EXPLICITAMENTE escrito, nunca calcule ou complete um que não está lá. Se algo não está claramente legível na imagem, o campo correspondente deve ser null com confiança 0. Você não é um profissional de saúde e sua resposta não pode conter nenhuma recomendação clínica.`;
 
 let client: Anthropic | null = null;
 function getClient(): Anthropic {
@@ -110,11 +149,15 @@ export async function extractMedicationFromPhoto(imageBase64: string, mimeType: 
 
   const raw = toolUse.input as {
     name: string | null; concentration: string | null; form: string | null; posologyText: string | null;
+    scheduleGuess: ScheduleGuess;
     confidence: ExtractionConfidence;
   };
 
   return {
-    fields: { name: raw.name, concentration: raw.concentration, form: raw.form, posologyText: raw.posologyText },
+    fields: {
+      name: raw.name, concentration: raw.concentration, form: raw.form, posologyText: raw.posologyText,
+      scheduleGuess: raw.scheduleGuess,
+    },
     confidence: raw.confidence,
   };
 }

@@ -252,6 +252,65 @@ describe("Descarte remove o arquivo de fato — ZELO-21", () => {
   });
 });
 
+describe("scheduleGuess — posologia explícita vira padrão pré-selecionado", () => {
+  it("confirmar registra o scheduleGuess que o cuidador manteve, para calibração", async () => {
+    const [extraction] = await db
+      .insert(photoExtractionsTable)
+      .values({
+        familyId, uploadedByCaregiverId: caregiverId,
+        photoData: TINY_PNG_BASE64, mimeType: "image/png", sizeBytes: 100,
+        extractedFields: {
+          name: "Amoxilina", concentration: "500mg", form: "comprimido",
+          posologyText: "1 comprimido por via oral, a cada 8 horas, por 7 dias",
+          scheduleGuess: { type: "every_n_hours", intervalHours: 8, timesPerDay: null, durationDays: 7 },
+        },
+        confidence: { name: 0.95, concentration: 0.95, form: 0.9, posologyText: 0.9, scheduleGuess: 0.9 },
+      })
+      .returning();
+
+    const res = await api("POST", `/medication-photos/${extraction.id}/confirm`, {
+      confirmedFields: {
+        name: "Amoxilina", concentration: "500mg", form: "comprimido",
+        posologyText: "1 comprimido por via oral, a cada 8 horas, por 7 dias",
+        scheduleType: "every_n_hours", intervalHours: 8, timesPerDay: null, durationDays: 7,
+      },
+      retainPhoto: false,
+    });
+    assert.equal(res.status, 200);
+
+    const [after] = await db.select().from(photoExtractionsTable).where(eq(photoExtractionsTable.id, extraction.id));
+    const confirmed = after.confirmedFields as { scheduleType: string; intervalHours: number; durationDays: number };
+    assert.equal(confirmed.scheduleType, "every_n_hours");
+    assert.equal(confirmed.intervalHours, 8);
+    assert.equal(confirmed.durationDays, 7);
+
+    await db.delete(photoExtractionsTable).where(eq(photoExtractionsTable.id, extraction.id));
+  });
+
+  it("confirmar sem nenhum campo de horário (posologia não tinha intervalo explícito) é aceito normalmente", async () => {
+    const [extraction] = await db
+      .insert(photoExtractionsTable)
+      .values({
+        familyId, uploadedByCaregiverId: caregiverId,
+        photoData: TINY_PNG_BASE64, mimeType: "image/png", sizeBytes: 100,
+        extractedFields: {
+          name: "Vitamina D", concentration: null, form: null, posologyText: null,
+          scheduleGuess: { type: null, intervalHours: null, timesPerDay: null, durationDays: null },
+        },
+        confidence: { name: 0.8, concentration: 0, form: 0, posologyText: 0, scheduleGuess: 0 },
+      })
+      .returning();
+
+    const res = await api("POST", `/medication-photos/${extraction.id}/confirm`, {
+      confirmedFields: { name: "Vitamina D", concentration: null, form: null, posologyText: null },
+      retainPhoto: false,
+    });
+    assert.equal(res.status, 200, "campos de schedule são opcionais — omiti-los não pode quebrar a confirmação");
+
+    await db.delete(photoExtractionsTable).where(eq(photoExtractionsTable.id, extraction.id));
+  });
+});
+
 describe("Upload — validações que não precisam da API (rodam sempre)", () => {
   it("sem arquivo retorna 400 com mensagem calma", async () => {
     const res = await new Promise<{ status: number; body: unknown }>((resolve, reject) => {
@@ -283,8 +342,11 @@ describe("Extração real via Claude Vision — precisa de ANTHROPIC_API_KEY", (
     assert.ok(res.status === 201 || res.status === 422, `esperava 201 ou 422, recebeu ${res.status}`);
 
     if (res.status === 201) {
-      const body = res.body as { extractionId: number; fields: Record<string, unknown>; confidence: Record<string, number> };
+      const body = res.body as { extractionId: number; fields: { scheduleGuess?: { type: string | null } }; confidence: Record<string, number> };
       assert.ok(body.extractionId > 0);
+      // Sem nenhum texto na imagem, não há intervalo/frequência escrito em
+      // lugar nenhum — scheduleGuess.type tem que ficar null, nunca um chute.
+      assert.equal(body.fields.scheduleGuess?.type ?? null, null, "sem texto legível, scheduleGuess não pode inventar um padrão");
       await db.delete(photoExtractionsTable).where(eq(photoExtractionsTable.id, body.extractionId));
     }
   });

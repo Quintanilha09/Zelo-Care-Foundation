@@ -82,6 +82,12 @@ const ConfirmBody = z.object({
     concentration: z.string().nullable(),
     form: z.string().nullable(),
     posologyText: z.string().nullable(),
+    // O que o cuidador de fato manteve do scheduleGuess sugerido — só para
+    // calibrar a taxa de acerto depois, nunca usado pra criar nada sozinho.
+    scheduleType: z.enum(["times_per_day", "every_n_hours"]).nullable().optional(),
+    intervalHours: z.number().nullable().optional(),
+    timesPerDay: z.number().nullable().optional(),
+    durationDays: z.number().nullable().optional(),
   }),
   retainPhoto: z.boolean().default(false),
 });
