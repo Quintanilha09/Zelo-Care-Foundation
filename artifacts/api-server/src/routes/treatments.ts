@@ -94,8 +94,22 @@ router.get("/patients/:patientId/treatments", requireAuth, async (req, res): Pro
   if (!patient) { res.status(404).json({ error: "Paciente não encontrado" }); return; }
 
   const treatments = await db
-    .select()
+    .select({
+      id: treatmentsTable.id,
+      patientId: treatmentsTable.patientId,
+      medicationId: treatmentsTable.medicationId,
+      medicationName: medicationsTable.name,
+      dose: treatmentsTable.dose,
+      scheduleType: treatmentsTable.scheduleType,
+      scheduleConfig: treatmentsTable.scheduleConfig,
+      startDate: treatmentsTable.startDate,
+      endDate: treatmentsTable.endDate,
+      status: treatmentsTable.status,
+      instructions: treatmentsTable.instructions,
+      createdAt: treatmentsTable.createdAt,
+    })
     .from(treatmentsTable)
+    .innerJoin(medicationsTable, eq(treatmentsTable.medicationId, medicationsTable.id))
     .where(eq(treatmentsTable.patientId, patientId))
     .orderBy(treatmentsTable.createdAt);
 

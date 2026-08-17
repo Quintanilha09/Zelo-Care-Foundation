@@ -7,6 +7,8 @@ import NotFound from '@/pages/not-found';
 import DesignReference from '@/pages/design-reference';
 import AuthPage from '@/pages/AuthPage';
 import ConsentPage from '@/pages/ConsentPage';
+import PatientsPage from '@/pages/PatientsPage';
+import PatientDetailPage from '@/pages/PatientDetailPage';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import {
   Route,
@@ -39,13 +41,18 @@ function Router() {
     );
   }
 
-  // Verificação de consentimento de dados de saúde após login
-  const hasHealthConsent = user?.caregiver; // simplificado — a verificação real é via API
+  // Nota: o consentimento de dado de saúde não é mais um passo de conta
+  // separado (ver planning/phases/03-.../03-CONTEXT.md) — é capturado
+  // inline no cadastro de cada paciente. /consentimento fica de pé só como
+  // referência de texto legal, sem gate nenhum no fluxo.
+  void user;
 
   return (
     <RoutedErrorBoundary>
       <Switch>
-        <Route path="/" component={DesignReference} />
+        <Route path="/" component={PatientsPage} />
+        <Route path="/pacientes" component={PatientsPage} />
+        <Route path="/pacientes/:id" component={PatientDetailPage} />
         <Route path="/design" component={DesignReference} />
         <Route path="/consentimento" component={() => <ConsentPage onComplete={() => window.location.href = '/'} />} />
         <Route component={NotFound} />
