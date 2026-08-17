@@ -1,10 +1,12 @@
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
-import { LogOut } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { LogOut, Users } from "lucide-react";
 
 export function AppHeader() {
   const { user, logout } = useAuth();
+  const [location] = useLocation();
 
   return (
     <header className="bg-card border-b sticky top-0 z-10">
@@ -18,10 +20,21 @@ export function AppHeader() {
             <p className="text-sm text-muted-foreground">{user?.family?.name ?? "Cuidado compartilhado"}</p>
           </div>
         </Link>
-        <Button variant="ghost" size="sm" onClick={() => void logout()} className="gap-2">
-          <LogOut className="w-4 h-4" />
-          Sair
-        </Button>
+        <div className="flex items-center gap-1">
+          <Link href="/cuidadores">
+            <a className={cn(
+              "flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium",
+              location === "/cuidadores" ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"
+            )}>
+              <Users className="w-4 h-4" />
+              <span className="hidden sm:inline">Cuidadores</span>
+            </a>
+          </Link>
+          <Button variant="ghost" size="sm" onClick={() => void logout()} className="gap-2">
+            <LogOut className="w-4 h-4" />
+            <span className="hidden sm:inline">Sair</span>
+          </Button>
+        </div>
       </div>
     </header>
   );
