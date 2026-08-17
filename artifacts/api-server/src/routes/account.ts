@@ -55,7 +55,11 @@ router.get("/account/me", requireAuth, async (req, res): Promise<void> => {
     .limit(1);
 
   const [family] = caregiver
-    ? await db.select({ name: familiesTable.name }).from(familiesTable).where(eq(familiesTable.id, caregiver.familyId)).limit(1)
+    ? await db
+        .select({ name: familiesTable.name, retroactiveWindowHours: familiesTable.retroactiveWindowHours })
+        .from(familiesTable)
+        .where(eq(familiesTable.id, caregiver.familyId))
+        .limit(1)
     : [];
 
   res.json({ ...user, caregiver, family });
@@ -83,6 +87,38 @@ router.patch("/account/selected-patient", requireAuth, async (req, res): Promise
     .set({ selectedPatientId: body.data.patientId, updatedAt: Clock.now() })
     .where(eq(caregiversTable.id, getAuth(req).caregiverId))
     .returning({ id: caregiversTable.id, selectedPatientId: caregiversTable.selectedPatientId });
+
+  res.json(updated);
+});
+
+// ── Ajustes da família (ZELO-24) ─────────────────────────────────────────
+// Só o cuidador principal muda — é uma decisão de família, não individual.
+// Vive aqui (não em routes/families.ts) porque é sempre a família do
+// próprio token — o mesmo padrão de "/account/selected-patient" acima.
+
+const FamilySettingsBody = z.object({
+  retroactiveWindowHours: z.number().int().min(1).max(24 * 30),
+});
+
+router.patch("/families/me/settings", requireAuth, requirePrimaryCaregiver, async (req, res): Promise<void> => {
+  const body = FamilySettingsBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  const [updated] = await db
+    .update(familiesTable)
+    .set({ retroactiveWindowHours: body.data.retroactiveWindowHours, updatedAt: Clock.now() })
+    .where(eq(familiesTable.id, getAuth(req).familyId))
+    .returning({ id: familiesTable.id, retroactiveWindowHours: familiesTable.retroactiveWindowHours });
+
+  await audit({
+    familyId: getAuth(req).familyId,
+    entityType: "family",
+    entityId: String(getAuth(req).familyId),
+    action: "updated",
+    actorId: String(getAuth(req).caregiverId),
+    actorType: "caregiver",
+    diff: JSON.stringify({ retroactiveWindowHours: body.data.retroactiveWindowHours }),
+  });
 
   res.json(updated);
 });

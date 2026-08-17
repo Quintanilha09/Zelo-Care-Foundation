@@ -2,7 +2,7 @@ import { Link, useLocation } from "wouter";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { LogOut, Users, User } from "lucide-react";
+import { LogOut, Users, User, Settings } from "lucide-react";
 
 export function AppHeader() {
   const { user, logout } = useAuth();
@@ -37,6 +37,17 @@ export function AppHeader() {
             )}>
               <Users className="w-4 h-4" />
               <span className="hidden sm:inline">Cuidadores</span>
+            </a>
+          </Link>
+          <Link href="/ajustes">
+            <a
+              title="Ajustes"
+              className={cn(
+                "flex items-center px-2.5 py-2 rounded-lg text-sm font-medium",
+                location === "/ajustes" ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <Settings className="w-4 h-4" />
             </a>
           </Link>
           <Button variant="ghost" size="sm" onClick={() => void logout()} className="gap-2">

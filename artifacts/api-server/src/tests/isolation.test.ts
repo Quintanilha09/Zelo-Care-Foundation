@@ -72,6 +72,7 @@ const PROTECTED_ROUTES = new Set([
   "POST /medication-photos/:id/confirm",
   "POST /medication-photos/:id/discard",
   "PATCH /account/selected-patient",
+  "PATCH /families/me/settings",
 ]);
 
 // Conjunto preenchido pelos testes — o meta-test verifica cobertura total
@@ -489,6 +490,15 @@ describe("Isolamento entre famílias — ZELO", () => {
 
   it("PATCH /account/selected-patient — família A não seleciona paciente de B", async () => {
     await assertIsolated("PATCH /account/selected-patient", "PATCH", "/account/selected-patient", { patientId: patientBId });
+  });
+
+  it("PATCH /families/me/settings — família A muda só as próprias configurações, nunca as de B", async () => {
+    const res = await api(tokenA, "PATCH", "/families/me/settings", { retroactiveWindowHours: 6 });
+    assert.equal(res.status, 200);
+
+    const [familyB] = await db.select({ retroactiveWindowHours: familiesTable.retroactiveWindowHours }).from(familiesTable).where(eq(familiesTable.id, familyBId));
+    assert.notEqual(familyB.retroactiveWindowHours, 6, "mudar a janela de A não pode vazar pra B");
+    covered("PATCH /families/me/settings");
   });
 
   it("POST /medication-photos/extract — cria extração para a família do token (ZELO-21)", async (t) => {

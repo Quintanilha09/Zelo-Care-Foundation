@@ -11,6 +11,7 @@ import HomePage from '@/pages/HomePage';
 import PatientsPage from '@/pages/PatientsPage';
 import PatientDetailPage from '@/pages/PatientDetailPage';
 import CaregiversPage from '@/pages/CaregiversPage';
+import SettingsPage from '@/pages/SettingsPage';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import {
   Route,
@@ -56,6 +57,7 @@ function Router() {
         <Route path="/pacientes" component={PatientsPage} />
         <Route path="/pacientes/:id" component={PatientDetailPage} />
         <Route path="/cuidadores" component={CaregiversPage} />
+        <Route path="/ajustes" component={SettingsPage} />
         <Route path="/design" component={DesignReference} />
         <Route path="/consentimento" component={() => <ConsentPage onComplete={() => window.location.href = '/'} />} />
         <Route component={NotFound} />

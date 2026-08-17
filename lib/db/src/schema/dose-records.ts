@@ -41,6 +41,10 @@ export const doseRecordsTable = pgTable(
     // cuidador pediu. Puramente informativo nesta história (sem
     // reagendamento automático nem notificação — fora de escopo aqui).
     postponedTo: timestamp("postponed_to", { withTimezone: true }),
+    // ZELO-24: só preenchido quando o registro está fora da janela
+    // retroativa sem justificativa da família — texto livre, neutro, sem
+    // lista de motivos pré-definidos (a spec proíbe explicitamente julgar).
+    justification: text("justification"),
     notes: text("notes"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

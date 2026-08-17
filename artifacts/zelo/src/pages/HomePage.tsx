@@ -18,7 +18,9 @@ import { Button } from "@/components/ui/button";
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select";
-import { CheckCircle2, AlertCircle, Package, CalendarClock, WifiOff, Pill, Plus, Undo2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { CheckCircle2, AlertCircle, Package, CalendarClock, WifiOff, Pill, Plus, Undo2, Clock as ClockIcon } from "lucide-react";
 
 interface Patient { id: number; name: string; timezone: string; archived: boolean; }
 
@@ -52,6 +54,12 @@ async function fetchHome(patientId: number): Promise<HomeData> {
   const res = await authFetch(`/api/patients/${patientId}/today-doses`);
   if (!res.ok) throw new Error("Erro ao carregar o dia");
   return res.json();
+}
+
+/** "YYYY-MM-DDTHH:mm" no fuso local do navegador, formato exigido por <input type="datetime-local">. */
+function toDatetimeLocalValue(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function HomeSkeleton() {
@@ -110,15 +118,29 @@ export default function HomePage() {
   const [undoableRecordId, setUndoableRecordId] = useState<number | null>(null);
   const [raceMessage, setRaceMessage] = useState<string | null>(null);
 
+  // ZELO-24: registro retroativo — qual dose está com o horário aberto pra
+  // edição, e (só aparece se o servidor pedir) a justificativa de quando
+  // o registro cai fora da janela configurada da família.
+  const [editingTimeForDose, setEditingTimeForDose] = useState<number | null>(null);
+  const [retroTime, setRetroTime] = useState("");
+  const [retroJustification, setRetroJustification] = useState("");
+  const [justificationNeededFor, setJustificationNeededFor] = useState<number | null>(null);
+  const [retroError, setRetroError] = useState<string | null>(null);
+
   const handleSwitchPatient = async (idStr: string) => {
     const id = Number(idStr);
     setSelectedPatientId(id);
     void authFetch("/api/account/selected-patient", { method: "PATCH", body: JSON.stringify({ patientId: id }) });
   };
 
-  const handleRegister = async (doseId: number, outcome: "taken" | "skipped") => {
+  const handleRegister = async (
+    doseId: number,
+    outcome: "taken" | "skipped",
+    opts?: { takenAt?: string; justification?: string }
+  ) => {
     if (!selectedPatientId) return;
     setRaceMessage(null);
+    setRetroError(null);
     // Otimista: a interface já reage antes da resposta do servidor voltar,
     // e reconcilia (ou se ajusta com uma mensagem simpática) quando ela chega.
     queryClient.setQueryData<HomeData | undefined>(["home", selectedPatientId], (prev) =>
@@ -127,18 +149,51 @@ export default function HomePage() {
 
     const res = await authFetch(`/api/patients/${selectedPatientId}/dose-records`, {
       method: "POST",
-      body: JSON.stringify({ scheduledDoseId: doseId, takenAt: new Date().toISOString(), outcome }),
+      body: JSON.stringify({
+        scheduledDoseId: doseId,
+        takenAt: opts?.takenAt ?? new Date().toISOString(),
+        outcome,
+        justification: opts?.justification || undefined,
+      }),
     });
-    const body = (await res.json().catch(() => null)) as { id: number; wonRace: boolean; message?: string } | null;
+    const body = (await res.json().catch(() => null)) as
+      | { id: number; wonRace: boolean; message?: string }
+      | { error: string; code?: string }
+      | null;
     void queryClient.invalidateQueries({ queryKey: ["home", selectedPatientId] });
 
-    if (res.ok && body?.wonRace) {
-      setUndoableRecordId(body.id);
-      setTimeout(() => setUndoableRecordId((cur) => (cur === body.id ? null : cur)), 60_000);
-    } else if (res.ok && body && !body.wonRace) {
-      // Outro cuidador venceu a corrida — ajusta com mensagem simpática, não erro.
-      setRaceMessage(body.message ?? "Essa dose já foi registrada por outra pessoa.");
+    if (!res.ok) {
+      // A invalidateQueries acima já reverteu o otimismo — o registro não aconteceu de verdade.
+      const err = body as { error?: string; code?: string } | null;
+      if (err?.code === "JUSTIFICATION_REQUIRED") {
+        setJustificationNeededFor(doseId);
+        setEditingTimeForDose(doseId);
+      } else {
+        setRetroError(err?.error ?? "Não foi possível registrar essa dose.");
+      }
+      return;
     }
+
+    setEditingTimeForDose(null);
+    setJustificationNeededFor(null);
+    setRetroJustification("");
+
+    const winBody = body as { id: number; wonRace: boolean; message?: string };
+    if (winBody.wonRace) {
+      setUndoableRecordId(winBody.id);
+      setTimeout(() => setUndoableRecordId((cur) => (cur === winBody.id ? null : cur)), 60_000);
+    } else {
+      // Outro cuidador venceu a corrida — ajusta com mensagem simpática, não erro.
+      setRaceMessage(winBody.message ?? "Essa dose já foi registrada por outra pessoa.");
+    }
+  };
+
+  const openTimeEditor = (doseId: number, defaultDate: Date) => {
+    setEditingTimeForDose(doseId);
+    setJustificationNeededFor(null);
+    setRetroError(null);
+    setRetroTime(toDatetimeLocalValue(defaultDate));
+    setRetroJustification("");
   };
 
   const handleUndo = async () => {
@@ -155,8 +210,40 @@ export default function HomePage() {
   const agora = pending.filter((d) => new Date(d.scheduledAt).getTime() <= now);
   const maisTarde = pending.filter((d) => new Date(d.scheduledAt).getTime() > now);
   const jaFoi = (home?.doses ?? []).filter((d) => d.status === "taken" || d.status === "skipped");
+  // ZELO-24: uma dose perdida não é sentença — continua registrável,
+  // só que retroativamente (o horário real já passou).
+  const perdidas = (home?.doses ?? []).filter((d) => d.status === "late");
 
   const bannerAmber = (home?.lateDoses ?? 0) > 0;
+
+  // ZELO-24: formulário inline de horário real — abre com "Outro horário"
+  // (dose de agora) ou automaticamente pra doses perdidas (sempre
+  // retroativo). Justificativa só aparece se o servidor pedir.
+  const renderTimeEditor = (doseId: number) => {
+    if (editingTimeForDose !== doseId) return null;
+    return (
+      <div className="px-1 space-y-2 bg-muted/50 rounded-lg p-3">
+        <label className="text-xs text-muted-foreground block">Horário real</label>
+        <Input type="datetime-local" value={retroTime} max={toDatetimeLocalValue(new Date())} onChange={(e) => setRetroTime(e.target.value)} />
+        {justificationNeededFor === doseId && (
+          <>
+            <label className="text-xs text-muted-foreground block">Esse registro é de um tempo atrás — pode contar rapidamente o que aconteceu?</label>
+            <Textarea value={retroJustification} onChange={(e) => setRetroJustification(e.target.value)} rows={2} placeholder="Ex: só vi o comprimido em cima da mesa hoje de manhã" />
+          </>
+        )}
+        {retroError && <p className="text-xs text-zelo-amber-fg">{retroError}</p>}
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            onClick={() => void handleRegister(doseId, "taken", { takenAt: new Date(retroTime).toISOString(), justification: retroJustification })}
+          >
+            Confirmar
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => { setEditingTimeForDose(null); setJustificationNeededFor(null); setRetroError(null); }}>Cancelar</Button>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -242,12 +329,36 @@ export default function HomePage() {
                 {agora.map((d) => (
                   <div key={d.id} className="space-y-2">
                     <DoseCard medicationName={d.medicationName} dosage={d.dose ?? ""} time={d.scheduledLocalTime} status="pending" />
-                    {!isObserver && (
-                      <div className="flex gap-2 px-1">
+                    {!isObserver && editingTimeForDose !== d.id && (
+                      <div className="flex items-center gap-2 px-1">
                         <Button className="flex-1" onClick={() => void handleRegister(d.id, "taken")}>✓ Registrar</Button>
                         <Button variant="secondary" onClick={() => void handleRegister(d.id, "skipped")}>Pular</Button>
+                        <Button variant="ghost" size="sm" className="gap-1 text-muted-foreground shrink-0" onClick={() => openTimeEditor(d.id, new Date(d.scheduledAt))}>
+                          <ClockIcon className="w-3.5 h-3.5" /> Outro horário
+                        </Button>
                       </div>
                     )}
+                    {!isObserver && renderTimeEditor(d.id)}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {perdidas.length > 0 && (
+              <div className="space-y-3">
+                <h3 className="text-sm font-medium text-muted-foreground">Perdidas</h3>
+                {perdidas.map((d) => (
+                  <div key={d.id} className="space-y-2">
+                    <div className="flex items-center justify-between px-4 py-3 rounded-lg border border-zelo-amber/20 bg-zelo-amber-bg/40 text-[15px]">
+                      <span>{d.medicationName}{d.dose ? ` — ${d.dose}` : ""}</span>
+                      <span className="text-muted-foreground">{d.scheduledLocalTime}</span>
+                    </div>
+                    {!isObserver && editingTimeForDose !== d.id && (
+                      <Button variant="outline" size="sm" className="gap-1" onClick={() => openTimeEditor(d.id, new Date(d.scheduledAt))}>
+                        <ClockIcon className="w-3.5 h-3.5" /> Registrar (não é tarde demais)
+                      </Button>
+                    )}
+                    {!isObserver && renderTimeEditor(d.id)}
                   </div>
                 ))}
               </div>

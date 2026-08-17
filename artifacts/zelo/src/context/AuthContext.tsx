@@ -26,7 +26,7 @@ interface AuthUser {
     familyId: number;
     selectedPatientId: number | null;
   };
-  family?: { name: string };
+  family?: { name: string; retroactiveWindowHours: number };
 }
 
 interface AuthContextValue {

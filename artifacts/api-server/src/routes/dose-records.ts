@@ -1,6 +1,6 @@
 import { getAuth } from "../lib/auth-types.ts";
 /**
- * Registros de dose — ZELO (ZELO-23).
+ * Registros de dose — ZELO (ZELO-23, ZELO-24).
  *
  * O PRIMEIRO REGISTRO VENCE, garantido pelo banco, não por lógica de
  * aplicação: UNIQUE(scheduled_dose_id) + INSERT ... ON CONFLICT DO NOTHING.
@@ -8,11 +8,19 @@ import { getAuth } from "../lib/auth-types.ts";
  * vencedor e uma mensagem simpática ("Bruno já registrou às 8:02"), nunca
  * 409. É esse desenho que faz 20 requisições simultâneas produzirem
  * exatamente 1 registro sem nenhuma delas quebrar.
+ *
+ * ZELO-24 — registro retroativo: takenAt (quando aconteceu, segundo o
+ * cuidador) e createdAt (quando foi registrado no sistema) já eram dois
+ * campos separados desde sempre — o relatório médico usa takenAt, a
+ * auditoria usa createdAt. Dentro da janela configurável da família
+ * (padrão 24h) entre os dois, registra sem perguntar mais nada. Fora dela,
+ * pede uma justificativa curta — texto livre, neutro, sem lista de motivos
+ * pré-definidos que julgue o cuidador. Dose no futuro é sempre rejeitada.
  */
 import { Router } from "express";
 import { eq, and, gte, lte } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { doseRecordsTable, scheduledDosesTable, treatmentsTable, caregiversTable, patientsTable } from "@workspace/db";
+import { doseRecordsTable, scheduledDosesTable, treatmentsTable, caregiversTable, patientsTable, familiesTable } from "@workspace/db";
 import { z } from "zod";
 import { requireAuth } from "../middleware/require-auth";
 import { requireCapability } from "../lib/capabilities.ts";
@@ -36,6 +44,10 @@ const CreateDoseRecordBody = z.object({
   takenAt: z.string(),
   outcome: z.enum(["taken", "skipped", "postponed"]),
   postponedTo: z.string().optional().nullable(),
+  // ZELO-24: só exigida pelo servidor quando takenAt cai fora da janela
+  // retroativa da família — texto curto e neutro, nunca uma escolha numa
+  // lista de motivos.
+  justification: z.string().trim().max(500).optional().nullable(),
   notes: z.string().optional().nullable(),
 }).refine((b) => b.outcome !== "postponed" || !!b.postponedTo, {
   message: "postponedTo é obrigatório quando outcome é 'postponed'",
@@ -75,6 +87,7 @@ router.get("/patients/:patientId/dose-records", requireAuth, async (req, res): P
       takenAt: doseRecordsTable.takenAt,
       outcome: doseRecordsTable.outcome,
       postponedTo: doseRecordsTable.postponedTo,
+      justification: doseRecordsTable.justification,
       notes: doseRecordsTable.notes,
       createdAt: doseRecordsTable.createdAt,
     })
@@ -117,6 +130,30 @@ router.post("/patients/:patientId/dose-records", requireAuth, requireCapability(
     return;
   }
 
+  // ZELO-24: nunca registrar dose no futuro.
+  const takenAt = new Date(body.data.takenAt);
+  if (takenAt.getTime() > Clock.now().getTime()) {
+    res.status(400).json({ error: "Não é possível registrar uma dose no futuro." });
+    return;
+  }
+
+  // ZELO-24: fora da janela retroativa da família, exige justificativa —
+  // dentro dela, só confirmar o horário real já basta.
+  const [family] = await db
+    .select({ retroactiveWindowHours: familiesTable.retroactiveWindowHours })
+    .from(familiesTable)
+    .where(eq(familiesTable.id, getAuth(req).familyId))
+    .limit(1);
+  const windowMs = (family?.retroactiveWindowHours ?? 24) * 3_600_000;
+  const gapMs = Clock.now().getTime() - takenAt.getTime();
+  if (gapMs > windowMs && !body.data.justification?.trim()) {
+    res.status(400).json({
+      error: `Esse registro é de mais de ${family?.retroactiveWindowHours ?? 24}h atrás — adicione uma breve justificativa pra confirmar.`,
+      code: "JUSTIFICATION_REQUIRED",
+    });
+    return;
+  }
+
   // O PRIMEIRO REGISTRO VENCE — garantido pela constraint UNIQUE do banco,
   // não por uma checagem "SELECT antes de INSERT" (que teria uma janela de
   // corrida). onConflictDoNothing() faz o segundo INSERT simultâneo virar
@@ -127,9 +164,10 @@ router.post("/patients/:patientId/dose-records", requireAuth, requireCapability(
       scheduledDoseId: body.data.scheduledDoseId,
       patientId,
       caregiverId: getAuth(req).caregiverId,
-      takenAt: new Date(body.data.takenAt),
+      takenAt,
       outcome: body.data.outcome,
       postponedTo: body.data.postponedTo ? new Date(body.data.postponedTo) : null,
+      justification: body.data.justification?.trim() || null,
       notes: body.data.notes ?? null,
     })
     .onConflictDoNothing()
