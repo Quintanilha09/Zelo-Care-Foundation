@@ -70,6 +70,7 @@ const PROTECTED_ROUTES = new Set([
   "POST /medication-photos/extract",
   "POST /medication-photos/:id/confirm",
   "POST /medication-photos/:id/discard",
+  "PATCH /account/selected-patient",
 ]);
 
 // Conjunto preenchido pelos testes — o meta-test verifica cobertura total
@@ -472,6 +473,10 @@ describe("Isolamento entre famílias — ZELO", () => {
 
   it("PATCH /treatments/:id — família A não edita tratamento de B", async () => {
     await assertIsolated("PATCH /treatments/:id", "PATCH", `/treatments/${treatmentBId}`, { dose: "hackeado" });
+  });
+
+  it("PATCH /account/selected-patient — família A não seleciona paciente de B", async () => {
+    await assertIsolated("PATCH /account/selected-patient", "PATCH", "/account/selected-patient", { patientId: patientBId });
   });
 
   it("POST /medication-photos/extract — cria extração para a família do token (ZELO-21)", async (t) => {

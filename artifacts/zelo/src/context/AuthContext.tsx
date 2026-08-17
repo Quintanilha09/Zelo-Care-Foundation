@@ -24,6 +24,7 @@ interface AuthUser {
     name: string;
     role: string;
     familyId: number;
+    selectedPatientId: number | null;
   };
   family?: { name: string };
 }

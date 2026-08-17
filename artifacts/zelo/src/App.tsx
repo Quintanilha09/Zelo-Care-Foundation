@@ -7,6 +7,7 @@ import NotFound from '@/pages/not-found';
 import DesignReference from '@/pages/design-reference';
 import AuthPage from '@/pages/AuthPage';
 import ConsentPage from '@/pages/ConsentPage';
+import HomePage from '@/pages/HomePage';
 import PatientsPage from '@/pages/PatientsPage';
 import PatientDetailPage from '@/pages/PatientDetailPage';
 import CaregiversPage from '@/pages/CaregiversPage';
@@ -51,7 +52,7 @@ function Router() {
   return (
     <RoutedErrorBoundary>
       <Switch>
-        <Route path="/" component={PatientsPage} />
+        <Route path="/" component={HomePage} />
         <Route path="/pacientes" component={PatientsPage} />
         <Route path="/pacientes/:id" component={PatientDetailPage} />
         <Route path="/cuidadores" component={CaregiversPage} />

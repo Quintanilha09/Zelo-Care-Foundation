@@ -15,6 +15,7 @@ import { getAuth } from "../lib/auth-types.ts";
 
 import { Router } from "express";
 import { eq, and, lte, gt } from "drizzle-orm";
+import { z } from "zod";
 import { db } from "@workspace/db";
 import {
   deletionRequestsTable,
@@ -45,7 +46,10 @@ router.get("/account/me", requireAuth, async (req, res): Promise<void> => {
   if (!user) { res.status(404).json({ error: "Conta não encontrada" }); return; }
 
   const [caregiver] = await db
-    .select({ id: caregiversTable.id, name: caregiversTable.name, role: caregiversTable.role, familyId: caregiversTable.familyId })
+    .select({
+      id: caregiversTable.id, name: caregiversTable.name, role: caregiversTable.role,
+      familyId: caregiversTable.familyId, selectedPatientId: caregiversTable.selectedPatientId,
+    })
     .from(caregiversTable)
     .where(eq(caregiversTable.userId, getAuth(req).userId))
     .limit(1);
@@ -55,6 +59,32 @@ router.get("/account/me", requireAuth, async (req, res): Promise<void> => {
     : [];
 
   res.json({ ...user, caregiver, family });
+});
+
+// ── Paciente ativo (ZELO-22) ────────────────────────────────────────────
+// Por cuidador, não por família — persiste entre sessões e dispositivos do
+// mesmo cuidador, mas dois cuidadores podem estar vendo pacientes diferentes.
+
+const SelectedPatientBody = z.object({ patientId: z.number().int().positive() });
+
+router.patch("/account/selected-patient", requireAuth, async (req, res): Promise<void> => {
+  const body = SelectedPatientBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  const [patient] = await db
+    .select({ id: patientsTable.id })
+    .from(patientsTable)
+    .where(and(eq(patientsTable.id, body.data.patientId), eq(patientsTable.familyId, getAuth(req).familyId)))
+    .limit(1);
+  if (!patient) { res.status(404).json({ error: "Paciente não encontrado" }); return; }
+
+  const [updated] = await db
+    .update(caregiversTable)
+    .set({ selectedPatientId: body.data.patientId, updatedAt: Clock.now() })
+    .where(eq(caregiversTable.id, getAuth(req).caregiverId))
+    .returning({ id: caregiversTable.id, selectedPatientId: caregiversTable.selectedPatientId });
+
+  res.json(updated);
 });
 
 // ── Solicitar exclusão ────────────────────────────────────────────────────

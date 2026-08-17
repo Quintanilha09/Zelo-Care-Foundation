@@ -10,6 +10,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { familiesTable } from "./families";
 import { usersTable } from "./users";
+import { patientsTable } from "./patients";
 
 // Papéis de cuidador:
 // - primary_caregiver: responsável principal, acesso total
@@ -34,6 +35,11 @@ export const caregiversTable = pgTable("caregivers", {
   // Nullable: um cuidador pode existir sem conta (pré-convite, dados migrados).
   userId: integer("user_id").references(() => usersTable.id, { onDelete: "set null" }),
   role: caregiverRoleEnum("role").notNull().default("caregiver"),
+  // ZELO-22: paciente ativo persiste entre sessões e dispositivos — por
+  // cuidador, não por família (dois cuidadores podem estar olhando pacientes
+  // diferentes ao mesmo tempo). set null se o paciente for excluído, nunca
+  // cascade — perder a seleção não deveria apagar mais nada.
+  selectedPatientId: integer("selected_patient_id").references(() => patientsTable.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()

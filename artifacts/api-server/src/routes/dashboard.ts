@@ -6,7 +6,10 @@ import { getAuth } from "../lib/auth-types.ts";
 import { Router } from "express";
 import { eq, and, count, gte, lte } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { patientsTable, caregiversTable, scheduledDosesTable, appointmentsTable, stockEntriesTable } from "@workspace/db";
+import {
+  patientsTable, caregiversTable, scheduledDosesTable, appointmentsTable, stockEntriesTable,
+  treatmentsTable, medicationsTable, doseRecordsTable,
+} from "@workspace/db";
 import { requireAuth } from "../middleware/require-auth";
 import { Clock } from "../lib/clock";
 import { localDayBoundsUtc } from "@workspace/scheduling";
@@ -87,15 +90,53 @@ router.get("/patients/:patientId/today-doses", requireAuth, async (req, res): Pr
   // delimita o dia civil corretamente, independente do TZ do servidor.
   const { start: todayStart, end: todayEnd } = localDayBoundsUtc(todayInPatientTz, patient.timezone);
 
+  // ZELO-22 (tela inicial): junta o nome do medicamento (via treatment) e,
+  // pra doses já registradas, quem registrou — "✓ Losartana 08:00 — Ana" é
+  // o diferencial do produto, não dá pra montar isso com 3 chamadas separadas.
   const doses = await db
-    .select()
+    .select({
+      id: scheduledDosesTable.id,
+      treatmentId: scheduledDosesTable.treatmentId,
+      scheduledAt: scheduledDosesTable.scheduledAt,
+      scheduledLocalTime: scheduledDosesTable.scheduledLocalTime,
+      status: scheduledDosesTable.status,
+      dose: scheduledDosesTable.dose,
+      medicationName: medicationsTable.name,
+      registeredAt: doseRecordsTable.takenAt,
+      registeredByCaregiverId: doseRecordsTable.caregiverId,
+      registeredByCaregiverName: caregiversTable.name,
+      recordId: doseRecordsTable.id,
+    })
     .from(scheduledDosesTable)
+    .innerJoin(treatmentsTable, eq(scheduledDosesTable.treatmentId, treatmentsTable.id))
+    .innerJoin(medicationsTable, eq(treatmentsTable.medicationId, medicationsTable.id))
+    .leftJoin(doseRecordsTable, eq(doseRecordsTable.scheduledDoseId, scheduledDosesTable.id))
+    .leftJoin(caregiversTable, eq(doseRecordsTable.caregiverId, caregiversTable.id))
     .where(and(
       eq(scheduledDosesTable.patientId, patientId),
       gte(scheduledDosesTable.scheduledAt, todayStart),
       lte(scheduledDosesTable.scheduledAt, todayEnd)
     ))
     .orderBy(scheduledDosesTable.scheduledAt);
+
+  const stockRows = await db
+    .select({
+      medicationName: medicationsTable.name,
+      quantityRemaining: stockEntriesTable.quantityRemaining,
+      unit: stockEntriesTable.unit,
+      lowStockThreshold: stockEntriesTable.lowStockThreshold,
+    })
+    .from(stockEntriesTable)
+    .innerJoin(medicationsTable, eq(stockEntriesTable.medicationId, medicationsTable.id))
+    .where(eq(stockEntriesTable.patientId, patientId));
+  const lowStockItems = stockRows.filter((s) => s.lowStockThreshold != null && s.quantityRemaining <= s.lowStockThreshold);
+
+  const [nextAppointment] = await db
+    .select({ specialty: appointmentsTable.specialty, doctorName: appointmentsTable.doctorName, scheduledAt: appointmentsTable.scheduledAt })
+    .from(appointmentsTable)
+    .where(and(eq(appointmentsTable.patientId, patientId), eq(appointmentsTable.status, "scheduled"), gte(appointmentsTable.scheduledAt, Clock.now())))
+    .orderBy(appointmentsTable.scheduledAt)
+    .limit(1);
 
   res.json({
     date: todayInPatientTz,
@@ -105,6 +146,8 @@ router.get("/patients/:patientId/today-doses", requireAuth, async (req, res): Pr
     pendingDoses: doses.filter((d) => d.status === "pending").length,
     lateDoses: doses.filter((d) => d.status === "late").length,
     doses,
+    lowStockItems: lowStockItems.map(({ medicationName, quantityRemaining, unit }) => ({ medicationName, quantityRemaining, unit })),
+    nextAppointment: nextAppointment ?? null,
   });
 });
 
