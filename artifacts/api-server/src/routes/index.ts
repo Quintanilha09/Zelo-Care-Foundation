@@ -16,6 +16,7 @@ import doseRecordsRouter from "./dose-records";
 import notificationsRouter from "./notifications";
 import auditRouter from "./audit";
 import dashboardRouter from "./dashboard";
+import realtimeRouter from "./realtime";
 
 const router = Router();
 
@@ -39,6 +40,7 @@ router.use(doseRecordsRouter);
 router.use(notificationsRouter);
 router.use(auditRouter);
 router.use(dashboardRouter);
+router.use(realtimeRouter);
 
 // Rotas de controle do relógio — APENAS fora de produção
 if (process.env.NODE_ENV !== "production") {

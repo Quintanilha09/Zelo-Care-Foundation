@@ -20,7 +20,7 @@ import { getAuth } from "../lib/auth-types.ts";
 import { Router } from "express";
 import { eq, and, gte, lte } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { doseRecordsTable, scheduledDosesTable, treatmentsTable, caregiversTable, patientsTable, familiesTable } from "@workspace/db";
+import { doseRecordsTable, scheduledDosesTable, treatmentsTable, medicationsTable, caregiversTable, patientsTable, familiesTable } from "@workspace/db";
 import { z } from "zod";
 import { requireAuth } from "../middleware/require-auth";
 import { requireCapability } from "../lib/capabilities.ts";
@@ -28,6 +28,7 @@ import { safeLog } from "../lib/safe-logger";
 import { audit } from "../lib/audit";
 import { Clock } from "../lib/clock";
 import { boss, QUEUE_DOSE_TAKEN, ensureQueueStarted } from "../lib/queue.ts";
+import { publishPatientEvent } from "../lib/realtime.ts";
 
 const router = Router();
 
@@ -117,11 +118,17 @@ router.post("/patients/:patientId/dose-records", requireAuth, requireCapability(
   if (!patient) { res.status(404).json({ error: "Paciente não encontrado" }); return; }
 
   // Verifica que a dose agendada pertence ao paciente, e pega o medicationId
-  // (via treatment) pro evento DoseTaken.
+  // (via treatment) pro evento DoseTaken e o nome do medicamento pro evento
+  // de sincronização em tempo real (ZELO-25).
   const [scheduled] = await db
-    .select({ id: scheduledDosesTable.id, patientId: scheduledDosesTable.patientId, medicationId: treatmentsTable.medicationId })
+    .select({
+      id: scheduledDosesTable.id, patientId: scheduledDosesTable.patientId,
+      scheduledLocalTime: scheduledDosesTable.scheduledLocalTime,
+      medicationId: treatmentsTable.medicationId, medicationName: medicationsTable.name,
+    })
     .from(scheduledDosesTable)
     .innerJoin(treatmentsTable, eq(scheduledDosesTable.treatmentId, treatmentsTable.id))
+    .innerJoin(medicationsTable, eq(treatmentsTable.medicationId, medicationsTable.id))
     .where(eq(scheduledDosesTable.id, body.data.scheduledDoseId))
     .limit(1);
 
@@ -203,6 +210,18 @@ router.post("/patients/:patientId/dose-records", requireAuth, requireCapability(
       await boss.send(QUEUE_DOSE_TAKEN, { patientId, medicationId: scheduled.medicationId });
     }
 
+    // ZELO-25: quem mais estiver com este paciente aberto vê a mudança em
+    // tempo real, sem dar refresh — "o irmão registrou e você vê na hora".
+    const [actingCaregiver] = await db.select({ name: caregiversTable.name }).from(caregiversTable).where(eq(caregiversTable.id, getAuth(req).caregiverId)).limit(1);
+    publishPatientEvent(patientId, {
+      type: "dose_registered",
+      scheduledDoseId: inserted.scheduledDoseId,
+      medicationName: scheduled.medicationName,
+      scheduledLocalTime: scheduled.scheduledLocalTime,
+      caregiverName: actingCaregiver?.name ?? "Um cuidador",
+      status: inserted.outcome,
+    });
+
     res.status(201).json({ ...inserted, wonRace: true });
     return;
   }
@@ -270,6 +289,8 @@ router.post("/patients/:patientId/dose-records/:recordId/undo", requireAuth, req
     ipAddress: req.ip,
     diff: JSON.stringify({ undone: { outcome: record.outcome } }),
   });
+
+  publishPatientEvent(patientId, { type: "dose_undone", scheduledDoseId: record.scheduledDoseId });
 
   res.json({ scheduledDoseId: record.scheduledDoseId, status: "pending" });
 });

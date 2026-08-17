@@ -15,7 +15,8 @@ export function DoseCard({ medicationName, dosage, time, status, takenBy, takenA
   const isTaken = status === 'taken';
 
   return (
-    <motion.div 
+    <motion.div
+      layout
       whileHover={{ y: -2 }}
       className={cn(
         "p-5 rounded-xl border flex flex-col gap-3 min-h-[64px] shadow-sm transition-colors",

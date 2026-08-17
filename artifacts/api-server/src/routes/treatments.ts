@@ -16,6 +16,7 @@ import { requireAuth } from "../middleware/require-auth";
 import { audit } from "../lib/audit";
 import { Clock } from "../lib/clock";
 import { generateDosesForTreatment, clearFuturePendingDoses, cancelFutureDoses } from "../lib/dose-generation.ts";
+import { publishPatientEvent } from "../lib/realtime.ts";
 
 const router = Router();
 
@@ -202,6 +203,8 @@ router.post("/patients/:patientId/treatments", requireAuth, async (req, res): Pr
     req.log?.error({ err, treatmentId: treatment.id }, "Falha ao gerar doses iniciais");
   }
 
+  publishPatientEvent(patientId, { type: "treatment_changed", treatmentId: treatment.id });
+
   res.status(201).json(treatment);
 });
 
@@ -292,6 +295,8 @@ router.patch("/treatments/:treatmentId", requireAuth, async (req, res): Promise<
   } catch (err) {
     req.log?.error({ err, treatmentId }, "Falha ao regenerar doses após edição");
   }
+
+  publishPatientEvent(updated.patientId, { type: "treatment_changed", treatmentId });
 
   res.json(updated);
 });

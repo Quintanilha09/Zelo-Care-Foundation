@@ -8,9 +8,11 @@
  * "você esqueceu").
  */
 import { useEffect, useMemo, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { Link } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { authFetch } from "@/lib/auth-client";
+import { subscribeToPatientEvents } from "@/lib/realtime-client";
 import { useAuth } from "@/context/AuthContext";
 import { AppHeader } from "@/components/app-header";
 import { DoseCard } from "@/components/dose-card";
@@ -108,7 +110,24 @@ export default function HomePage() {
     queryFn: () => fetchHome(selectedPatientId!),
     enabled: selectedPatientId !== null,
     placeholderData: (prev) => prev, // mantém o último estado conhecido visível (offline/reconectando)
+    // ZELO-25: degradação graciosa — o polling roda sempre, independente do
+    // SSE estar conectado ou não. SSE só deixa a atualização mais rápida
+    // (perto de instantânea) quando funciona; nunca é o único caminho.
+    refetchInterval: 60_000,
   });
+
+  // ZELO-25: assina o paciente atual — "o irmão registrou e você vê na
+  // hora". onReconnect dispara na primeira conexão e em toda reconexão:
+  // busca o estado atual em vez de confiar em eventos perdidos na queda.
+  useEffect(() => {
+    if (selectedPatientId === null) return;
+    const unsubscribe = subscribeToPatientEvents(
+      selectedPatientId,
+      () => void queryClient.invalidateQueries({ queryKey: ["home", selectedPatientId] }),
+      () => void queryClient.invalidateQueries({ queryKey: ["home", selectedPatientId] })
+    );
+    return unsubscribe;
+  }, [selectedPatientId, queryClient]);
 
   const currentPatient = activePatients.find((p) => p.id === selectedPatientId);
 
@@ -326,53 +345,59 @@ export default function HomePage() {
             {agora.length > 0 && (
               <div className="space-y-3">
                 <h3 className="text-sm font-medium text-muted-foreground">Agora</h3>
-                {agora.map((d) => (
-                  <div key={d.id} className="space-y-2">
-                    <DoseCard medicationName={d.medicationName} dosage={d.dose ?? ""} time={d.scheduledLocalTime} status="pending" />
-                    {!isObserver && editingTimeForDose !== d.id && (
-                      <div className="flex items-center gap-2 px-1">
-                        <Button className="flex-1" onClick={() => void handleRegister(d.id, "taken")}>✓ Registrar</Button>
-                        <Button variant="secondary" onClick={() => void handleRegister(d.id, "skipped")}>Pular</Button>
-                        <Button variant="ghost" size="sm" className="gap-1 text-muted-foreground shrink-0" onClick={() => openTimeEditor(d.id, new Date(d.scheduledAt))}>
-                          <ClockIcon className="w-3.5 h-3.5" /> Outro horário
-                        </Button>
-                      </div>
-                    )}
-                    {!isObserver && renderTimeEditor(d.id)}
-                  </div>
-                ))}
+                <AnimatePresence initial={false}>
+                  {agora.map((d) => (
+                    <motion.div key={d.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-2 mb-2">
+                      <DoseCard medicationName={d.medicationName} dosage={d.dose ?? ""} time={d.scheduledLocalTime} status="pending" />
+                      {!isObserver && editingTimeForDose !== d.id && (
+                        <div className="flex items-center gap-2 px-1">
+                          <Button className="flex-1" onClick={() => void handleRegister(d.id, "taken")}>✓ Registrar</Button>
+                          <Button variant="secondary" onClick={() => void handleRegister(d.id, "skipped")}>Pular</Button>
+                          <Button variant="ghost" size="sm" className="gap-1 text-muted-foreground shrink-0" onClick={() => openTimeEditor(d.id, new Date(d.scheduledAt))}>
+                            <ClockIcon className="w-3.5 h-3.5" /> Outro horário
+                          </Button>
+                        </div>
+                      )}
+                      {!isObserver && renderTimeEditor(d.id)}
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
               </div>
             )}
 
             {perdidas.length > 0 && (
               <div className="space-y-3">
                 <h3 className="text-sm font-medium text-muted-foreground">Perdidas</h3>
-                {perdidas.map((d) => (
-                  <div key={d.id} className="space-y-2">
-                    <div className="flex items-center justify-between px-4 py-3 rounded-lg border border-zelo-amber/20 bg-zelo-amber-bg/40 text-[15px]">
-                      <span>{d.medicationName}{d.dose ? ` — ${d.dose}` : ""}</span>
-                      <span className="text-muted-foreground">{d.scheduledLocalTime}</span>
-                    </div>
-                    {!isObserver && editingTimeForDose !== d.id && (
-                      <Button variant="outline" size="sm" className="gap-1" onClick={() => openTimeEditor(d.id, new Date(d.scheduledAt))}>
-                        <ClockIcon className="w-3.5 h-3.5" /> Registrar (não é tarde demais)
-                      </Button>
-                    )}
-                    {!isObserver && renderTimeEditor(d.id)}
-                  </div>
-                ))}
+                <AnimatePresence initial={false}>
+                  {perdidas.map((d) => (
+                    <motion.div key={d.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-2 mb-2">
+                      <div className="flex items-center justify-between px-4 py-3 rounded-lg border border-zelo-amber/20 bg-zelo-amber-bg/40 text-[15px]">
+                        <span>{d.medicationName}{d.dose ? ` — ${d.dose}` : ""}</span>
+                        <span className="text-muted-foreground">{d.scheduledLocalTime}</span>
+                      </div>
+                      {!isObserver && editingTimeForDose !== d.id && (
+                        <Button variant="outline" size="sm" className="gap-1" onClick={() => openTimeEditor(d.id, new Date(d.scheduledAt))}>
+                          <ClockIcon className="w-3.5 h-3.5" /> Registrar (não é tarde demais)
+                        </Button>
+                      )}
+                      {!isObserver && renderTimeEditor(d.id)}
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
               </div>
             )}
 
             {maisTarde.length > 0 && (
               <div className="space-y-2">
                 <h3 className="text-sm font-medium text-muted-foreground">Mais tarde</h3>
-                {maisTarde.map((d) => (
-                  <div key={d.id} className="flex items-center justify-between px-4 py-3 rounded-lg border bg-card text-[15px]">
-                    <span>{d.medicationName}{d.dose ? ` — ${d.dose}` : ""}</span>
-                    <span className="text-muted-foreground">{d.scheduledLocalTime}</span>
-                  </div>
-                ))}
+                <AnimatePresence initial={false}>
+                  {maisTarde.map((d) => (
+                    <motion.div key={d.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center justify-between px-4 py-3 rounded-lg border bg-card text-[15px] mb-2">
+                      <span>{d.medicationName}{d.dose ? ` — ${d.dose}` : ""}</span>
+                      <span className="text-muted-foreground">{d.scheduledLocalTime}</span>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
               </div>
             )}
 
@@ -386,12 +411,14 @@ export default function HomePage() {
                     </Button>
                   )}
                 </div>
-                {jaFoi.map((d) => (
-                  <div key={d.id} className="flex items-center justify-between px-4 py-3 rounded-lg border bg-zelo-green-bg/40 text-[15px]">
-                    <span>✓ {d.medicationName} {d.scheduledLocalTime}</span>
-                    <span className="text-muted-foreground">{d.registeredByCaregiverName ?? "—"}</span>
-                  </div>
-                ))}
+                <AnimatePresence initial={false}>
+                  {jaFoi.map((d) => (
+                    <motion.div key={d.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center justify-between px-4 py-3 rounded-lg border bg-zelo-green-bg/40 text-[15px] mb-2">
+                      <span>✓ {d.medicationName} {d.scheduledLocalTime}</span>
+                      <span className="text-muted-foreground">{d.registeredByCaregiverName ?? "—"}</span>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
               </div>
             )}
 

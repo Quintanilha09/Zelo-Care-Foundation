@@ -14,6 +14,7 @@ import { Clock } from "../lib/clock";
 import { countPrimaryCaregivers } from "../lib/capabilities";
 import { revokeAllAccessTokensForUser } from "../lib/tokens";
 import { safeLog } from "../lib/safe-logger";
+import { closeConnectionsForUser } from "../lib/realtime.ts";
 
 const router = Router();
 
@@ -32,6 +33,10 @@ async function revokeCaregiverAccess(userId: number | null, familyId: number): P
   await db
     .delete(pushSubscriptionsTable)
     .where(and(eq(pushSubscriptionsTable.userId, userId), eq(pushSubscriptionsTable.familyId, familyId)));
+  // ZELO-25: derruba qualquer stream SSE aberto na hora — sem esperar o
+  // próximo poll de revalidação. O token de acesso já foi revogado acima;
+  // reconectar vai exigir login de novo, com o papel atual.
+  closeConnectionsForUser(userId);
 }
 
 router.get("/caregivers", requireAuth, async (req, res): Promise<void> => {

@@ -73,6 +73,7 @@ const PROTECTED_ROUTES = new Set([
   "POST /medication-photos/:id/discard",
   "PATCH /account/selected-patient",
   "PATCH /families/me/settings",
+  "GET /patients/:id/events",
 ]);
 
 // Conjunto preenchido pelos testes — o meta-test verifica cobertura total
@@ -490,6 +491,10 @@ describe("Isolamento entre famílias — ZELO", () => {
 
   it("PATCH /account/selected-patient — família A não seleciona paciente de B", async () => {
     await assertIsolated("PATCH /account/selected-patient", "PATCH", "/account/selected-patient", { patientId: patientBId });
+  });
+
+  it("GET /patients/:id/events — família A não assina o stream de paciente de B", async () => {
+    await assertIsolated("GET /patients/:id/events", "GET", `/patients/${patientBId}/events`);
   });
 
   it("PATCH /families/me/settings — família A muda só as próprias configurações, nunca as de B", async () => {

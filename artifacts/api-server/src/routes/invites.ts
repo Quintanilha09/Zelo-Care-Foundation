@@ -16,6 +16,7 @@ import {
   caregiversTable,
   usersTable,
   familiesTable,
+  patientsTable,
 } from "@workspace/db";
 import { generateOneTimeToken, hashToken } from "../lib/tokens";
 import { sendCaregiverInviteEmail } from "../lib/email";
@@ -23,6 +24,7 @@ import { requireAuth, requirePrimaryCaregiver } from "../middleware/require-auth
 import { audit } from "../lib/audit";
 import { safeLog } from "../lib/safe-logger";
 import { Clock } from "../lib/clock";
+import { publishPatientEvent } from "../lib/realtime.ts";
 
 const router = Router();
 
@@ -165,6 +167,13 @@ router.post("/invites/accept", requireAuth, async (req, res): Promise<void> => {
     actorType: "caregiver",
     diff: JSON.stringify({ role: newCaregiver.role }),
   });
+
+  // ZELO-25: "cuidador entrou" é notícia de família, não de um paciente só
+  // — o canal é por paciente, então avisa em todos os pacientes da família.
+  const familyPatients = await db.select({ id: patientsTable.id }).from(patientsTable).where(eq(patientsTable.familyId, invite.familyId));
+  for (const p of familyPatients) {
+    publishPatientEvent(p.id, { type: "caregiver_joined", caregiverName: newCaregiver.name });
+  }
 
   res.status(201).json({ message: "Convite aceito. Você agora é cuidador nesta família.", caregiver: newCaregiver });
 });

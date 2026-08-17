@@ -8,8 +8,9 @@
  */
 import { eq, and } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { stockEntriesTable } from "@workspace/db";
+import { stockEntriesTable, medicationsTable } from "@workspace/db";
 import { Clock } from "./clock.ts";
+import { publishPatientEvent } from "./realtime.ts";
 
 /**
  * Decrementa 1 unidade do estoque do medicamento do paciente, se houver
@@ -25,8 +26,16 @@ export async function decrementStockForDoseTaken(patientId: number, medicationId
 
   if (!stock) return;
 
+  const newQuantity = Math.max(0, stock.quantityRemaining - 1);
   await db
     .update(stockEntriesTable)
-    .set({ quantityRemaining: Math.max(0, stock.quantityRemaining - 1), updatedAt: Clock.now() })
+    .set({ quantityRemaining: newQuantity, updatedAt: Clock.now() })
     .where(eq(stockEntriesTable.id, stock.id));
+
+  // ZELO-25: só avisa em tempo real quando CRUZA pra baixo do limite agora
+  // — decrementar quando já estava baixo não deveria reemitir o aviso.
+  if (stock.lowStockThreshold != null && newQuantity <= stock.lowStockThreshold && stock.quantityRemaining > stock.lowStockThreshold) {
+    const [medication] = await db.select({ name: medicationsTable.name }).from(medicationsTable).where(eq(medicationsTable.id, medicationId)).limit(1);
+    publishPatientEvent(patientId, { type: "low_stock", medicationName: medication?.name ?? "Medicamento" });
+  }
 }
