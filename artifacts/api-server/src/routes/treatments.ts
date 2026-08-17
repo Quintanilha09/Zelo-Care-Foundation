@@ -250,11 +250,17 @@ router.patch("/treatments/:treatmentId", requireAuth, async (req, res): Promise<
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
 
   const { scheduleConfig, ...rest } = body.data;
+  // ZELO-20: reativar (finished/cancelled -> active) ou mudar a data de fim
+  // invalida o aviso de véspera já enviado — um prazo novo merece aviso novo.
+  const reactivating = existing.treatment.status !== "active" && body.data.status === "active";
+  const endDateChanged = body.data.endDate !== undefined && body.data.endDate !== existing.treatment.endDate;
+
   const [updated] = await db
     .update(treatmentsTable)
     .set({
       ...rest,
       ...(scheduleConfig ? { scheduleConfig, scheduleType: scheduleConfig.scheduleType } : {}),
+      ...(reactivating || endDateChanged ? { endingNoticeSentAt: null } : {}),
       updatedAt: Clock.now(),
     })
     .where(eq(treatmentsTable.id, treatmentId))
@@ -276,7 +282,10 @@ router.patch("/treatments/:treatmentId", requireAuth, async (req, res): Promise<
     const scheduleChanged = scheduleConfig || body.data.startDate || body.data.endDate;
     if (updated.status !== "active") {
       await cancelFutureDoses(treatmentId);
-    } else if (scheduleChanged) {
+    } else if (scheduleChanged || reactivating) {
+      // reactivating cobre o "reativar em um toque" da história ZELO-20:
+      // finished/cancelled -> active sem nenhum outro campo mudando ainda
+      // precisa regenerar a janela de doses, que cancelFutureDoses zerou.
       await clearFuturePendingDoses(treatmentId);
       await generateDosesForTreatment(treatmentId);
     }

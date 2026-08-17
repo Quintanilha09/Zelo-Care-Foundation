@@ -6,6 +6,8 @@ import { AppHeader } from "@/components/app-header";
 import { TreatmentForm } from "@/components/treatment-form";
 import { DoseCard } from "@/components/dose-card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
@@ -45,6 +47,13 @@ const SCHEDULE_LABELS: Record<string, string> = {
   cycle_with_pause: "ciclo com pausa",
 };
 
+const STATUS_LABELS: Record<string, string> = {
+  active: "Ativo",
+  paused: "Pausado",
+  finished: "Concluído",
+  cancelled: "Cancelado",
+};
+
 async function fetchPatient(id: string): Promise<Patient> {
   const res = await authFetch(`/api/patients/${id}`);
   if (!res.ok) throw new Error("Paciente não encontrado");
@@ -66,6 +75,8 @@ async function fetchTodayDoses(id: string): Promise<ScheduledDose[]> {
 
 export default function PatientDetailPage({ params }: { params: { id: string } }) {
   const [open, setOpen] = useState(false);
+  const [reactivatingId, setReactivatingId] = useState<number | null>(null);
+  const [reactivateEndDate, setReactivateEndDate] = useState("");
   const queryClient = useQueryClient();
 
   const { data: patient } = useQuery({ queryKey: ["patient", params.id], queryFn: () => fetchPatient(params.id) });
@@ -94,6 +105,24 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
     });
     if (res.ok) void queryClient.invalidateQueries({ queryKey: ["today-doses", params.id] });
   };
+
+  // ZELO-20: reativar sempre pede a data de fim de novo (ou deixa em branco
+  // pra virar contínuo) — reativar sem isso só voltaria a fechar sozinho no
+  // dia seguinte, já que a data antiga continuaria vencida.
+  const handleReactivate = async (treatmentId: number) => {
+    const res = await authFetch(`/api/treatments/${treatmentId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: "active", endDate: reactivateEndDate || null }),
+    });
+    if (res.ok) {
+      setReactivatingId(null);
+      setReactivateEndDate("");
+      void queryClient.invalidateQueries({ queryKey: ["treatments", params.id] });
+    }
+  };
+
+  const activeTreatments = (treatments ?? []).filter((t) => t.status === "active" || t.status === "paused");
+  const pastTreatments = (treatments ?? []).filter((t) => t.status === "finished" || t.status === "cancelled");
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -164,11 +193,11 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
           </div>
         )}
 
-        {treatments && treatments.length > 0 && (
+        {activeTreatments.length > 0 && (
           <h3 className="text-sm font-medium text-muted-foreground">Tratamentos</h3>
         )}
         <div className="space-y-3">
-          {treatments?.map((t) => (
+          {activeTreatments.map((t) => (
             <div key={t.id} className="p-4 rounded-xl border bg-card shadow-sm">
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -176,16 +205,65 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
                   {t.dose && <p className="text-muted-foreground text-[15px]">{t.dose}</p>}
                 </div>
                 <span className="text-xs px-2.5 py-1 rounded-full bg-muted text-muted-foreground shrink-0">
-                  {t.status === "active" ? "Ativo" : t.status}
+                  {STATUS_LABELS[t.status] ?? t.status}
                 </span>
               </div>
               <p className="text-sm text-muted-foreground mt-2">
                 {SCHEDULE_LABELS[t.scheduleType] ?? t.scheduleType} · desde {new Date(t.startDate).toLocaleDateString("pt-BR")}
-                {t.endDate && ` até ${new Date(t.endDate).toLocaleDateString("pt-BR")}`}
+                {t.endDate ? ` até ${new Date(t.endDate).toLocaleDateString("pt-BR")}` : " · uso contínuo"}
               </p>
             </div>
           ))}
         </div>
+
+        {pastTreatments.length > 0 && (
+          <details className="pt-2">
+            <summary className="text-sm font-medium text-muted-foreground cursor-pointer select-none">
+              Tratamentos encerrados ({pastTreatments.length})
+            </summary>
+            <div className="space-y-3 mt-3">
+              {pastTreatments.map((t) => (
+                <div key={t.id} className="p-4 rounded-xl border bg-muted/30">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-[18px] font-semibold text-muted-foreground">{t.medicationName}</h3>
+                      {t.dose && <p className="text-muted-foreground text-[15px]">{t.dose}</p>}
+                    </div>
+                    <span className="text-xs px-2.5 py-1 rounded-full bg-muted text-muted-foreground shrink-0">
+                      {STATUS_LABELS[t.status] ?? t.status}
+                    </span>
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    {SCHEDULE_LABELS[t.scheduleType] ?? t.scheduleType} · desde {new Date(t.startDate).toLocaleDateString("pt-BR")}
+                    {t.endDate && ` até ${new Date(t.endDate).toLocaleDateString("pt-BR")}`}
+                  </p>
+
+                  {t.status === "finished" && reactivatingId !== t.id && (
+                    <Button size="sm" variant="secondary" className="mt-3" onClick={() => setReactivatingId(t.id)}>
+                      Reativar
+                    </Button>
+                  )}
+                  {t.status === "finished" && reactivatingId === t.id && (
+                    <div className="mt-3 flex items-end gap-2">
+                      <div className="space-y-1">
+                        <Label htmlFor={`reactivate-end-${t.id}`} className="text-xs">Nova data de fim (vazio = contínuo)</Label>
+                        <Input
+                          id={`reactivate-end-${t.id}`}
+                          type="date"
+                          value={reactivateEndDate}
+                          onChange={(e) => setReactivateEndDate(e.target.value)}
+                          className="h-9"
+                        />
+                      </div>
+                      <Button size="sm" onClick={() => void handleReactivate(t.id)}>Confirmar</Button>
+                      <Button size="sm" variant="ghost" onClick={() => { setReactivatingId(null); setReactivateEndDate(""); }}>Cancelar</Button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </details>
+        )}
       </main>
     </div>
   );

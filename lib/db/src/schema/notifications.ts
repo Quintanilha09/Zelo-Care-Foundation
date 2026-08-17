@@ -9,6 +9,7 @@ import {
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { familiesTable } from "./families";
+import { treatmentsTable } from "./treatments";
 
 export const notificationTypeEnum = pgEnum("notification_type", [
   "dose_reminder",
@@ -16,6 +17,12 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "appointment_reminder",
   "low_stock",
   "system",
+  // ZELO-20: aviso neutro de véspera/encerramento de tratamento temporário —
+  // nunca opina se deve continuar ou parar, só informa a data.
+  "treatment_ending",
+  // ZELO-20: lembrete periódico (6 meses) para tratamento contínuo — "vale
+  // conferir a receita", nunca uma recomendação clínica.
+  "continuous_review",
 ]);
 
 // Timestamps separados por intenção:
@@ -32,6 +39,9 @@ export const notificationsTable = pgTable("notifications", {
     .references(() => familiesTable.id, { onDelete: "cascade" }),
   patientId: integer("patient_id"),
   caregiverId: integer("caregiver_id"),
+  // ZELO-20: correlaciona o aviso a um tratamento específico — necessário
+  // pra saber, ao confirmar/tocar a notificação, qual lastReviewedAt zerar.
+  treatmentId: integer("treatment_id").references(() => treatmentsTable.id, { onDelete: "cascade" }),
   type: notificationTypeEnum("type").notNull(),
   title: text("title").notNull(),
   body: text("body"),

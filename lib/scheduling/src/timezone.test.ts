@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { toLocalDateTime, localDayBoundsUtc } from "./timezone.ts";
+import { toLocalDateTime, localDayBoundsUtc, tomorrowInTimezone } from "./timezone.ts";
 
 const SP = "America/Sao_Paulo";
 const NY = "America/New_York";
@@ -47,5 +47,19 @@ describe("localDayBoundsUtc", () => {
     assert.ok(end.getTime() > start.getTime());
     // 23h reais, não 24h: a diferença deve ser menor que um dia completo
     assert.ok(end.getTime() - start.getTime() < 24 * 3_600_000);
+  });
+});
+
+describe("tomorrowInTimezone", () => {
+  it("retorna a data civil de amanhã no fuso do paciente", () => {
+    // 15:00 UTC = 12:00 SP do dia 10 -> amanhã = 11
+    assert.equal(tomorrowInTimezone(new Date("2026-01-10T15:00:00.000Z"), SP), "2026-01-11");
+  });
+
+  it("mesmo instante UTC produz 'amanhã' diferente conforme o fuso", () => {
+    const utc = new Date("2026-01-10T23:30:00.000Z");
+    // 23:30 UTC = 20:30 SP (dia 10) -> amanhã SP = 11; = 08:30 Tokyo do dia 11 -> amanhã Tokyo = 12
+    assert.equal(tomorrowInTimezone(utc, SP), "2026-01-11");
+    assert.equal(tomorrowInTimezone(utc, "Asia/Tokyo"), "2026-01-12");
   });
 });

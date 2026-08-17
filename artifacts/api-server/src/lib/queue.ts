@@ -16,11 +16,15 @@
  *   quantas vezes for preciso (ver reconcileDoseQueue em dose-generation.ts).
  * - QUEUE_EXTEND_DOSE_WINDOW: job diário (cron) que estende a janela
  *   rolante de 14 dias de todo tratamento ativo.
+ * - QUEUE_TREATMENT_LIFECYCLE: job diário (cron) que fecha tratamento
+ *   vencido, avisa véspera de fim, e lembra revisão de tratamento contínuo
+ *   (ZELO-20). Horário deslocado 5min do de doses só pra não competir à toa.
  */
 import { PgBoss } from "pg-boss";
 
 export const QUEUE_DOSE_SCHEDULED = "dose-scheduled";
 export const QUEUE_EXTEND_DOSE_WINDOW = "extend-dose-window";
+export const QUEUE_TREATMENT_LIFECYCLE = "treatment-lifecycle";
 
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL must be set. Did you forget to provision a database?");
@@ -55,17 +59,25 @@ export async function ensureQueueStarted(): Promise<void> {
  * dose-generation.ts) para não criar um ciclo de import entre os dois
  * módulos — quem monta a ligação é o entrypoint (index.ts).
  */
-export async function startQueue(handlers: { extendWindows: () => Promise<void> }): Promise<void> {
+export async function startQueue(handlers: {
+  extendWindows: () => Promise<void>;
+  runTreatmentLifecycle: () => Promise<void>;
+}): Promise<void> {
   await ensureQueueStarted();
 
   await boss.createQueue(QUEUE_EXTEND_DOSE_WINDOW, { policy: "singleton" });
+  await boss.createQueue(QUEUE_TREATMENT_LIFECYCLE, { policy: "singleton" });
 
   // 03:00 UTC todo dia — não é crítico ser exato por fuso do paciente,
   // a janela é de 14 dias, algumas horas de folga não importam.
   await boss.schedule(QUEUE_EXTEND_DOSE_WINDOW, "0 3 * * *", null, { tz: "UTC" });
+  await boss.schedule(QUEUE_TREATMENT_LIFECYCLE, "5 3 * * *", null, { tz: "UTC" });
 
   await boss.work(QUEUE_EXTEND_DOSE_WINDOW, async () => {
     await handlers.extendWindows();
+  });
+  await boss.work(QUEUE_TREATMENT_LIFECYCLE, async () => {
+    await handlers.runTreatmentLifecycle();
   });
 }
 

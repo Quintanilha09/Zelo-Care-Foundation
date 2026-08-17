@@ -55,6 +55,14 @@ export const treatmentsTable = pgTable("treatments", {
   endDate: date("end_date", { mode: "string" }),
   status: treatmentStatusEnum("status").notNull().default("active"),
   instructions: text("instructions"),
+  // ZELO-20: guarda quando o aviso "termina amanhã" foi enviado, pra não
+  // reenviar todo dia até a data final chegar. Zerado sempre que a data de
+  // fim muda ou o tratamento é reativado — um novo prazo merece novo aviso.
+  endingNoticeSentAt: timestamp("ending_notice_sent_at", { withTimezone: true }),
+  // ZELO-20: só para tratamento contínuo (endDate null). Marca a última vez
+  // que o cuidador confirmou o lembrete de revisão de 6 meses. Nulo até a
+  // primeira revisão — nesse caso o job conta a partir de startDate.
+  lastReviewedAt: timestamp("last_reviewed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()

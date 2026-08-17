@@ -5,7 +5,7 @@ import { getAuth } from "../lib/auth-types.ts";
 import { Router } from "express";
 import { eq, and, isNull } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { notificationsTable } from "@workspace/db";
+import { notificationsTable, treatmentsTable } from "@workspace/db";
 import { requireAuth } from "../middleware/require-auth";
 import { Clock } from "../lib/clock";
 
@@ -36,6 +36,13 @@ router.post("/notifications/:notificationId/ack", requireAuth, async (req, res):
     .returning();
 
   if (!updated) { res.status(404).json({ error: "Notificação não encontrada" }); return; }
+
+  // ZELO-20: confirmar o lembrete de revisão de tratamento contínuo É a
+  // revisão — reinicia a contagem de ~6 meses a partir de agora.
+  if (updated.type === "continuous_review" && updated.treatmentId) {
+    await db.update(treatmentsTable).set({ lastReviewedAt: Clock.now() }).where(eq(treatmentsTable.id, updated.treatmentId));
+  }
+
   res.json(updated);
 });
 

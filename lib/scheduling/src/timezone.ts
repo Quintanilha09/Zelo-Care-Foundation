@@ -36,3 +36,13 @@ export function localDayBoundsUtc(dateISO: string, zone: string): { start: Date;
   const day = DateTime.fromISO(dateISO, { zone });
   return { start: day.startOf("day").toJSDate(), end: day.endOf("day").toJSDate() };
 }
+
+/**
+ * A data civil de "amanhã" no fuso do paciente, a partir de um instante UTC
+ * (normalmente Clock.now()). Usado para o aviso de véspera de fim de
+ * tratamento (ZELO-20) — "amanhã" é sempre relativo ao calendário do
+ * paciente, nunca ao do processo.
+ */
+export function tomorrowInTimezone(utc: Date, zone: string): string {
+  return DateTime.fromJSDate(utc, { zone }).plus({ days: 1 }).toISODate()!;
+}

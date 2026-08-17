@@ -2,6 +2,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { startQueue, stopQueue } from "./lib/queue";
 import { extendActiveTreatmentWindows, reconcileDoseQueue } from "./lib/dose-generation";
+import { runTreatmentLifecycleJob } from "./lib/treatment-lifecycle";
 
 const rawPort = process.env["PORT"];
 
@@ -20,6 +21,9 @@ if (Number.isNaN(port) || port <= 0) {
 await startQueue({
   extendWindows: async () => {
     await extendActiveTreatmentWindows();
+  },
+  runTreatmentLifecycle: async () => {
+    await runTreatmentLifecycleJob();
   },
 });
 
