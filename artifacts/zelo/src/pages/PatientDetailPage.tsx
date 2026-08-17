@@ -4,6 +4,7 @@ import { Link } from "wouter";
 import { authFetch } from "@/lib/auth-client";
 import { AppHeader } from "@/components/app-header";
 import { TreatmentForm } from "@/components/treatment-form";
+import { DoseCard } from "@/components/dose-card";
 import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
@@ -27,6 +28,14 @@ interface Treatment {
   endDate: string | null;
 }
 
+interface ScheduledDose {
+  id: number;
+  treatmentId: number;
+  scheduledAt: string;
+  status: "pending" | "taken" | "skipped" | "late";
+  dose: string | null;
+}
+
 const SCHEDULE_LABELS: Record<string, string> = {
   times_per_day: "vezes ao dia",
   every_n_hours: "a cada X horas",
@@ -47,16 +56,35 @@ async function fetchTreatments(id: string): Promise<Treatment[]> {
   return res.json();
 }
 
+async function fetchTodayDoses(id: string): Promise<ScheduledDose[]> {
+  const res = await authFetch(`/api/patients/${id}/today-doses`);
+  if (!res.ok) throw new Error("Erro ao carregar doses de hoje");
+  const data = (await res.json()) as { doses: ScheduledDose[] };
+  return data.doses;
+}
+
 export default function PatientDetailPage({ params }: { params: { id: string } }) {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
 
   const { data: patient } = useQuery({ queryKey: ["patient", params.id], queryFn: () => fetchPatient(params.id) });
   const { data: treatments, isLoading } = useQuery({ queryKey: ["treatments", params.id], queryFn: () => fetchTreatments(params.id) });
+  const { data: todayDoses } = useQuery({ queryKey: ["today-doses", params.id], queryFn: () => fetchTodayDoses(params.id) });
+
+  const medicationByTreatment = new Map((treatments ?? []).map((t) => [t.id, { name: t.medicationName, dose: t.dose }]));
 
   const handleCreated = () => {
     setOpen(false);
     void queryClient.invalidateQueries({ queryKey: ["treatments", params.id] });
+    void queryClient.invalidateQueries({ queryKey: ["today-doses", params.id] });
+  };
+
+  const handleRegister = async (doseId: number, outcome: "taken" | "skipped") => {
+    const res = await authFetch(`/api/patients/${params.id}/dose-records`, {
+      method: "POST",
+      body: JSON.stringify({ scheduledDoseId: doseId, takenAt: new Date().toISOString(), outcome }),
+    });
+    if (res.ok) void queryClient.invalidateQueries({ queryKey: ["today-doses", params.id] });
   };
 
   return (
@@ -88,6 +116,36 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
           </Dialog>
         </div>
 
+        {todayDoses && todayDoses.length > 0 && (
+          <div className="space-y-3">
+            <h3 className="text-sm font-medium text-muted-foreground">Hoje</h3>
+            {todayDoses.map((d) => {
+              const med = medicationByTreatment.get(d.treatmentId);
+              const time = new Date(d.scheduledAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+              return (
+                <div key={d.id} className="space-y-2">
+                  <DoseCard
+                    medicationName={med?.name ?? "Medicamento"}
+                    dosage={med?.dose ?? d.dose ?? ""}
+                    time={time}
+                    status={d.status === "taken" ? "taken" : "pending"}
+                  />
+                  {d.status === "pending" && (
+                    <div className="flex gap-2 px-1">
+                      <Button size="sm" className="flex-1" onClick={() => void handleRegister(d.id, "taken")}>
+                        ✓ Tomou
+                      </Button>
+                      <Button size="sm" variant="secondary" className="flex-1" onClick={() => void handleRegister(d.id, "skipped")}>
+                        Pular
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         {isLoading && <p className="text-muted-foreground text-center py-12">Carregando…</p>}
 
         {!isLoading && treatments?.length === 0 && (
@@ -98,6 +156,9 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
           </div>
         )}
 
+        {treatments && treatments.length > 0 && (
+          <h3 className="text-sm font-medium text-muted-foreground">Tratamentos</h3>
+        )}
         <div className="space-y-3">
           {treatments?.map((t) => (
             <div key={t.id} className="p-4 rounded-xl border bg-card shadow-sm">

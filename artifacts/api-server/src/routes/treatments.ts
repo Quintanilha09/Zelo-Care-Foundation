@@ -15,6 +15,7 @@ import type { ScheduleConfig } from "@workspace/scheduling";
 import { requireAuth } from "../middleware/require-auth";
 import { audit } from "../lib/audit";
 import { Clock } from "../lib/clock";
+import { generateDosesForTreatment, clearFuturePendingDoses, cancelFutureDoses } from "../lib/dose-generation.ts";
 
 const router = Router();
 
@@ -192,6 +193,15 @@ router.post("/patients/:patientId/treatments", requireAuth, async (req, res): Pr
     ipAddress: req.ip,
   });
 
+  // Gera a janela inicial de doses. Falha aqui não deve derrubar a criação
+  // do tratamento — o tratamento já existe e é válido mesmo sem doses ainda;
+  // loga e segue, em vez de fazer o cuidador perder o que acabou de digitar.
+  try {
+    await generateDosesForTreatment(treatment.id);
+  } catch (err) {
+    req.log?.error({ err, treatmentId: treatment.id }, "Falha ao gerar doses iniciais");
+  }
+
   res.status(201).json(treatment);
 });
 
@@ -259,6 +269,20 @@ router.patch("/treatments/:treatmentId", requireAuth, async (req, res): Promise<
     actorType: "caregiver",
     ipAddress: req.ip,
   });
+
+  // Só as doses futuras AINDA NÃO REGISTRADAS são afetadas — nunca as já
+  // tomadas/puladas, isso é histórico e fica intacto.
+  try {
+    const scheduleChanged = scheduleConfig || body.data.startDate || body.data.endDate;
+    if (updated.status !== "active") {
+      await cancelFutureDoses(treatmentId);
+    } else if (scheduleChanged) {
+      await clearFuturePendingDoses(treatmentId);
+      await generateDosesForTreatment(treatmentId);
+    }
+  } catch (err) {
+    req.log?.error({ err, treatmentId }, "Falha ao regenerar doses após edição");
+  }
 
   res.json(updated);
 });
