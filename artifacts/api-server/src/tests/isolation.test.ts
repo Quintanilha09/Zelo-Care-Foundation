@@ -62,6 +62,11 @@ const PROTECTED_ROUTES = new Set([
   "POST /auth/logout-all",
   "POST /export",
   "GET /consent",
+  "GET /patients/:id/treatments",
+  "POST /patients/:id/treatments",
+  "POST /patients/:id/treatments/preview",
+  "GET /treatments/:id",
+  "PATCH /treatments/:id",
 ]);
 
 // Conjunto preenchido pelos testes — o meta-test verifica cobertura total
@@ -79,6 +84,7 @@ let userIdA: number;
 let patientAId: number;
 let caregiverAId: number;
 let medicationAId: number;
+let treatmentAId: number;
 let doseAId: number;
 let notifAId: number;
 
@@ -88,6 +94,7 @@ let familyBId: number;
 let patientBId: number;
 let caregiverBId: number;
 let medicationBId: number;
+let treatmentBId: number;
 let notifBId: number;
 
 async function setupFamily(label: string, email: string) {
@@ -141,7 +148,10 @@ async function setupFamily(label: string, email: string) {
     .returning();
 
   const token = generateAccessToken(user.id, family.id, caregiver.id, "primary_caregiver");
-  return { userId: user.id, familyId: family.id, caregiverId: caregiver.id, patientId: patient.id, medicationId: medication.id, doseId: dose.id, notifId: notif.id, token };
+  return {
+    userId: user.id, familyId: family.id, caregiverId: caregiver.id, patientId: patient.id,
+    medicationId: medication.id, treatmentId: treatment.id, doseId: dose.id, notifId: notif.id, token,
+  };
 }
 
 before(async () => {
@@ -164,10 +174,10 @@ before(async () => {
     setupFamily("B", "iso-b@zelo.test"),
   ]);
   tokenA = a.token; familyAId = a.familyId; userIdA = a.userId; patientAId = a.patientId;
-  caregiverAId = a.caregiverId; medicationAId = a.medicationId;
+  caregiverAId = a.caregiverId; medicationAId = a.medicationId; treatmentAId = a.treatmentId;
   doseAId = a.doseId; notifAId = a.notifId;
   tokenB = b.token; familyBId = b.familyId; patientBId = b.patientId;
-  caregiverBId = b.caregiverId; medicationBId = b.medicationId;
+  caregiverBId = b.caregiverId; medicationBId = b.medicationId; treatmentBId = b.treatmentId;
   notifBId = b.notifId;
 });
 
@@ -429,6 +439,33 @@ describe("Isolamento entre famílias — ZELO", () => {
     const res = await api(tokenA, "GET", "/consent");
     assert.equal(res.status, 200);
     covered("GET /consent");
+  });
+
+  it("GET /patients/:id/treatments — família A não vê tratamentos de paciente de B", async () => {
+    await assertIsolated("GET /patients/:id/treatments", "GET", `/patients/${patientBId}/treatments`);
+  });
+
+  it("POST /patients/:id/treatments — família A não cria tratamento para paciente de B", async () => {
+    await assertIsolated("POST /patients/:id/treatments", "POST", `/patients/${patientBId}/treatments`, {
+      medicationId: medicationBId,
+      scheduleConfig: { scheduleType: "times_per_day", times: ["08:00"] },
+      startDate: "2026-01-01",
+    });
+  });
+
+  it("POST /patients/:id/treatments/preview — família A não usa fuso de paciente de B", async () => {
+    await assertIsolated("POST /patients/:id/treatments/preview", "POST", `/patients/${patientBId}/treatments/preview`, {
+      scheduleConfig: { scheduleType: "times_per_day", times: ["08:00"] },
+      startDate: "2026-01-01",
+    });
+  });
+
+  it("GET /treatments/:id — família A não acessa tratamento de B diretamente", async () => {
+    await assertIsolated("GET /treatments/:id", "GET", `/treatments/${treatmentBId}`);
+  });
+
+  it("PATCH /treatments/:id — família A não edita tratamento de B", async () => {
+    await assertIsolated("PATCH /treatments/:id", "PATCH", `/treatments/${treatmentBId}`, { dose: "hackeado" });
   });
 
   // ── META-TEST: verifica cobertura total de isolamento ─────────────────

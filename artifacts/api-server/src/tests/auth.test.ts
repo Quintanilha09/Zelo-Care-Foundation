@@ -281,10 +281,21 @@ describe("Autenticação — ZELO", () => {
 
     describe("Logout de todos os dispositivos", () => {
       it("logout-all revoga todos os refresh tokens do usuário", async () => {
+        // Usuário PRÓPRIO, não o auth-test2@zelo.test reaproveitado no resto do
+        // arquivo. O teste anterior (roubo de sessão) usa Clock.advance(1001) e
+        // revoga aquele usuário com um carimbo "1s no futuro simulado" — um
+        // login novo criado logo depois, mesmo após Clock.reset(), ainda nasce
+        // com iat no tempo REAL (que só andou ~150ms reais, não 1001ms), então
+        // cai como "revogado antes de existir". Isso não é bug de produção —
+        // é dois testes de revogação competindo pelo mesmo usuário. A correção
+        // de verdade é isolar o fixture, não brincar mais com o relógio.
+        const email = `logout-all-${Date.now()}@zelo.test`;
+        const created = await createVerifiedUser(email, "SenhaSegura456!");
+
         // Cria 2 sessões
         const [l1, l2] = await Promise.all([
-          api("POST", "/auth/login", { email: "auth-test2@zelo.test", password: "SenhaSegura456!" }),
-          api("POST", "/auth/login", { email: "auth-test2@zelo.test", password: "SenhaSegura456!" }),
+          api("POST", "/auth/login", { email, password: "SenhaSegura456!" }),
+          api("POST", "/auth/login", { email, password: "SenhaSegura456!" }),
         ]);
         const { accessToken: t1 } = l1.body as Record<string, string>;
         const { refreshToken: r2 } = l2.body as Record<string, string>;
@@ -301,6 +312,9 @@ describe("Autenticação — ZELO", () => {
           .where(eq(refreshTokensTable.tokenHash, r2Hash))
           .limit(1);
         assert.ok(record?.revoked, "todos os tokens devem ser revogados no logout-all");
+
+        await db.delete(usersTable).where(eq(usersTable.id, created.userId));
+        await db.delete(familiesTable).where(eq(familiesTable.id, created.familyId));
       });
     });
 
