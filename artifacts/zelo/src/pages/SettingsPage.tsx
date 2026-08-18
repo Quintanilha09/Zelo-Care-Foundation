@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Switch } from "@/components/ui/switch";
 import { PushDiagnostics } from "@/components/push-diagnostics";
 
 export default function SettingsPage() {
@@ -23,9 +24,27 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
 
+  const [showMedication, setShowMedication] = useState(user?.family?.showMedicationInPush ?? false);
+  const [savingMedicationToggle, setSavingMedicationToggle] = useState(false);
+
   useEffect(() => {
     if (user?.family?.retroactiveWindowHours) setHours(String(user.family.retroactiveWindowHours));
   }, [user?.family?.retroactiveWindowHours]);
+
+  useEffect(() => {
+    setShowMedication(user?.family?.showMedicationInPush ?? false);
+  }, [user?.family?.showMedicationInPush]);
+
+  const handleToggleShowMedication = async (checked: boolean) => {
+    setShowMedication(checked); // otimista — é um ajuste de baixo risco, sem consequência se a rede demorar
+    setSavingMedicationToggle(true);
+    const res = await authFetch("/api/families/me/settings", {
+      method: "PATCH",
+      body: JSON.stringify({ showMedicationInPush: checked }),
+    });
+    setSavingMedicationToggle(false);
+    if (!res.ok) setShowMedication(!checked); // reverte se o servidor recusou
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -86,6 +105,24 @@ export default function SettingsPage() {
             <Button type="submit" disabled={saving}>{saving ? "Salvando…" : "Salvar"}</Button>
           )}
         </form>
+
+        <div className="p-4 rounded-xl border bg-card space-y-3">
+          <div className="flex items-center justify-between gap-4">
+            <div className="space-y-1">
+              <Label htmlFor="st-show-med" className="text-[15px] font-normal">Exibir o medicamento na notificação</Label>
+              <p className="text-sm text-muted-foreground">
+                Desligado por padrão: a notificação diz só "está na hora do remédio", nunca o nome — qualquer pessoa perto do celular veria um dado de saúde na tela de bloqueio.
+              </p>
+            </div>
+            <Switch
+              id="st-show-med"
+              checked={showMedication}
+              onCheckedChange={(checked) => void handleToggleShowMedication(checked)}
+              disabled={!isPrimary || savingMedicationToggle}
+            />
+          </div>
+          {!isPrimary && <p className="text-sm text-muted-foreground">Só o cuidador principal pode alterar este ajuste.</p>}
+        </div>
 
         <PushDiagnostics />
       </main>

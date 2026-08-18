@@ -30,8 +30,8 @@ await startQueue({
   onDoseTaken: async ({ patientId, medicationId }) => {
     await decrementStockForDoseTaken(patientId, medicationId);
   },
-  onDoseReminder: async ({ scheduledDoseId }) => {
-    await sendDoseReminder(scheduledDoseId);
+  onDoseReminder: async ({ scheduledDoseId, level }) => {
+    await sendDoseReminder(scheduledDoseId, level);
   },
 });
 

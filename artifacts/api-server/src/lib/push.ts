@@ -39,6 +39,11 @@ export interface PushPayload {
   body: string;
   url?: string;
   tag?: string;
+  // ZELO-28: id da dose e do paciente — o service worker usa isto pra saber
+  // em qual dose agir quando o cuidador toca "✓ Tomou" / "Adiar 15 min"
+  // direto da notificação, sem abrir o app.
+  scheduledDoseId?: number;
+  patientId?: number;
 }
 
 export type PushSendResult =

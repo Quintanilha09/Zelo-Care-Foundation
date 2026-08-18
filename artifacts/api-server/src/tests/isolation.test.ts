@@ -39,6 +39,7 @@ const PROTECTED_ROUTES = new Set([
   "GET /patients/:id/dose-records",
   "POST /patients/:id/dose-records",
   "POST /patients/:id/dose-records/:recordId/undo",
+  "POST /patients/:id/dose-records/:scheduledDoseId/snooze",
   "GET /patients/:id/today-doses",
   "GET /patients/:id/adherence-stats",
   "GET /caregivers",
@@ -311,6 +312,11 @@ describe("Isolamento entre famílias — ZELO", () => {
     await assertIsolated("POST /patients/:id/dose-records/:recordId/undo", "POST", `/patients/${patientBId}/dose-records/${recordB.id}/undo`);
 
     await db.delete(doseRecordsTable).where(eq(doseRecordsTable.id, recordB.id));
+  });
+
+  it("POST /patients/:id/dose-records/:scheduledDoseId/snooze — família A não adia lembrete de dose de B", async () => {
+    const [scheduledB] = await db.select().from(scheduledDosesTable).where(eq(scheduledDosesTable.patientId, patientBId)).limit(1);
+    await assertIsolated("POST /patients/:id/dose-records/:scheduledDoseId/snooze", "POST", `/patients/${patientBId}/dose-records/${scheduledB.id}/snooze`);
   });
 
   it("GET /caregivers — família A não vê cuidadores de B em listagem", async () => {

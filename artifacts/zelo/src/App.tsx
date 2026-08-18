@@ -14,6 +14,7 @@ import CaregiversPage from '@/pages/CaregiversPage';
 import SettingsPage from '@/pages/SettingsPage';
 import IOSInstallGuidePage from '@/pages/IOSInstallGuidePage';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
+import { usePendingDoseActions } from '@/hooks/use-pending-dose-actions';
 import {
   Route,
   Switch,
@@ -50,6 +51,10 @@ function Router() {
   // inline no cadastro de cada paciente. /consentimento fica de pé só como
   // referência de texto legal, sem gate nenhum no fluxo.
   void user;
+
+  // ZELO-28: só drena/escuta ações de dose vindas da notificação quando
+  // autenticado — authFetch precisa de sessão válida de qualquer forma.
+  usePendingDoseActions();
 
   return (
     <RoutedErrorBoundary>

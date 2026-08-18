@@ -86,7 +86,7 @@ export async function startQueue(handlers: {
   extendWindows: () => Promise<void>;
   runTreatmentLifecycle: () => Promise<void>;
   onDoseTaken: (data: { patientId: number; medicationId: number }) => Promise<void>;
-  onDoseReminder: (data: { scheduledDoseId: number }) => Promise<void>;
+  onDoseReminder: (data: { scheduledDoseId: number; level?: number }) => Promise<void>;
 }): Promise<void> {
   await ensureQueueStarted();
 
@@ -111,7 +111,7 @@ export async function startQueue(handlers: {
   });
   await boss.work(QUEUE_DOSE_REMINDER, async (jobs) => {
     for (const job of jobs) {
-      await handlers.onDoseReminder(job.data as { scheduledDoseId: number });
+      await handlers.onDoseReminder(job.data as { scheduledDoseId: number; level?: number });
     }
   });
 }

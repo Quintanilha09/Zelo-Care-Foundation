@@ -24,7 +24,7 @@ import {
 } from "@workspace/db";
 import { generateAccessToken } from "../lib/tokens.ts";
 import { hashPassword } from "../lib/password.ts";
-import { sendDoseReminder } from "../lib/dose-reminders.ts";
+import { sendDoseReminder, ESCALATION_LEVEL_SNOOZE } from "../lib/dose-reminders.ts";
 import { boss, QUEUE_DOSE_REMINDER } from "../lib/queue.ts";
 import { Clock } from "../lib/clock.ts";
 import app from "../app.ts";
@@ -254,5 +254,64 @@ describe("sendDoseReminder — comportamento no disparo", () => {
 
     await db.delete(treatmentsTable).where(eq(treatmentsTable.id, treatmentId));
     await db.delete(caregiversTable).where(eq(caregiversTable.id, orphanCaregiver.id));
+  });
+});
+
+describe("Privacidade opcional por família — ZELO-28", () => {
+  it("families.showMedicationInPush=true inclui o medicamento; false (padrão) nunca inclui", async () => {
+    const { doseId, treatmentId } = await createTreatmentWithDose();
+
+    await sendDoseReminder(doseId);
+    let notifs = await db.select().from(notificationsTable).where(eq(notificationsTable.scheduledDoseId, doseId));
+    assert.ok(notifs.every((n) => !n.body?.includes(medicationName)), "padrão (desligado) nunca menciona o medicamento");
+    await db.delete(notificationsTable).where(eq(notificationsTable.scheduledDoseId, doseId));
+
+    await db.update(familiesTable).set({ showMedicationInPush: true }).where(eq(familiesTable.id, familyId));
+    await sendDoseReminder(doseId);
+    notifs = await db.select().from(notificationsTable).where(eq(notificationsTable.scheduledDoseId, doseId));
+    assert.ok(notifs.every((n) => n.body?.includes(medicationName)), "família que ligou o ajuste explicitamente vê o medicamento");
+
+    await db.update(familiesTable).set({ showMedicationInPush: false }).where(eq(familiesTable.id, familyId));
+    await db.delete(treatmentsTable).where(eq(treatmentsTable.id, treatmentId));
+  });
+});
+
+describe("Adiar 15 min (snooze) — ZELO-28", () => {
+  it("agenda um segundo lembrete (nível 1) para ~15 minutos à frente", async () => {
+    const { doseId, treatmentId } = await createTreatmentWithDose();
+    const before = Clock.now().getTime();
+
+    const res = await api("POST", `/patients/${patientId}/dose-records/${doseId}/snooze`);
+    assert.equal(res.status, 200);
+
+    const jobs = await boss.findJobs(QUEUE_DOSE_REMINDER, { data: { scheduledDoseId: doseId, level: ESCALATION_LEVEL_SNOOZE } });
+    assert.equal(jobs.length, 1);
+    assert.equal(jobs[0].singletonKey, `reminder:${doseId}:${ESCALATION_LEVEL_SNOOZE}`);
+    const deltaMinutes = (new Date(jobs[0].startAfter).getTime() - before) / 60_000;
+    assert.ok(deltaMinutes > 14.5 && deltaMinutes < 15.5, `esperava ~15min à frente, ficou ${deltaMinutes.toFixed(2)}min`);
+
+    await db.delete(treatmentsTable).where(eq(treatmentsTable.id, treatmentId));
+  });
+
+  it("tocar 'Adiar' duas vezes pra mesma dose não cria um segundo job (mesma singletonKey)", async () => {
+    const { doseId, treatmentId } = await createTreatmentWithDose();
+
+    await api("POST", `/patients/${patientId}/dose-records/${doseId}/snooze`);
+    await api("POST", `/patients/${patientId}/dose-records/${doseId}/snooze`);
+
+    const jobs = await boss.findJobs(QUEUE_DOSE_REMINDER, { data: { scheduledDoseId: doseId, level: ESCALATION_LEVEL_SNOOZE } });
+    assert.equal(jobs.length, 1, "policy exclusive da fila garante um único job pendente por dose+nível");
+
+    await db.delete(treatmentsTable).where(eq(treatmentsTable.id, treatmentId));
+  });
+
+  it("dose já registrada não pode ser adiada (409)", async () => {
+    const { doseId, treatmentId } = await createTreatmentWithDose();
+    await api("POST", `/patients/${patientId}/dose-records`, { scheduledDoseId: doseId, takenAt: Clock.now().toISOString(), outcome: "taken" });
+
+    const res = await api("POST", `/patients/${patientId}/dose-records/${doseId}/snooze`);
+    assert.equal(res.status, 409);
+
+    await db.delete(treatmentsTable).where(eq(treatmentsTable.id, treatmentId));
   });
 });

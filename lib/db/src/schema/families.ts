@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -10,6 +10,10 @@ export const familiesTable = pgTable("families", {
   // ZELO-24: janela de registro retroativo sem justificativa, em horas.
   // Fora dela, ainda dá pra registrar — só pede uma justificativa curta.
   retroactiveWindowHours: integer("retroactive_window_hours").notNull().default(24),
+  // ZELO-28: desligado por padrão — o texto do push nunca nomeia o
+  // medicamento na tela de bloqueio (qualquer pessoa perto do celular veria
+  // um dado de saúde). Ligar é escolha explícita da família, não do sistema.
+  showMedicationInPush: boolean("show_medication_in_push").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()

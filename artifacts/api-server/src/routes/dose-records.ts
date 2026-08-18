@@ -27,7 +27,8 @@ import { requireCapability } from "../lib/capabilities.ts";
 import { safeLog } from "../lib/safe-logger";
 import { audit } from "../lib/audit";
 import { Clock } from "../lib/clock";
-import { boss, QUEUE_DOSE_TAKEN, ensureQueueStarted } from "../lib/queue.ts";
+import { boss, QUEUE_DOSE_TAKEN, QUEUE_DOSE_REMINDER, ensureQueueStarted } from "../lib/queue.ts";
+import { ESCALATION_LEVEL_SNOOZE } from "../lib/dose-reminders.ts";
 import { publishPatientEvent } from "../lib/realtime.ts";
 
 const router = Router();
@@ -244,6 +245,43 @@ router.post("/patients/:patientId/dose-records", requireAuth, requireCapability(
     wonRace: false,
     message: winner ? `${winner.caregiverName ?? "Outro cuidador"} já registrou às ${formatTimeShort(winner.takenAt, patient.timezone)}` : "Essa dose já foi registrada",
   });
+});
+
+// ── Adiar lembrete em 15min (ZELO-28) ───────────────────────────────────────
+// Botão "Adiar 15 min" da notificação — nunca cria dose_record, só reagenda
+// um segundo lembrete (nível 1) pra daqui a 15 minutos. Reaproveita toda a
+// idempotência de QUEUE_DOSE_REMINDER: tocar "Adiar" duas vezes pra mesma
+// dose é no-op na segunda vez (mesma singletonKey, já existe job pendente).
+
+router.post("/patients/:patientId/dose-records/:scheduledDoseId/snooze", requireAuth, requireCapability("register_dose"), async (req, res): Promise<void> => {
+  const patientId = Number(req.params.patientId);
+  const scheduledDoseId = Number(req.params.scheduledDoseId);
+  if (isNaN(patientId) || isNaN(scheduledDoseId)) { res.status(400).json({ error: "ID inválido" }); return; }
+
+  const [patient] = await db
+    .select({ id: patientsTable.id })
+    .from(patientsTable)
+    .where(and(eq(patientsTable.id, patientId), eq(patientsTable.familyId, getAuth(req).familyId)))
+    .limit(1);
+  if (!patient) { res.status(404).json({ error: "Paciente não encontrado" }); return; }
+
+  const [dose] = await db
+    .select({ id: scheduledDosesTable.id, status: scheduledDosesTable.status })
+    .from(scheduledDosesTable)
+    .where(and(eq(scheduledDosesTable.id, scheduledDoseId), eq(scheduledDosesTable.patientId, patientId)))
+    .limit(1);
+  if (!dose) { res.status(404).json({ error: "Dose agendada não encontrada" }); return; }
+  if (dose.status !== "pending") { res.status(409).json({ error: "Essa dose já foi registrada, não há o que adiar" }); return; }
+
+  await ensureQueueStarted();
+  const snoozedUntil = new Date(Clock.now().getTime() + 15 * 60_000);
+  await boss.send(
+    QUEUE_DOSE_REMINDER,
+    { scheduledDoseId, level: ESCALATION_LEVEL_SNOOZE },
+    { singletonKey: `reminder:${scheduledDoseId}:${ESCALATION_LEVEL_SNOOZE}`, startAfter: snoozedUntil }
+  );
+
+  res.json({ scheduledDoseId, snoozedUntil: snoozedUntil.toISOString() });
 });
 
 // ── Desfazer (até 60s depois de registrar) ─────────────────────────────────

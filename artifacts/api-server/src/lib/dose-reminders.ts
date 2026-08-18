@@ -17,21 +17,31 @@
  *    pulado, sem reenviar. A claim acontece ANTES do envio de propósito —
  *    "gravar em notifications antes de enviar" é o requisito da história.
  *
- * O conteúdo do push nunca menciona o medicamento — regra de privacidade
- * que a ZELO-28 formaliza com um ajuste opcional por família, mas que já
- * vale a partir daqui: é este módulo que escreve o payload pela primeira vez.
+ * O conteúdo do push nunca menciona o medicamento, a menos que a família
+ * tenha ligado families.showMedicationInPush (ZELO-28, desligado por
+ * padrão). `tag` é `dose-group-{patientId}-{scheduledLocalTime}` — doses de
+ * tratamentos diferentes do mesmo paciente no mesmo horário compartilham o
+ * tag de propósito, pra o service worker mesclar numa notificação só
+ * (ZELO-28) em vez de empilhar uma por tratamento.
  */
 import { eq, and, or, isNull } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
-  scheduledDosesTable, patientsTable, caregiversTable,
+  scheduledDosesTable, patientsTable, caregiversTable, familiesTable,
+  treatmentsTable, medicationsTable,
   notificationPreferencesTable, notificationsTable,
 } from "@workspace/db";
 import { Clock } from "./clock.ts";
 import { sendPushToUser } from "./push.ts";
 import { logger } from "./logger.ts";
 
-const ESCALATION_LEVEL_FIRST = 0;
+export const ESCALATION_LEVEL_FIRST = 0;
+// ZELO-28: "Adiar 15 min" reagenda no nível 1 — reaproveita a mesma
+// idempotência (UNIQUE inclui escalationLevel) sem precisar de tabela ou
+// fila nova. Níveis 2/3 (30min/60min) ficam reservados pra um cascade
+// automático futuro (ZELO-29) — esta história é só o botão manual do
+// cuidador, nunca um reenvio automático (ver "NÃO faça" na história).
+export const ESCALATION_LEVEL_SNOOZE = 1;
 
 /**
  * Handler do job QUEUE_DOSE_REMINDER. Nunca lança por causa de falha de
@@ -39,12 +49,14 @@ const ESCALATION_LEVEL_FIRST = 0;
  * infraestrutura (ex: banco fora do ar), que aciona o retry com backoff da
  * própria fila (configurado em queue.ts), sem lógica de retry própria aqui.
  */
-export async function sendDoseReminder(scheduledDoseId: number): Promise<void> {
+export async function sendDoseReminder(scheduledDoseId: number, level: number = ESCALATION_LEVEL_FIRST): Promise<void> {
   const [dose] = await db
     .select({
       id: scheduledDosesTable.id,
       status: scheduledDosesTable.status,
       patientId: scheduledDosesTable.patientId,
+      scheduledLocalTime: scheduledDosesTable.scheduledLocalTime,
+      treatmentId: scheduledDosesTable.treatmentId,
     })
     .from(scheduledDosesTable)
     .where(eq(scheduledDosesTable.id, scheduledDoseId))
@@ -57,11 +69,26 @@ export async function sendDoseReminder(scheduledDoseId: number): Promise<void> {
   if (!dose || dose.status !== "pending") return;
 
   const [patient] = await db
-    .select({ id: patientsTable.id, name: patientsTable.name, familyId: patientsTable.familyId })
+    .select({
+      id: patientsTable.id, name: patientsTable.name, familyId: patientsTable.familyId,
+      showMedicationInPush: familiesTable.showMedicationInPush,
+    })
     .from(patientsTable)
+    .innerJoin(familiesTable, eq(patientsTable.familyId, familiesTable.id))
     .where(eq(patientsTable.id, dose.patientId))
     .limit(1);
   if (!patient) return;
+
+  let medicationName: string | null = null;
+  if (patient.showMedicationInPush) {
+    const [med] = await db
+      .select({ name: medicationsTable.name })
+      .from(treatmentsTable)
+      .innerJoin(medicationsTable, eq(treatmentsTable.medicationId, medicationsTable.id))
+      .where(eq(treatmentsTable.id, dose.treatmentId))
+      .limit(1);
+    medicationName = med?.name ?? null;
+  }
 
   // Destinatários: todo cuidador com conta vinculada na família, exceto
   // quem desligou explicitamente a categoria "dose" para ESTE paciente
@@ -86,8 +113,13 @@ export async function sendDoseReminder(scheduledDoseId: number): Promise<void> {
 
   const payload = {
     title: "ZELO",
-    body: `Está na hora do remédio de ${patient.name}.`,
-    tag: `dose-${dose.id}`,
+    body: medicationName
+      ? `Está na hora de ${medicationName} — ${patient.name}.`
+      : `Está na hora do remédio de ${patient.name}.`,
+    tag: `dose-group-${patient.id}-${dose.scheduledLocalTime}`,
+    url: `/?patient=${patient.id}`,
+    scheduledDoseId: dose.id,
+    patientId: patient.id,
   };
 
   for (const recipient of recipients) {
@@ -106,7 +138,7 @@ export async function sendDoseReminder(scheduledDoseId: number): Promise<void> {
         type: "dose_reminder",
         title: payload.title,
         body: payload.body,
-        escalationLevel: ESCALATION_LEVEL_FIRST,
+        escalationLevel: level,
         sentAt: Clock.now(),
       })
       .onConflictDoNothing()

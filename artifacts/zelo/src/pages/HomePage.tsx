@@ -105,6 +105,21 @@ export default function HomePage() {
     }
   }, [selectedPatientId, activePatients]);
 
+  // ZELO-28: abrir o app a partir de uma notificação (?patient=ID) troca
+  // pro paciente daquela dose, mesmo que outro estivesse selecionado — o
+  // link é um sinal de intenção mais forte que a última seleção salva. Só
+  // uma vez (o array de dependências vazio já garante isso); limpa a URL
+  // depois pra não reforçar a troca de novo num F5.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const patientParam = params.get("patient");
+    if (!patientParam) return;
+    const id = Number(patientParam);
+    if (!Number.isNaN(id) && id > 0) void handleSwitchPatient(String(id));
+    window.history.replaceState({}, "", window.location.pathname);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const { data: home, isLoading, isPlaceholderData } = useQuery({
     queryKey: ["home", selectedPatientId],
     queryFn: () => fetchHome(selectedPatientId!),

@@ -56,7 +56,7 @@ router.get("/account/me", requireAuth, async (req, res): Promise<void> => {
 
   const [family] = caregiver
     ? await db
-        .select({ name: familiesTable.name, retroactiveWindowHours: familiesTable.retroactiveWindowHours })
+        .select({ name: familiesTable.name, retroactiveWindowHours: familiesTable.retroactiveWindowHours, showMedicationInPush: familiesTable.showMedicationInPush })
         .from(familiesTable)
         .where(eq(familiesTable.id, caregiver.familyId))
         .limit(1)
@@ -97,7 +97,12 @@ router.patch("/account/selected-patient", requireAuth, async (req, res): Promise
 // próprio token — o mesmo padrão de "/account/selected-patient" acima.
 
 const FamilySettingsBody = z.object({
-  retroactiveWindowHours: z.number().int().min(1).max(24 * 30),
+  retroactiveWindowHours: z.number().int().min(1).max(24 * 30).optional(),
+  // ZELO-28: desligado por padrão no banco — este campo só existe pra
+  // ligar explicitamente, nunca é obrigatório no corpo.
+  showMedicationInPush: z.boolean().optional(),
+}).refine((b) => b.retroactiveWindowHours !== undefined || b.showMedicationInPush !== undefined, {
+  message: "Envie ao menos um ajuste pra alterar",
 });
 
 router.patch("/families/me/settings", requireAuth, requirePrimaryCaregiver, async (req, res): Promise<void> => {
@@ -106,9 +111,13 @@ router.patch("/families/me/settings", requireAuth, requirePrimaryCaregiver, asyn
 
   const [updated] = await db
     .update(familiesTable)
-    .set({ retroactiveWindowHours: body.data.retroactiveWindowHours, updatedAt: Clock.now() })
+    .set({
+      ...(body.data.retroactiveWindowHours !== undefined ? { retroactiveWindowHours: body.data.retroactiveWindowHours } : {}),
+      ...(body.data.showMedicationInPush !== undefined ? { showMedicationInPush: body.data.showMedicationInPush } : {}),
+      updatedAt: Clock.now(),
+    })
     .where(eq(familiesTable.id, getAuth(req).familyId))
-    .returning({ id: familiesTable.id, retroactiveWindowHours: familiesTable.retroactiveWindowHours });
+    .returning({ id: familiesTable.id, retroactiveWindowHours: familiesTable.retroactiveWindowHours, showMedicationInPush: familiesTable.showMedicationInPush });
 
   await audit({
     familyId: getAuth(req).familyId,
@@ -117,7 +126,7 @@ router.patch("/families/me/settings", requireAuth, requirePrimaryCaregiver, asyn
     action: "updated",
     actorId: String(getAuth(req).caregiverId),
     actorType: "caregiver",
-    diff: JSON.stringify({ retroactiveWindowHours: body.data.retroactiveWindowHours }),
+    diff: JSON.stringify(body.data),
   });
 
   res.json(updated);
