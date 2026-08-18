@@ -6,6 +6,7 @@ import {
   useCallback,
   type ReactNode,
 } from 'react';
+import { useLocation } from 'wouter';
 import {
   setTokens,
   clearTokens,
@@ -13,6 +14,7 @@ import {
   getStoredRefreshToken,
   authFetch,
 } from '@/lib/auth-client';
+import { consumePendingRedirect } from '@/lib/pending-redirect';
 
 interface AuthUser {
   userId: number;
@@ -50,6 +52,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [, setLocation] = useLocation();
 
   const loadMe = useCallback(async () => {
     try {
@@ -87,6 +90,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const tokens = await res.json() as { accessToken: string; refreshToken: string; expiresIn: number };
             setTokens(tokens);
             await loadMe();
+            // O backend do OAuth do Google sempre redireciona pra "/" (ver
+            // res.redirect em google-auth.ts) — não importa de onde a SPA
+            // saiu (ex: /convite?token=... ao aceitar convite). Sem isto,
+            // qualquer fluxo que dependa de "voltar pra onde estava" depois
+            // de logar com Google se perde.
+            const pending = consumePendingRedirect();
+            if (pending) setLocation(pending);
           } else {
             // Nunca falhar em silêncio aqui — sem isto, o cuidador via a
             // tela de login de novo sem entender o que aconteceu (o Google

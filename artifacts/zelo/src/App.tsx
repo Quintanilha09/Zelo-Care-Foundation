@@ -15,6 +15,7 @@ import SettingsPage from '@/pages/SettingsPage';
 import IOSInstallGuidePage from '@/pages/IOSInstallGuidePage';
 import AdminPage from '@/pages/AdminPage';
 import StatusPage from '@/pages/StatusPage';
+import AcceptInvitePage from '@/pages/AcceptInvitePage';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { usePendingDoseActions } from '@/hooks/use-pending-dose-actions';
 import {
@@ -51,6 +52,16 @@ function Router() {
     return (
       <RoutedErrorBoundary>
         <AdminPage />
+      </RoutedErrorBoundary>
+    );
+  }
+  // /convite também precisa ficar fora do gate de auth abaixo: a página
+  // funciona tanto sem sessão (mostra login) quanto com sessão (aceita na
+  // hora) — ver AcceptInvitePage.
+  if (location.startsWith('/convite')) {
+    return (
+      <RoutedErrorBoundary>
+        <AcceptInvitePage />
       </RoutedErrorBoundary>
     );
   }
