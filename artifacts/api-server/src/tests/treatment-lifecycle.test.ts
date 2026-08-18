@@ -86,7 +86,10 @@ async function createPatient(name: string) {
 async function createTreatment(patientId: number, endDate: string | null) {
   const res = await api("POST", `/patients/${patientId}/treatments`, {
     medicationId,
-    scheduleConfig: { scheduleType: "times_per_day", times: ["08:00"] },
+    // "00:01"/"23:59" (não um horário fixo único como "08:00"): garante que
+    // sempre existe pelo menos uma dose hoje, não importa a hora real em
+    // que a suíte roda — mesmo padrão já usado no resto dos testes.
+    scheduleConfig: { scheduleType: "times_per_day", times: ["00:01", "23:59"] },
     startDate: Clock.todayInTimezone("America/Sao_Paulo"),
     endDate,
   });
@@ -171,6 +174,41 @@ describe("closeExpiredTreatments — encerramento automático", () => {
       .where(eq(notificationsTable.treatmentId, treatmentId));
     assert.equal(notif.type, "treatment_ending");
     assertNoClinicalLanguage(notif.body!);
+
+    Clock.reset();
+    await db.delete(treatmentsTable).where(eq(treatmentsTable.id, treatmentId));
+    await db.delete(patientsTable).where(eq(patientsTable.id, patientId));
+  });
+
+  it("dose pendente que já passou da hora vira 'late' ao encerrar, não some e não fica presa em 'pending'", async () => {
+    // Achado ao investigar a instabilidade do teste acima: nada no sistema
+    // atribuía "late" a uma dose (ver resolveOverdueDosesAsLate em
+    // dose-generation.ts) — uma dose vencida ficava "pending" pra sempre,
+    // inclusive depois do próprio tratamento encerrar. "late" ainda é
+    // retroativamente registrável (ZELO-24); "pending" indefinido não
+    // deveria existir pra uma dose de um tratamento que já não está ativo.
+    const patientId = await createPatient("Paciente Dose Vencida");
+    const endDate = Clock.todayInTimezone("America/Sao_Paulo");
+    const treatmentId = await createTreatment(patientId, endDate);
+
+    const [overdueDose] = await db
+      .select()
+      .from(scheduledDosesTable)
+      .where(eq(scheduledDosesTable.treatmentId, treatmentId))
+      .orderBy(scheduledDosesTable.scheduledAt)
+      .limit(1);
+    assert.equal(overdueDose.status, "pending");
+
+    // Adianta só o suficiente pra essa primeira dose (00:01) ficar no
+    // passado, mas ainda dentro do próprio dia final — o tratamento
+    // continua ativo, só a dose já passou da hora.
+    Clock.advance(23 * 3_600_000);
+
+    Clock.advance(2 * 86_400_000); // agora sim, passa da data final
+    await closeExpiredTreatments();
+
+    const [afterClose] = await db.select().from(scheduledDosesTable).where(eq(scheduledDosesTable.id, overdueDose.id));
+    assert.equal(afterClose.status, "late", "dose vencida vira late ao encerrar, não desaparece e não fica pending");
 
     Clock.reset();
     await db.delete(treatmentsTable).where(eq(treatmentsTable.id, treatmentId));

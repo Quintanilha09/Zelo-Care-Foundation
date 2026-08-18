@@ -26,7 +26,7 @@
  * naturalmente reinterpreta o mesmo horário de parede (ex: "8:00") no fuso
  * novo, porque generateDosesForTreatment sempre lê o fuso atual do paciente.
  */
-import { and, eq, gte } from "drizzle-orm";
+import { and, eq, gte, lt } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import { fromDrizzle } from "pg-boss";
 import { db } from "@workspace/db";
@@ -195,7 +195,40 @@ export async function clearFuturePendingDoses(treatmentId: number): Promise<void
     );
 }
 
-/** Cancela doses futuras pendentes quando um tratamento é encerrado/pausado. */
+/**
+ * Doses que ficaram "pending" com o horário já passado (nunca registradas)
+ * viram "late" quando o tratamento que as gerou para de estar ativo —
+ * "pending" significa "ainda vai acontecer", o que deixa de ser verdade
+ * depois de encerrar/pausar/cancelar. "late" continua registrável
+ * retroativamente (ZELO-24) — isto não fecha a porta, só corrige o status.
+ *
+ * Achado ao investigar um teste instável: nada além disto no sistema
+ * atribui "late" a uma dose — para tratamento ATIVO, uma dose que passou
+ * da hora sem ser registrada permanece "pending" indefinidamente, e por
+ * isso a seção "Perdidas" da tela inicial (que filtra por status==="late")
+ * nunca recebe nada nesse caso. Esse gap mais amplo fica de fora daqui de
+ * propósito — corrigir só o que este fechamento de tratamento expõe.
+ */
+async function resolveOverdueDosesAsLate(treatmentId: number): Promise<void> {
+  await db
+    .update(scheduledDosesTable)
+    .set({ status: "late", updatedAt: Clock.now() })
+    .where(
+      and(
+        eq(scheduledDosesTable.treatmentId, treatmentId),
+        eq(scheduledDosesTable.status, "pending"),
+        lt(scheduledDosesTable.scheduledAt, Clock.now())
+      )
+    );
+}
+
+/**
+ * Cancela doses futuras pendentes quando um tratamento é encerrado/pausado,
+ * e resolve as que já passaram da hora sem registro para "late" (ver
+ * resolveOverdueDosesAsLate) — as duas juntas cobrem toda dose "pending"
+ * do tratamento, futura ou não.
+ */
 export async function cancelFutureDoses(treatmentId: number): Promise<void> {
   await clearFuturePendingDoses(treatmentId);
+  await resolveOverdueDosesAsLate(treatmentId);
 }
