@@ -26,7 +26,7 @@ interface AuthUser {
     familyId: number;
     selectedPatientId: number | null;
   };
-  family?: { name: string; retroactiveWindowHours: number };
+  family?: { name: string; retroactiveWindowHours: number; showMedicationInPush: boolean };
 }
 
 interface AuthContextValue {
@@ -80,8 +80,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const tokens = await res.json() as { accessToken: string; refreshToken: string; expiresIn: number };
             setTokens(tokens);
             await loadMe();
+          } else {
+            // Nunca falhar em silêncio aqui — sem isto, o cuidador via a
+            // tela de login de novo sem entender o que aconteceu (o Google
+            // "funcionou", mas a troca pelo token ZELO falhou). Reaproveita
+            // a exibição de erro que já existe em AuthPage para ?auth_error.
+            window.location.href = `${window.location.pathname}?auth_error=google_exchange_failed`;
           }
-        } catch { /* sem tokens — usuário verá a tela de login normalmente */ }
+        } catch {
+          window.location.href = `${window.location.pathname}?auth_error=google_exchange_failed`;
+        }
       } else if (getStoredRefreshToken()) {
         const ok = await refreshSession();
         if (ok) await loadMe();

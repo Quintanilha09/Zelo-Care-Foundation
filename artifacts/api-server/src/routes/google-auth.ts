@@ -19,7 +19,7 @@
 
 import { Router, type Request, type Response } from "express";
 import crypto from "node:crypto";
-import { eq } from "drizzle-orm";
+import { eq, lt } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   usersTable,
@@ -27,10 +27,13 @@ import {
   familiesTable,
   refreshTokensTable,
   consentRecordsTable,
+  oauthLoginCodesTable,
 } from "@workspace/db";
 import {
   generateAccessToken,
   generateRefreshToken,
+  generateOneTimeToken,
+  hashToken,
 } from "../lib/tokens";
 import { safeLog } from "../lib/safe-logger";
 import { audit } from "../lib/audit";
@@ -45,34 +48,47 @@ const isConfigured = () => !!(CLIENT_ID && CLIENT_SECRET);
 
 // ── One-time login codes (troca segura de tokens pós-redirect) ────────────
 // O backend não pode injetar tokens no frontend via redirect (segurança).
-// Emite um code aleatório de vida curta (60s) que o frontend troca por tokens reais.
+// Emite um code aleatório de vida curta (60s) que o frontend troca por
+// tokens reais. Fica no banco (oauth_login_codes), não em memória do
+// processo — ver o docblock da tabela pra explicação completa: um Map em
+// memória perde o code se /callback e /exchange caírem em processos
+// diferentes, e o login falha em silêncio.
+
+async function issueLoginCode(userId: number, accessToken: string, refreshToken: string): Promise<string> {
+  const { raw, hash } = generateOneTimeToken();
+  await db.insert(oauthLoginCodesTable).values({
+    userId,
+    codeHash: hash,
+    accessToken,
+    refreshToken,
+    expiresIn: 15 * 60,
+    expiresAt: new Date(Clock.now().getTime() + 60_000),
+  });
+  return raw;
+}
 
 interface LoginCodeEntry {
   accessToken: string;
   refreshToken: string;
   expiresIn: number;
-  exp: number;
-}
-const loginCodes = new Map<string, LoginCodeEntry>();
-
-function issueLoginCode(accessToken: string, refreshToken: string): string {
-  const code = crypto.randomBytes(32).toString("hex");
-  loginCodes.set(code, { accessToken, refreshToken, expiresIn: 15 * 60, exp: Date.now() + 60_000 });
-  return code;
 }
 
-function consumeLoginCode(code: string): LoginCodeEntry | null {
-  const entry = loginCodes.get(code);
-  loginCodes.delete(code);
-  if (!entry || Date.now() > entry.exp) return null;
+async function consumeLoginCode(code: string): Promise<LoginCodeEntry | null> {
+  const hash = hashToken(code);
+  const [entry] = await db
+    .delete(oauthLoginCodesTable)
+    .where(eq(oauthLoginCodesTable.codeHash, hash))
+    .returning();
+  if (!entry || entry.expiresAt.getTime() < Clock.now().getTime()) return null;
   return entry;
 }
 
-// .unref() impede o interval de manter o processo vivo (necessário nos testes)
+// Limpeza best-effort de codes vencidos nunca trocados (ex: usuário fechou
+// a aba no meio do redirect) — não é o que garante segurança (expiresAt já
+// faz isso em consumeLoginCode), só evita a tabela crescer à toa.
 setInterval(() => {
-  const now = Date.now();
-  for (const [k, v] of loginCodes) if (now > v.exp) loginCodes.delete(k);
-}, 60_000).unref();
+  void db.delete(oauthLoginCodesTable).where(lt(oauthLoginCodesTable.expiresAt, Clock.now())).catch(() => {});
+}, 5 * 60_000).unref();
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -288,18 +304,22 @@ router.get("/auth/google/callback", async (req: Request, res: Response): Promise
     expiresAt: new Date(Clock.now().getTime() + REFRESH_TTL_DAYS * 24 * 60 * 60 * 1000),
   });
 
-  const loginCode = issueLoginCode(accessToken, refreshRaw);
+  const loginCode = await issueLoginCode(userId, accessToken, refreshRaw);
   res.redirect(`/?oauth_code=${loginCode}`);
 });
 
 // ── Troca do login code por tokens reais ──────────────────────────────────
 
-router.post("/auth/google/exchange", (req: Request, res: Response): void => {
+router.post("/auth/google/exchange", async (req: Request, res: Response): Promise<void> => {
   const { code } = req.body as { code?: string };
   if (!code) { res.status(400).json({ error: "Código obrigatório" }); return; }
 
-  const entry = consumeLoginCode(code);
-  if (!entry) { res.status(401).json({ error: "Código inválido ou expirado — tente novamente" }); return; }
+  const entry = await consumeLoginCode(code);
+  if (!entry) {
+    safeLog.warn({ action: "google_exchange_failed" }, "Código de troca OAuth inválido, expirado ou já usado");
+    res.status(401).json({ error: "Código inválido ou expirado — tente novamente" });
+    return;
+  }
 
   res.json({ accessToken: entry.accessToken, refreshToken: entry.refreshToken, expiresIn: entry.expiresIn });
 });

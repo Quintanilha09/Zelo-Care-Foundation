@@ -275,6 +275,7 @@ export default function AuthPage() {
         google_failed: 'Não foi possível autenticar com o Google. Tente novamente.',
         google_unverified: 'O e-mail da conta Google não está verificado.',
         google_no_caregiver: 'Conta encontrada, mas sem vínculo familiar. Contate o suporte.',
+        google_exchange_failed: 'O login com Google demorou demais ou o código expirou. Tente novamente.',
       };
       setAuthError(messages[err] ?? 'Erro ao autenticar. Tente novamente.');
       window.history.replaceState({}, '', window.location.pathname);
