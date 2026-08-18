@@ -30,6 +30,13 @@ function Router() {
   const [location] = useLocation();
   const { isAuthenticated, isLoading, user } = useAuth();
 
+  // ZELO-28: drena/escuta ações de dose vindas da notificação — chamado
+  // incondicional aqui (regra dos hooks: Router tem vários `return` abaixo,
+  // então nenhum hook pode ficar depois deles) e o próprio hook decide
+  // internamente se faz algo, via `enabled` (só quando autenticado —
+  // authFetch precisa de sessão válida de qualquer forma).
+  usePendingDoseActions(isAuthenticated);
+
   // ZELO-32: /status (público) e /admin (autenticação própria de operador)
   // não têm nada a ver com sessão de cuidador — checados ANTES do gate de
   // auth abaixo, que senão engoliria as duas sempre pra tela de login.
@@ -72,10 +79,6 @@ function Router() {
   // inline no cadastro de cada paciente. /consentimento fica de pé só como
   // referência de texto legal, sem gate nenhum no fluxo.
   void user;
-
-  // ZELO-28: só drena/escuta ações de dose vindas da notificação quando
-  // autenticado — authFetch precisa de sessão válida de qualquer forma.
-  usePendingDoseActions();
 
   return (
     <RoutedErrorBoundary>

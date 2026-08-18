@@ -19,11 +19,13 @@ import { getQueuedActions, removeQueuedAction, enqueueAction, type QueuedDoseAct
 
 type PendingAction = Omit<QueuedDoseAction, "id" | "queuedAt">;
 
-export function usePendingDoseActions(): void {
+export function usePendingDoseActions(enabled: boolean): void {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
   useEffect(() => {
+    if (!enabled) return;
+
     async function processAction(action: PendingAction): Promise<"ok" | "rejected" | "network-error"> {
       if (!action.patientId) return "rejected";
 
@@ -82,5 +84,5 @@ export function usePendingDoseActions(): void {
       navigator.serviceWorker?.removeEventListener("message", handleMessage);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [enabled]);
 }
