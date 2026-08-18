@@ -1,40 +1,41 @@
 /**
- * Lembrete de dose — ZELO (ZELO-27, ZELO-28, ZELO-29).
+ * Cascata de lembrete e escalonamento de dose — ZELO (ZELO-27, 28, 29, 30).
  *
- * Prioridade explícita da história original (ZELO-27): nunca duplicar é
- * mais importante que nunca perder. Um idoso que recebe o mesmo lembrete
- * duas vezes pode tomar a dose duas vezes — dano real. Por isso o desenho
- * aqui aceita, no pior caso (processo morre entre o INSERT e a chamada de
- * envio), perder um lembrete isolado em vez de arriscar reenviar um já
- * entregue.
+ * Prioridade explícita desde a história original (ZELO-27): nunca duplicar
+ * é mais importante que nunca perder. Um idoso que recebe o mesmo lembrete
+ * duas vezes pode tomar a dose duas vezes — dano real. Todo o desenho abaixo
+ * aceita, no pior caso (processo morre entre reivindicar e enviar), perder
+ * um lembrete isolado em vez de arriscar reenviar um já entregue.
  *
- * Idempotência em duas camadas independentes:
+ * Idempotência em duas camadas independentes, por (dose, cuidador, nível):
  * 1. Enfileiramento: policy "exclusive" + singletonKey `reminder:{doseId}:{nivel}`
  *    (lib/queue.ts) — só pode existir um job pendente por dose+nível.
  * 2. Execução: UNIQUE(scheduledDoseId, caregiverId, escalationLevel) em
- *    notifications (lib/db) — reprocessar o mesmo job (retry do pg-boss,
- *    reinício após crash) tenta o INSERT de novo; para quem já foi
- *    reivindicado, onConflictDoNothing devolve zero linhas e o cuidador é
- *    pulado, sem reenviar. A claim acontece ANTES do envio de propósito —
- *    "gravar em notifications antes de enviar" é o requisito original.
+ *    notifications — reprocessar o mesmo job (retry do pg-boss, reinício
+ *    após crash) tenta o INSERT de novo; quem já foi reivindicado nunca
+ *    recebe de novo. A claim acontece ANTES do envio, sempre.
  *
- * O conteúdo do push nunca menciona o medicamento, a menos que a família
- * tenha ligado families.showMedicationInPush (ZELO-28, desligado por
- * padrão). `tag` é `dose-group-{patientId}-{scheduledLocalTime}` — doses de
- * tratamentos diferentes do mesmo paciente no mesmo horário compartilham o
- * tag de propósito, pra o service worker mesclar numa notificação só
- * (ZELO-28) em vez de empilhar uma por tratamento.
+ * ZELO-30 — a cascata completa (spec §2.2), 4 níveis, todos agendados
+ * UPFRONT (mesma transação da dose, ver dose-generation.ts) com o
+ * startAfter já calculado — nenhum nível depende do anterior ter disparado
+ * pra existir, cada um se autoverifica no disparo:
+ *   0 (T+0)  → cuidador(es) principal(is) ("de plantão")
+ *   1 (T+15) → mesmo(s) cuidador(es), mais insistente — MESMO nível também
+ *              alcançável mais cedo pela checagem de entrega de 3min
+ *              (ZELO-29) ou pelo botão manual "Adiar 15min" (ZELO-28); os
+ *              três convergem no mesmo slot por cuidador, então quem
+ *              disparar primeiro "ganha" e os outros viram no-op — não é
+ *              preciso coordenar entre eles.
+ *   2 (T+30) → transmite pra TODOS os cuidadores com capacidade de
+ *              registrar — a não ser que o perfil de escalonamento do
+ *              tratamento ou o silêncio noturno da família digam o
+ *              contrário (ver escalationProfile/isQuietHoursNow).
+ *   3 (T+60) → marca a dose como "late" (perdida — continua registrável
+ *              retroativamente, nunca fecha a porta) e avisa de novo o(s)
+ *              principal(is).
  *
- * ZELO-29 — enviado não é entregue: o serviço de push aceitar (sentAt) não
- * prova que o aparelho recebeu. Só o service worker, ao processar o evento
- * `push` de verdade, pode confirmar isso — via beacon pro servidor ANTES
- * de exibir a notificação (POST /push/ack com notificationId, ver
- * routes/push.ts e public/sw.js). Todo envio de nível 0 agenda um job de
- * verificação pra 3 minutos depois: se ninguém confirmou entrega até lá
- * (e a dose continua pendente), escala pro nível 1 automaticamente — o
- * mesmo mecanismo do botão manual "Adiar 15 min" (ZELO-28), só que
- * disparado pelo sistema em vez do cuidador. Só um salto (0→1): os níveis
- * 2/3 (30min/60min) ficam pra uma cascata futura, fora do escopo pedido.
+ * Todo texto é deliberadamente neutro — nunca atribui a falta de registro
+ * a uma pessoa. "Alguém consegue verificar?", nunca "Fulano esqueceu".
  */
 import { eq, and, or, isNull } from "drizzle-orm";
 import { db } from "@workspace/db";
@@ -43,13 +44,24 @@ import {
   treatmentsTable, medicationsTable,
   notificationPreferencesTable, notificationsTable,
 } from "@workspace/db";
+import { toLocalDateTime } from "@workspace/scheduling";
 import { Clock } from "./clock.ts";
 import { sendPushToUser, type PushPayload } from "./push.ts";
 import { boss, QUEUE_DELIVERY_CHECK } from "./queue.ts";
+import { hasCapability, type CaregiverRole } from "./capabilities.ts";
+import { publishPatientEvent } from "./realtime.ts";
 import { logger } from "./logger.ts";
 
-export const ESCALATION_LEVEL_FIRST = 0;
-export const ESCALATION_LEVEL_SNOOZE = 1;
+export const ESCALATION_LEVEL_FIRST = 0; // T+0
+export const ESCALATION_LEVEL_SNOOZE = 1; // T+15 (ou +3min por não-entrega, ou "Adiar" manual)
+export const ESCALATION_LEVEL_BROADCAST = 2; // T+30
+export const ESCALATION_LEVEL_FINAL = 3; // T+60
+export const ESCALATION_LEVELS_MINUTES: Record<number, number> = {
+  [ESCALATION_LEVEL_FIRST]: 0,
+  [ESCALATION_LEVEL_SNOOZE]: 15,
+  [ESCALATION_LEVEL_BROADCAST]: 30,
+  [ESCALATION_LEVEL_FINAL]: 60,
+};
 const DELIVERY_CHECK_DELAY_MS = 3 * 60_000;
 
 interface DoseContext {
@@ -61,15 +73,47 @@ interface PatientContext {
   id: number;
   name: string;
   familyId: number;
+  timezone: string;
   showMedicationInPush: boolean;
 }
+interface FamilyQuietHours {
+  quietHoursEnabled: boolean;
+  quietHoursStart: string;
+  quietHoursEnd: string;
+}
+type EscalationProfile = "silent" | "standard" | "critical";
 
-function buildPayload(dose: DoseContext, patient: PatientContext, medicationName: string | null, notificationId: number): PushPayload {
+/** "HH:mm" (mesmo formato de scheduled_local_time) comparado como string — cruza meia-noite quando start > end (ex: 22:00-07:00). */
+function isQuietHoursNow(patientTimezone: string, family: FamilyQuietHours): boolean {
+  if (!family.quietHoursEnabled || family.quietHoursStart === family.quietHoursEnd) return false;
+  const nowLocal = toLocalDateTime(Clock.now(), patientTimezone).localTime;
+  const { quietHoursStart: start, quietHoursEnd: end } = family;
+  if (start < end) return nowLocal >= start && nowLocal < end;
+  return nowLocal >= start || nowLocal < end;
+}
+
+/** Texto sempre neutro — nunca atribui a falta de registro a uma pessoa (revisado item a item). */
+function buildBody(level: number, dose: DoseContext, patient: PatientContext, medicationName: string | null): string {
+  const med = medicationName ? `de ${medicationName} ` : "do remédio ";
+  if (level === ESCALATION_LEVEL_BROADCAST) {
+    return `A dose ${med}das ${dose.scheduledLocalTime} de ${patient.name} ainda não foi registrada. Alguém consegue verificar?`;
+  }
+  if (level === ESCALATION_LEVEL_FINAL) {
+    return `A dose ${med}das ${dose.scheduledLocalTime} de ${patient.name} foi marcada como perdida — ainda dá pra registrar, se for o caso.`;
+  }
+  return medicationName ? `Está na hora de ${medicationName} — ${patient.name}.` : `Está na hora do remédio de ${patient.name}.`;
+}
+
+function buildPayload(
+  level: number,
+  dose: DoseContext,
+  patient: PatientContext,
+  medicationName: string | null,
+  notificationId: number
+): PushPayload {
   return {
     title: "ZELO",
-    body: medicationName
-      ? `Está na hora de ${medicationName} — ${patient.name}.`
-      : `Está na hora do remédio de ${patient.name}.`,
+    body: buildBody(level, dose, patient, medicationName),
     tag: `dose-group-${patient.id}-${dose.scheduledLocalTime}`,
     url: `/?patient=${patient.id}`,
     scheduledDoseId: dose.id,
@@ -79,18 +123,16 @@ function buildPayload(dose: DoseContext, patient: PatientContext, medicationName
 }
 
 /**
- * Reivindica (claim) e envia UM lembrete pra UM cuidador, num nível
- * específico. Reutilizada tanto pelo envio inicial (nível 0, todos os
- * destinatários) quanto pela escalação automática por falta de confirmação
- * de entrega (nível 1, um cuidador específico) — mesma idempotência nos
- * dois casos, mesmo UNIQUE(scheduledDoseId, caregiverId, escalationLevel).
+ * Reivindica (claim) e envia UM lembrete/escalonamento pra UM cuidador, num
+ * nível específico. Reutilizada por todo disparo de todo nível — mesma
+ * idempotência sempre, mesmo UNIQUE(scheduledDoseId, caregiverId, escalationLevel).
  */
 async function claimAndSendReminder(
+  level: number,
   dose: DoseContext,
   patient: PatientContext,
   medicationName: string | null,
-  recipient: { caregiverId: number; userId: number | null },
-  level: number
+  recipient: { caregiverId: number; userId: number | null }
 ): Promise<void> {
   if (!recipient.userId) return; // cuidador sem conta vinculada (pré-convite) — nada a notificar
 
@@ -103,7 +145,7 @@ async function claimAndSendReminder(
       scheduledDoseId: dose.id,
       type: "dose_reminder",
       title: "ZELO",
-      body: medicationName ? `Está na hora de ${medicationName} — ${patient.name}.` : `Está na hora do remédio de ${patient.name}.`,
+      body: buildBody(level, dose, patient, medicationName),
       escalationLevel: level,
       sentAt: Clock.now(),
     })
@@ -113,17 +155,15 @@ async function claimAndSendReminder(
   if (claimed.length === 0) return; // já reivindicado numa execução anterior — nunca reenvia
 
   const notificationId = claimed[0].id;
-  const payload = buildPayload(dose, patient, medicationName, notificationId);
+  const payload = buildPayload(level, dose, patient, medicationName, notificationId);
   const result = await sendPushToUser(recipient.userId, payload);
   if (result.failed > 0) {
     logger.warn({ scheduledDoseId: dose.id, caregiverId: recipient.caregiverId, level }, "Lembrete de dose: falha ao entregar para ao menos um dispositivo");
   }
 
-  // ZELO-29: só o nível 0 agenda verificação de entrega — a escalação em
-  // si (nível 1) não agenda uma SEGUNDA verificação, pra não encadear além
-  // do único salto que este sistema sabe dar hoje. Só vale a pena verificar
-  // se pelo menos uma assinatura existia pra tentar (sem isso, sabemos de
-  // antemão que não teve como entregar, não precisa esperar 3min pra saber).
+  // ZELO-29: só o nível 0 agenda verificação de entrega de 3min — os
+  // demais níveis já têm horário próprio fixo (T+15/30/60), não precisam
+  // de um atalho pra "descobrir mais cedo que não chegou".
   const hadAnySubscription = result.sent + result.expired + result.failed > 0;
   if (level === ESCALATION_LEVEL_FIRST && hadAnySubscription) {
     await boss.send(
@@ -134,7 +174,15 @@ async function claimAndSendReminder(
   }
 }
 
-async function loadDoseAndPatient(scheduledDoseId: number): Promise<{ dose: DoseContext; patient: PatientContext; medicationName: string | null } | null> {
+interface LoadedContext {
+  dose: DoseContext;
+  patient: PatientContext;
+  medicationName: string | null;
+  family: FamilyQuietHours;
+  escalationProfile: EscalationProfile;
+}
+
+async function loadContext(scheduledDoseId: number): Promise<LoadedContext | null> {
   const [dose] = await db
     .select({
       id: scheduledDosesTable.id,
@@ -147,79 +195,139 @@ async function loadDoseAndPatient(scheduledDoseId: number): Promise<{ dose: Dose
     .where(eq(scheduledDosesTable.id, scheduledDoseId))
     .limit(1);
 
-  // Dose apagada (tratamento editado/pausado desde o agendamento) ou já
-  // registrada — a checagem é EXATAMENTE aqui, no disparo, nunca no
-  // agendamento (a dose podia estar pendente há 14 dias quando o job foi
-  // criado). "pending" é o único status que ainda precisa de lembrete.
-  if (!dose || dose.status !== "pending") return null;
+  // Dose apagada (tratamento editado desde o agendamento) ou já registrada
+  // — a checagem é EXATAMENTE aqui, no disparo, nunca no agendamento (a
+  // dose pode ficar pendente na fila por até 14 dias). "pending"/"late" são
+  // os únicos status que ainda podem precisar de lembrete — "late" é
+  // atribuído por uma varredura independente (dose-generation.ts) e NÃO
+  // significa "resolvida", só "passou da hora"; só taken/skipped/postponed
+  // (um dose_record de verdade) encerram a cascata.
+  if (!dose || (dose.status !== "pending" && dose.status !== "late")) return null;
 
-  const [patient] = await db
+  const [row] = await db
     .select({
-      id: patientsTable.id, name: patientsTable.name, familyId: patientsTable.familyId,
+      patientId: patientsTable.id, patientName: patientsTable.name,
+      familyId: patientsTable.familyId, timezone: patientsTable.timezone,
       showMedicationInPush: familiesTable.showMedicationInPush,
+      quietHoursEnabled: familiesTable.quietHoursEnabled,
+      quietHoursStart: familiesTable.quietHoursStart,
+      quietHoursEnd: familiesTable.quietHoursEnd,
+      medicationId: treatmentsTable.medicationId,
+      escalationProfile: treatmentsTable.escalationProfile,
     })
     .from(patientsTable)
     .innerJoin(familiesTable, eq(patientsTable.familyId, familiesTable.id))
+    .innerJoin(treatmentsTable, eq(treatmentsTable.id, dose.treatmentId))
     .where(eq(patientsTable.id, dose.patientId))
     .limit(1);
-  if (!patient) return null;
+  if (!row) return null;
 
   let medicationName: string | null = null;
-  if (patient.showMedicationInPush) {
-    const [med] = await db
-      .select({ name: medicationsTable.name })
-      .from(treatmentsTable)
-      .innerJoin(medicationsTable, eq(treatmentsTable.medicationId, medicationsTable.id))
-      .where(eq(treatmentsTable.id, dose.treatmentId))
-      .limit(1);
+  if (row.showMedicationInPush) {
+    const [med] = await db.select({ name: medicationsTable.name }).from(medicationsTable).where(eq(medicationsTable.id, row.medicationId)).limit(1);
     medicationName = med?.name ?? null;
   }
 
-  return { dose, patient, medicationName };
+  return {
+    dose,
+    patient: { id: row.patientId, name: row.patientName, familyId: row.familyId, timezone: row.timezone, showMedicationInPush: row.showMedicationInPush },
+    medicationName,
+    family: { quietHoursEnabled: row.quietHoursEnabled, quietHoursStart: row.quietHoursStart, quietHoursEnd: row.quietHoursEnd },
+    escalationProfile: row.escalationProfile as EscalationProfile,
+  };
 }
 
 /**
- * Handler do job QUEUE_DOSE_REMINDER. Nunca lança por causa de falha de
- * ENVIO (lib/push.ts já não lança) — só deixa propagar um erro genuíno de
- * infraestrutura (ex: banco fora do ar), que aciona o retry com backoff da
- * própria fila (configurado em queue.ts), sem lógica de retry própria aqui.
+ * Destinatários de um paciente, filtrados por quem NÃO desligou a
+ * categoria "dose" pra ele (notification_preferences — ausência de linha
+ * = ativado, ZELO-26). `scope`:
+ * - "on_duty": só cuidador(es) principal(is) — T+0/T+15/T+60.
+ * - "capable": todo cuidador com capacidade de registrar dose (qualquer
+ *   papel exceto observador) — T+30.
  */
-export async function sendDoseReminder(scheduledDoseId: number, level: number = ESCALATION_LEVEL_FIRST): Promise<void> {
-  const context = await loadDoseAndPatient(scheduledDoseId);
-  if (!context) return;
-  const { dose, patient, medicationName } = context;
-
-  // Destinatários: todo cuidador com conta vinculada na família, exceto
-  // quem desligou explicitamente a categoria "dose" para ESTE paciente
-  // (notification_preferences — ausência de linha = ativado, ver ZELO-26).
-  const recipients = await db
-    .select({ caregiverId: caregiversTable.id, userId: caregiversTable.userId })
+async function resolveRecipients(
+  familyId: number,
+  patientId: number,
+  scope: "on_duty" | "capable"
+): Promise<Array<{ caregiverId: number; userId: number | null; role: CaregiverRole }>> {
+  const rows = await db
+    .select({ caregiverId: caregiversTable.id, userId: caregiversTable.userId, role: caregiversTable.role })
     .from(caregiversTable)
     .leftJoin(
       notificationPreferencesTable,
       and(
         eq(notificationPreferencesTable.caregiverId, caregiversTable.id),
-        eq(notificationPreferencesTable.patientId, patient.id),
+        eq(notificationPreferencesTable.patientId, patientId),
         eq(notificationPreferencesTable.category, "dose")
       )
     )
     .where(
       and(
-        eq(caregiversTable.familyId, patient.familyId),
+        eq(caregiversTable.familyId, familyId),
         or(isNull(notificationPreferencesTable.enabled), eq(notificationPreferencesTable.enabled, true))
       )
     );
 
-  for (const recipient of recipients) {
-    await claimAndSendReminder(dose, patient, medicationName, recipient, level);
+  const typed = rows.map((r) => ({ ...r, role: r.role as CaregiverRole }));
+  if (scope === "on_duty") return typed.filter((r) => r.role === "primary_caregiver");
+  return typed.filter((r) => hasCapability(r.role, "register_dose"));
+}
+
+/**
+ * Handler do job QUEUE_DOSE_REMINDER, para qualquer um dos 4 níveis da
+ * cascata. Nunca lança por causa de falha de ENVIO (lib/push.ts já não
+ * lança) — só deixa propagar erro genuíno de infraestrutura, que aciona o
+ * retry com backoff da própria fila (queue.ts), sem lógica de retry
+ * própria aqui.
+ */
+export async function sendDoseReminder(scheduledDoseId: number, level: number = ESCALATION_LEVEL_FIRST): Promise<void> {
+  const context = await loadContext(scheduledDoseId);
+  if (!context) return;
+  const { dose, patient, medicationName, family, escalationProfile } = context;
+
+  if (level === ESCALATION_LEVEL_FIRST || level === ESCALATION_LEVEL_SNOOZE) {
+    const recipients = await resolveRecipients(patient.familyId, patient.id, "on_duty");
+    for (const r of recipients) await claimAndSendReminder(level, dose, patient, medicationName, r);
+    return;
+  }
+
+  if (level === ESCALATION_LEVEL_BROADCAST) {
+    // "silent" nunca transmite pra mais gente que o plantonista. "standard"
+    // também não durante o silêncio noturno da família. "critical" sempre
+    // transmite — é o perfil pra quando a dose importa a ponto de acordar
+    // alguém (ex: anticoagulante).
+    const shouldBroadcast =
+      escalationProfile === "critical" ? true :
+      escalationProfile === "silent" ? false :
+      !isQuietHoursNow(patient.timezone, family);
+    if (!shouldBroadcast) return;
+
+    const recipients = await resolveRecipients(patient.familyId, patient.id, "capable");
+    for (const r of recipients) await claimAndSendReminder(level, dose, patient, medicationName, r);
+    publishPatientEvent(patient.id, { type: "escalation_triggered", scheduledDoseId: dose.id });
+    return;
+  }
+
+  if (level === ESCALATION_LEVEL_FINAL) {
+    await db
+      .update(scheduledDosesTable)
+      .set({ status: "late", updatedAt: Clock.now() })
+      .where(and(eq(scheduledDosesTable.id, dose.id), eq(scheduledDosesTable.status, "pending")));
+
+    const recipients = await resolveRecipients(patient.familyId, patient.id, "on_duty");
+    for (const r of recipients) await claimAndSendReminder(level, dose, patient, medicationName, r);
+    publishPatientEvent(patient.id, { type: "dose_missed", scheduledDoseId: dose.id });
+    return;
   }
 }
 
 /**
  * Handler do job QUEUE_DELIVERY_CHECK (ZELO-29). Roda 3 minutos depois de
  * um envio de nível 0. Se ninguém confirmou entrega até aqui (deliveredAt
- * ainda nulo) e a dose continua pendente, escala pro nível 1 — mesmo
- * cuidador, mesma dose, "aciona a cascata" da história.
+ * ainda nulo) e a dose continua elegível, escala pro nível 1 — mesmo
+ * cuidador, mesma dose. Se o T+15 "de verdade" (agendado desde a criação
+ * da dose) ainda não disparou, este é quem chega primeiro; se já disparou,
+ * a claim em claimAndSendReminder torna isto um no-op.
  */
 export async function checkDeliveryAndEscalate(notificationId: number): Promise<void> {
   const [notification] = await db
@@ -230,7 +338,7 @@ export async function checkDeliveryAndEscalate(notificationId: number): Promise<
 
   if (!notification || notification.deliveredAt || !notification.scheduledDoseId || !notification.caregiverId) return;
 
-  const context = await loadDoseAndPatient(notification.scheduledDoseId);
+  const context = await loadContext(notification.scheduledDoseId);
   if (!context) return; // dose já resolvida ou apagada — nada a escalar
 
   const [caregiver] = await db
@@ -242,5 +350,5 @@ export async function checkDeliveryAndEscalate(notificationId: number): Promise<
 
   logger.warn({ notificationId, scheduledDoseId: notification.scheduledDoseId, caregiverId: caregiver.caregiverId }, "Push sem confirmação de entrega em 3min — escalando pro nível 1");
 
-  await claimAndSendReminder(context.dose, context.patient, context.medicationName, caregiver, ESCALATION_LEVEL_SNOOZE);
+  await claimAndSendReminder(ESCALATION_LEVEL_SNOOZE, context.dose, context.patient, context.medicationName, caregiver);
 }

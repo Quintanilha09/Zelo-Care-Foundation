@@ -249,10 +249,18 @@ router.post("/patients/:patientId/dose-records", requireAuth, requireCapability(
 
 // ── Adiar lembrete em 15min (ZELO-28) ───────────────────────────────────────
 // Botão "Adiar 15 min" da notificação — nunca cria dose_record, só reagenda
-// um segundo lembrete (nível 1) pra daqui a 15 minutos. Reaproveita toda a
-// idempotência de QUEUE_DOSE_REMINDER: tocar "Adiar" duas vezes pra mesma
-// dose é no-op na segunda vez (mesma singletonKey, já existe job pendente).
-
+// um segundo lembrete (nível 1) pra daqui a 15 minutos.
+//
+// ZELO-30: o nível 1 já tem um job agendado desde a criação da dose (T+15
+// upfront, às vezes só disparando horas depois) — a policy "exclusive"
+// (queue.ts) rejeita em silêncio (ON CONFLICT DO NOTHING) qualquer segundo
+// job com a mesma singletonKey enquanto o primeiro não chegar a um estado
+// terminal, então só mandar um job novo não bastaria: precisa apagar
+// qualquer job pendente desse nível ANTES de recriar — inclusive um "Adiar"
+// anterior, que assim vira "adiar de novo a partir de agora" em vez de
+// travar. Idempotência de verdade continua vindo de outro lugar (UNIQUE em
+// notifications, dose-reminders.ts): se o nível 1 já foi enviado de fato,
+// recriar o job não reenvia nada.
 router.post("/patients/:patientId/dose-records/:scheduledDoseId/snooze", requireAuth, requireCapability("register_dose"), async (req, res): Promise<void> => {
   const patientId = Number(req.params.patientId);
   const scheduledDoseId = Number(req.params.scheduledDoseId);
@@ -275,10 +283,15 @@ router.post("/patients/:patientId/dose-records/:scheduledDoseId/snooze", require
 
   await ensureQueueStarted();
   const snoozedUntil = new Date(Clock.now().getTime() + 15 * 60_000);
+  const singletonKey = `reminder:${scheduledDoseId}:${ESCALATION_LEVEL_SNOOZE}`;
+  const existing = await boss.findJobs(QUEUE_DOSE_REMINDER, { key: singletonKey });
+  if (existing.length > 0) {
+    await boss.deleteJob(QUEUE_DOSE_REMINDER, existing.map((j) => j.id));
+  }
   await boss.send(
     QUEUE_DOSE_REMINDER,
     { scheduledDoseId, level: ESCALATION_LEVEL_SNOOZE },
-    { singletonKey: `reminder:${scheduledDoseId}:${ESCALATION_LEVEL_SNOOZE}`, startAfter: snoozedUntil }
+    { singletonKey, startAfter: snoozedUntil }
   );
 
   res.json({ scheduledDoseId, snoozedUntil: snoozedUntil.toISOString() });

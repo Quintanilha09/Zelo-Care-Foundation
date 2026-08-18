@@ -56,7 +56,14 @@ router.get("/account/me", requireAuth, async (req, res): Promise<void> => {
 
   const [family] = caregiver
     ? await db
-        .select({ name: familiesTable.name, retroactiveWindowHours: familiesTable.retroactiveWindowHours, showMedicationInPush: familiesTable.showMedicationInPush })
+        .select({
+          name: familiesTable.name,
+          retroactiveWindowHours: familiesTable.retroactiveWindowHours,
+          showMedicationInPush: familiesTable.showMedicationInPush,
+          quietHoursEnabled: familiesTable.quietHoursEnabled,
+          quietHoursStart: familiesTable.quietHoursStart,
+          quietHoursEnd: familiesTable.quietHoursEnd,
+        })
         .from(familiesTable)
         .where(eq(familiesTable.id, caregiver.familyId))
         .limit(1)
@@ -96,14 +103,27 @@ router.patch("/account/selected-patient", requireAuth, async (req, res): Promise
 // Vive aqui (não em routes/families.ts) porque é sempre a família do
 // próprio token — o mesmo padrão de "/account/selected-patient" acima.
 
+const QuietHour = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "horário deve ser HH:mm");
+
 const FamilySettingsBody = z.object({
   retroactiveWindowHours: z.number().int().min(1).max(24 * 30).optional(),
   // ZELO-28: desligado por padrão no banco — este campo só existe pra
   // ligar explicitamente, nunca é obrigatório no corpo.
   showMedicationInPush: z.boolean().optional(),
-}).refine((b) => b.retroactiveWindowHours !== undefined || b.showMedicationInPush !== undefined, {
-  message: "Envie ao menos um ajuste pra alterar",
-});
+  // ZELO-30: janela de silêncio noturno — usada pelo nível 2 (T+30) da
+  // cascata de escalonamento (ver isQuietHoursNow em dose-reminders.ts).
+  quietHoursEnabled: z.boolean().optional(),
+  quietHoursStart: QuietHour.optional(),
+  quietHoursEnd: QuietHour.optional(),
+}).refine(
+  (b) =>
+    b.retroactiveWindowHours !== undefined ||
+    b.showMedicationInPush !== undefined ||
+    b.quietHoursEnabled !== undefined ||
+    b.quietHoursStart !== undefined ||
+    b.quietHoursEnd !== undefined,
+  { message: "Envie ao menos um ajuste pra alterar" }
+);
 
 router.patch("/families/me/settings", requireAuth, requirePrimaryCaregiver, async (req, res): Promise<void> => {
   const body = FamilySettingsBody.safeParse(req.body);
@@ -114,10 +134,20 @@ router.patch("/families/me/settings", requireAuth, requirePrimaryCaregiver, asyn
     .set({
       ...(body.data.retroactiveWindowHours !== undefined ? { retroactiveWindowHours: body.data.retroactiveWindowHours } : {}),
       ...(body.data.showMedicationInPush !== undefined ? { showMedicationInPush: body.data.showMedicationInPush } : {}),
+      ...(body.data.quietHoursEnabled !== undefined ? { quietHoursEnabled: body.data.quietHoursEnabled } : {}),
+      ...(body.data.quietHoursStart !== undefined ? { quietHoursStart: body.data.quietHoursStart } : {}),
+      ...(body.data.quietHoursEnd !== undefined ? { quietHoursEnd: body.data.quietHoursEnd } : {}),
       updatedAt: Clock.now(),
     })
     .where(eq(familiesTable.id, getAuth(req).familyId))
-    .returning({ id: familiesTable.id, retroactiveWindowHours: familiesTable.retroactiveWindowHours, showMedicationInPush: familiesTable.showMedicationInPush });
+    .returning({
+      id: familiesTable.id,
+      retroactiveWindowHours: familiesTable.retroactiveWindowHours,
+      showMedicationInPush: familiesTable.showMedicationInPush,
+      quietHoursEnabled: familiesTable.quietHoursEnabled,
+      quietHoursStart: familiesTable.quietHoursStart,
+      quietHoursEnd: familiesTable.quietHoursEnd,
+    });
 
   await audit({
     familyId: getAuth(req).familyId,

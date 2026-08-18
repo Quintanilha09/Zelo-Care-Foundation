@@ -34,6 +34,20 @@ export const treatmentStatusEnum = pgEnum("treatment_status", [
   "cancelled",
 ]);
 
+// ZELO-30: nem toda dose merece acordar a família inteira — vitamina não,
+// anticoagulante sim. "Ajuste fino por tratamento" É a escolha do perfil em
+// si, não um controle mais granular por cima dele.
+// - silent: só o(s) cuidador(es) principal(is) (T+0/T+15/T+60), nunca
+//   escalona pra mais gente (T+30 nunca transmite).
+// - standard: cascata completa, mas T+30 não transmite durante o silêncio
+//   noturno da família (families.quietHours*).
+// - critical: cascata completa sempre, ignora o silêncio noturno.
+export const escalationProfileEnum = pgEnum("escalation_profile", [
+  "silent",
+  "standard",
+  "critical",
+]);
+
 export const treatmentsTable = pgTable("treatments", {
   id: serial("id").primaryKey(),
   patientId: integer("patient_id")
@@ -55,6 +69,7 @@ export const treatmentsTable = pgTable("treatments", {
   endDate: date("end_date", { mode: "string" }),
   status: treatmentStatusEnum("status").notNull().default("active"),
   instructions: text("instructions"),
+  escalationProfile: escalationProfileEnum("escalation_profile").notNull().default("standard"),
   // ZELO-20: guarda quando o aviso "termina amanhã" foi enviado, pra não
   // reenviar todo dia até a data final chegar. Zerado sempre que a data de
   // fim muda ou o tratamento é reativado — um novo prazo merece novo aviso.

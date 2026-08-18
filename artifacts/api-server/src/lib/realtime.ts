@@ -26,7 +26,12 @@ export type RealtimeEvent =
   | { type: "dose_undone"; scheduledDoseId: number }
   | { type: "treatment_changed"; treatmentId: number }
   | { type: "caregiver_joined"; caregiverName: string }
-  | { type: "low_stock"; medicationName: string };
+  | { type: "low_stock"; medicationName: string }
+  // ZELO-30: emitidos pela cascata de escalonamento — quem estiver com o
+  // paciente aberto vê ao vivo que uma dose passou pro T+30 (transmitida
+  // pra todos) ou T+60 (marcada como perdida), sem precisar dar refresh.
+  | { type: "escalation_triggered"; scheduledDoseId: number }
+  | { type: "dose_missed"; scheduledDoseId: number };
 
 const patientEmitter = new EventEmitter();
 patientEmitter.setMaxListeners(0); // várias abas/dispositivos assistindo o mesmo paciente é normal

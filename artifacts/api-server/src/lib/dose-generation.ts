@@ -35,6 +35,7 @@ import { expandSchedule, toLocalDateTime } from "@workspace/scheduling";
 import type { ScheduleConfig } from "@workspace/scheduling";
 import { Clock } from "./clock.ts";
 import { boss, QUEUE_DOSE_SCHEDULED, QUEUE_DOSE_REMINDER, ensureQueueStarted } from "./queue.ts";
+import { ESCALATION_LEVELS_MINUTES } from "./dose-reminders.ts";
 
 export const DOSE_WINDOW_DAYS = 14;
 
@@ -106,16 +107,20 @@ export async function generateDosesForTreatment(treatmentId: number): Promise<nu
         { db: fromDrizzle(tx, sql) }
       );
 
-      // ZELO-27: um lembrete por dose, agendado pra disparar exatamente na
-      // hora (startAfter) — nunca antes. Mesma transação que a dose: se o
-      // commit falhar, nem a dose nem o lembrete existem, os dois juntos.
+      // ZELO-27/30: a cascata inteira (T+0/15/30/60) agendada de uma vez,
+      // já no momento em que a dose é criada — nenhum nível depende do
+      // anterior ter disparado pra existir, cada um se autoverifica no
+      // disparo (ver dose-reminders.ts). Mesma transação que a dose: se o
+      // commit falhar, nem a dose nem os lembretes existem, todos juntos.
       await boss.insert(
         QUEUE_DOSE_REMINDER,
-        inserted.map((d) => ({
-          data: { scheduledDoseId: d.id },
-          singletonKey: `reminder:${d.id}:0`,
-          startAfter: d.scheduledAt,
-        })),
+        inserted.flatMap((d) =>
+          Object.entries(ESCALATION_LEVELS_MINUTES).map(([level, minutes]) => ({
+            data: { scheduledDoseId: d.id, level: Number(level) },
+            singletonKey: `reminder:${d.id}:${level}`,
+            startAfter: new Date(d.scheduledAt.getTime() + minutes * 60_000),
+          }))
+        ),
         { db: fromDrizzle(tx, sql) }
       );
     }

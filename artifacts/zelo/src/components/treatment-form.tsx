@@ -49,6 +49,17 @@ const SCHEDULE_LABELS: Record<ScheduleType, string> = {
   cycle_with_pause: "Ciclo com pausa",
 };
 
+// ZELO-30: controla até onde vai a cascata de lembrete quando ninguém
+// registra a dose (dose-reminders.ts) — "padrão" cobre a imensa maioria dos
+// tratamentos, os outros dois são exceção deliberada.
+type EscalationProfile = "silent" | "standard" | "critical";
+
+const ESCALATION_PROFILE_LABELS: Record<EscalationProfile, string> = {
+  silent: "Silencioso — só o cuidador principal, nunca chama mais gente",
+  standard: "Padrão — chama os outros cuidadores se ninguém confirmar (não de madrugada)",
+  critical: "Crítico — chama os outros cuidadores mesmo de madrugada",
+};
+
 // Só usado quando a foto diz "N vezes ao dia" sem os horários exatos do
 // relógio (a receita raramente diz isso) — um ponto de partida razoável e
 // facilmente ajustável, nunca uma dose ou intervalo inventado.
@@ -112,6 +123,7 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
   const [scheduleType, setScheduleType] = useState<ScheduleType>("times_per_day");
   const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [endDate, setEndDate] = useState("");
+  const [escalationProfile, setEscalationProfile] = useState<EscalationProfile>("standard");
 
   const [times, setTimes] = useState(["08:00"]);
   const [intervalHours, setIntervalHours] = useState(8);
@@ -273,6 +285,7 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
           startDate,
           endDate: endDate || undefined,
           instructions: instructions.trim() || undefined,
+          escalationProfile,
         }),
       });
       if (!res.ok) {
@@ -458,6 +471,18 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
       <div className="space-y-2">
         <Label htmlFor="tf-instructions">Instruções (opcional)</Label>
         <Textarea id="tf-instructions" value={instructions} onChange={(e) => setInstructions(e.target.value)} rows={2} placeholder="Tomar em jejum, por exemplo" />
+      </div>
+
+      <div className="space-y-2">
+        <Label>Se ninguém registrar a tempo</Label>
+        <Select value={escalationProfile} onValueChange={(v) => setEscalationProfile(v as EscalationProfile)}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {Object.entries(ESCALATION_PROFILE_LABELS).map(([value, label]) => (
+              <SelectItem key={value} value={value}>{label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="space-y-3">

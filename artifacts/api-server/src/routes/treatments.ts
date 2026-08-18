@@ -37,6 +37,9 @@ const CreateTreatmentBody = z.object({
   startDate: z.string(),
   endDate: z.string().optional().nullable(),
   instructions: z.string().optional().nullable(),
+  // ZELO-30: silent/standard/critical — controla se e quando a dose escala
+  // além do(s) cuidador(es) principal(is) (ver dose-reminders.ts).
+  escalationProfile: z.enum(["silent", "standard", "critical"]).optional(),
 });
 
 const UpdateTreatmentBody = CreateTreatmentBody.partial().extend({
@@ -181,6 +184,7 @@ router.post("/patients/:patientId/treatments", requireAuth, async (req, res): Pr
       startDate: body.data.startDate,
       endDate: body.data.endDate ?? null,
       instructions: body.data.instructions ?? null,
+      ...(body.data.escalationProfile ? { escalationProfile: body.data.escalationProfile } : {}),
     })
     .returning();
 
