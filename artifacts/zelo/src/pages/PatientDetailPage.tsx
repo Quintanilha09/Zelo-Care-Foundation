@@ -146,10 +146,14 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
             <h2 className="text-2xl font-semibold">{patient?.name ?? "…"}</h2>
             <p className="text-muted-foreground text-[15px]">{patient?.timezone}</p>
           </div>
-          <Dialog open={open} onOpenChange={setOpen}>
-            <Button onClick={() => setOpen(true)} className="gap-2">
-              <Plus className="w-4 h-4" /> Tratamento
-            </Button>
+          <div className="flex items-center gap-2">
+            <Link href={`/pacientes/${params.id}/historico`}>
+              <Button variant="outline">Histórico</Button>
+            </Link>
+            <Dialog open={open} onOpenChange={setOpen}>
+              <Button onClick={() => setOpen(true)} className="gap-2">
+                <Plus className="w-4 h-4" /> Tratamento
+              </Button>
             <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Novo tratamento</DialogTitle>
@@ -157,7 +161,8 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
               </DialogHeader>
               <TreatmentForm patientId={Number(params.id)} onCreated={handleCreated} onCancel={() => setOpen(false)} />
             </DialogContent>
-          </Dialog>
+            </Dialog>
+          </div>
         </div>
 
         {todayDoses && todayDoses.length > 0 && (
