@@ -18,7 +18,10 @@ import {
 } from "@workspace/db";
 import { generateAccessToken } from "../lib/tokens.ts";
 import { hashPassword } from "../lib/password.ts";
-import { generateDosesForTreatment, extendActiveTreatmentWindows, reconcileDoseQueue } from "../lib/dose-generation.ts";
+import {
+  generateDosesForTreatment, extendActiveTreatmentWindows, reconcileDoseQueue,
+  markOverdueDosesAsLate, LATE_GRACE_MINUTES,
+} from "../lib/dose-generation.ts";
 import { boss, QUEUE_DOSE_SCHEDULED } from "../lib/queue.ts";
 import { Clock } from "../lib/clock.ts";
 import app from "../app.ts";
@@ -279,6 +282,105 @@ describe("Fila de jobs (pg-boss) — ZELO-18", () => {
 
     const afterReconcile = await boss.findJobs(QUEUE_DOSE_SCHEDULED, { data: { scheduledDoseId: dose.id } });
     assert.equal(afterReconcile.length, 1, "job deveria ter sido recriado pela reconciliação");
+
+    await db.delete(treatmentsTable).where(eq(treatmentsTable.id, treatmentId));
+  });
+});
+
+// markOverdueDosesAsLate é a rede de segurança GLOBAL (varre toda scheduled_dose
+// do banco, não só as desta família) — mesma convenção de treatment-lifecycle.test.ts:
+// contagens usam ">= 1", nunca igualdade exata, pra não quebrar se sobrar algo de
+// fora. As asserções específicas de status usam sempre o id de uma dose conhecida,
+// nunca uma contagem global.
+describe("markOverdueDosesAsLate — rede de segurança global (achado ao investigar a instabilidade do teste de encerramento, ZELO-24)", () => {
+  it("dose pending vencida além da folga, de um tratamento AINDA ATIVO, vira 'late' — o caso que ficava sem cobertura", async () => {
+    const createRes = await api("POST", `/patients/${patientId}/treatments`, {
+      medicationId,
+      scheduleConfig: { scheduleType: "times_per_day", times: ["08:00"] },
+      startDate: Clock.todayInTimezone("America/Sao_Paulo"),
+    });
+    const { id: treatmentId } = createRes.body as { id: number };
+
+    const [overdueDose] = await db
+      .select()
+      .from(scheduledDosesTable)
+      .where(eq(scheduledDosesTable.treatmentId, treatmentId))
+      .orderBy(scheduledDosesTable.scheduledAt)
+      .limit(1);
+
+    // Empurra só o horário pra além da folga, sem tocar o status — imita uma
+    // dose real que passou da hora sem ninguém registrar, num tratamento que
+    // segue ativo (diferente do cenário de encerramento, já coberto em
+    // treatment-lifecycle.test.ts).
+    const overdueAt = new Date(Clock.now().getTime() - (LATE_GRACE_MINUTES + 5) * 60_000);
+    await db.update(scheduledDosesTable).set({ scheduledAt: overdueAt }).where(eq(scheduledDosesTable.id, overdueDose.id));
+
+    const [treatment] = await db.select().from(treatmentsTable).where(eq(treatmentsTable.id, treatmentId));
+    assert.equal(treatment.status, "active", "pré-condição: o tratamento segue ativo — é exatamente o caso que faltava cobertura");
+
+    const updated = await markOverdueDosesAsLate();
+    assert.ok(updated >= 1, "deveria ter marcado ao menos a dose vencida deste teste");
+
+    const [afterSweep] = await db.select().from(scheduledDosesTable).where(eq(scheduledDosesTable.id, overdueDose.id));
+    assert.equal(afterSweep.status, "late");
+
+    const stillPending = await db
+      .select()
+      .from(scheduledDosesTable)
+      .where(and(eq(scheduledDosesTable.treatmentId, treatmentId), eq(scheduledDosesTable.status, "pending")));
+    assert.ok(stillPending.length > 0, "doses futuras do mesmo tratamento não deveriam ser tocadas pela varredura");
+
+    await db.delete(treatmentsTable).where(eq(treatmentsTable.id, treatmentId));
+  });
+
+  it("respeita a folga (LATE_GRACE_MINUTES): dose vencida há pouco tempo continua pending", async () => {
+    const createRes = await api("POST", `/patients/${patientId}/treatments`, {
+      medicationId,
+      scheduleConfig: { scheduleType: "times_per_day", times: ["08:00"] },
+      startDate: Clock.todayInTimezone("America/Sao_Paulo"),
+    });
+    const { id: treatmentId } = createRes.body as { id: number };
+
+    const [dose] = await db
+      .select()
+      .from(scheduledDosesTable)
+      .where(eq(scheduledDosesTable.treatmentId, treatmentId))
+      .orderBy(scheduledDosesTable.scheduledAt)
+      .limit(1);
+
+    const withinGrace = new Date(Clock.now().getTime() - 5 * 60_000); // só 5min atrás, bem dentro da folga
+    await db.update(scheduledDosesTable).set({ scheduledAt: withinGrace }).where(eq(scheduledDosesTable.id, dose.id));
+
+    await markOverdueDosesAsLate();
+
+    const [after] = await db.select().from(scheduledDosesTable).where(eq(scheduledDosesTable.id, dose.id));
+    assert.equal(after.status, "pending", "dentro da folga, a dose não deveria virar late ainda");
+
+    await db.delete(treatmentsTable).where(eq(treatmentsTable.id, treatmentId));
+  });
+
+  it("nunca sobrescreve dose já registrada (taken), mesmo com horário bem passado", async () => {
+    const createRes = await api("POST", `/patients/${patientId}/treatments`, {
+      medicationId,
+      scheduleConfig: { scheduleType: "times_per_day", times: ["08:00"] },
+      startDate: Clock.todayInTimezone("America/Sao_Paulo"),
+    });
+    const { id: treatmentId } = createRes.body as { id: number };
+
+    const [dose] = await db
+      .select()
+      .from(scheduledDosesTable)
+      .where(eq(scheduledDosesTable.treatmentId, treatmentId))
+      .orderBy(scheduledDosesTable.scheduledAt)
+      .limit(1);
+
+    const wayOverdue = new Date(Clock.now().getTime() - 5 * 3_600_000); // 5h atrás
+    await db.update(scheduledDosesTable).set({ scheduledAt: wayOverdue, status: "taken" }).where(eq(scheduledDosesTable.id, dose.id));
+
+    await markOverdueDosesAsLate();
+
+    const [after] = await db.select().from(scheduledDosesTable).where(eq(scheduledDosesTable.id, dose.id));
+    assert.equal(after.status, "taken", "dose já registrada não pode regredir para late");
 
     await db.delete(treatmentsTable).where(eq(treatmentsTable.id, treatmentId));
   });

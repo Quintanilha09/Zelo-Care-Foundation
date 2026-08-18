@@ -196,30 +196,65 @@ export async function clearFuturePendingDoses(treatmentId: number): Promise<void
 }
 
 /**
+ * UPDATE compartilhado por trás das duas rotinas que atribuem "late":
+ * a pontual (fecha 1 tratamento) e a varredura global periódica, abaixo.
+ * Um único ponto de escrita evita que as duas divirjam silenciosamente se
+ * o critério mudar no futuro (ex: gravar quem/o que resolveu a dose).
+ */
+async function markPendingDosesLate(cutoff: Date, treatmentId?: number): Promise<number> {
+  const conditions = [eq(scheduledDosesTable.status, "pending"), lt(scheduledDosesTable.scheduledAt, cutoff)];
+  if (treatmentId !== undefined) conditions.push(eq(scheduledDosesTable.treatmentId, treatmentId));
+
+  const updated = await db
+    .update(scheduledDosesTable)
+    .set({ status: "late", updatedAt: Clock.now() })
+    .where(and(...conditions))
+    .returning({ id: scheduledDosesTable.id });
+
+  return updated.length;
+}
+
+/**
  * Doses que ficaram "pending" com o horário já passado (nunca registradas)
  * viram "late" quando o tratamento que as gerou para de estar ativo —
  * "pending" significa "ainda vai acontecer", o que deixa de ser verdade
  * depois de encerrar/pausar/cancelar. "late" continua registrável
  * retroativamente (ZELO-24) — isto não fecha a porta, só corrige o status.
- *
- * Achado ao investigar um teste instável: nada além disto no sistema
- * atribui "late" a uma dose — para tratamento ATIVO, uma dose que passou
- * da hora sem ser registrada permanece "pending" indefinidamente, e por
- * isso a seção "Perdidas" da tela inicial (que filtra por status==="late")
- * nunca recebe nada nesse caso. Esse gap mais amplo fica de fora daqui de
- * propósito — corrigir só o que este fechamento de tratamento expõe.
+ * Sem folga (corta em Clock.now()): o tratamento já fechou, não há razão
+ * pra deixar uma dose seguir "pending" mais alguns minutos.
  */
 async function resolveOverdueDosesAsLate(treatmentId: number): Promise<void> {
-  await db
-    .update(scheduledDosesTable)
-    .set({ status: "late", updatedAt: Clock.now() })
-    .where(
-      and(
-        eq(scheduledDosesTable.treatmentId, treatmentId),
-        eq(scheduledDosesTable.status, "pending"),
-        lt(scheduledDosesTable.scheduledAt, Clock.now())
-      )
-    );
+  await markPendingDosesLate(Clock.now(), treatmentId);
+}
+
+// Folga antes de marcar uma dose como "late" na varredura global (abaixo).
+// Existe pra não fazer uma dose "piscar" pra Perdidas no minuto exato em
+// que passa da hora — o cuidador ainda tem uma janela curta pra registrar
+// sem que o app pareça precipitado ("perdida não é sentença", ZELO-24).
+export const LATE_GRACE_MINUTES = 30;
+
+/**
+ * Varredura periódica (cron, ver lib/queue.ts): marca como "late" toda
+ * scheduled_dose "pending" cujo horário já passou há mais de
+ * LATE_GRACE_MINUTES — de QUALQUER tratamento, ativo ou não.
+ *
+ * Por que isto precisa existir além de resolveOverdueDosesAsLate: aquela
+ * função só roda no momento em que o PRÓPRIO tratamento encerra/pausa
+ * (cancelFutureDoses). Para um tratamento que continua ativo — o caso
+ * comum — uma dose que passa da hora sem ser registrada ficava "pending"
+ * indefinidamente, e a seção "Perdidas" da tela inicial (HomePage.tsx,
+ * filtra por status==="late") nunca recebia nada. Achado ao investigar a
+ * instabilidade do teste de closeExpiredTreatments — nada além daquele
+ * fechamento pontual jamais atribuía "late" a uma dose.
+ *
+ * Roda a cada 15min (não 1x/dia como os outros crons de manutenção): uma
+ * dose perdida de manhã não pode esperar até a madrugada do dia seguinte
+ * pra aparecer como perdida — o atraso total pro cuidador ver "Perdidas"
+ * fica limitado a ~folga + intervalo do cron, não a até 24h.
+ */
+export async function markOverdueDosesAsLate(): Promise<number> {
+  const cutoff = new Date(Clock.now().getTime() - LATE_GRACE_MINUTES * 60_000);
+  return markPendingDosesLate(cutoff);
 }
 
 /**
