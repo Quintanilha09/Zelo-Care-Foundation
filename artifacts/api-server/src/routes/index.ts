@@ -1,5 +1,6 @@
 import { Router } from "express";
 import healthRouter from "./health";
+import adminRouter from "./admin";
 import authRouter from "./auth";
 import googleAuthRouter from "./google-auth";
 import consentRouter from "./consent";
@@ -24,6 +25,9 @@ const router = Router();
 
 // Sem autenticação
 router.use(healthRouter);
+// ZELO-32: mistura rota pública (/status) com rotas de admin (auth própria,
+// requireAdminAuth — nunca requireAuth) — mesmo padrão de consent.ts.
+router.use(adminRouter);
 router.use(authRouter);
 router.use(googleAuthRouter);
 router.use(consentRouter);

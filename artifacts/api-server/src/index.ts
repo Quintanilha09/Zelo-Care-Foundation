@@ -5,6 +5,7 @@ import { extendActiveTreatmentWindows, reconcileDoseQueue, markOverdueDosesAsLat
 import { runTreatmentLifecycleJob } from "./lib/treatment-lifecycle";
 import { decrementStockForDoseTaken } from "./lib/stock";
 import { sendDoseReminder, checkDeliveryAndEscalate } from "./lib/dose-reminders";
+import { runOperationalChecks } from "./lib/operational-monitor";
 
 const rawPort = process.env["PORT"];
 
@@ -29,6 +30,9 @@ await startQueue({
   },
   markLateDoses: async () => {
     await markOverdueDosesAsLate();
+  },
+  runOperationalChecks: async () => {
+    await runOperationalChecks();
   },
   onDoseTaken: async ({ patientId, medicationId }) => {
     await decrementStockForDoseTaken(patientId, medicationId);

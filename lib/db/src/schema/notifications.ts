@@ -15,6 +15,19 @@ import { treatmentsTable } from "./treatments";
 import { scheduledDosesTable } from "./scheduled-doses";
 import { pushPlatformEnum } from "./push-subscriptions";
 
+// ZELO-32: mesmos valores de PushSendResult.reason (lib/push.ts) — não
+// existia coluna nenhuma pra isto antes porque, até aqui, cada chamador só
+// precisava do AGREGADO (sent/expired/failed) pra decidir o que fazer em
+// seguida. O painel operacional precisa do motivo PRECISO por notificação
+// pra responder "quanto disso é assinatura expirada vs erro de verdade".
+export const pushFailureReasonEnum = pgEnum("push_failure_reason", [
+  "not_configured",
+  "no_keys",
+  "expired",
+  "rate_limited",
+  "error",
+]);
+
 export const notificationTypeEnum = pgEnum("notification_type", [
   "dose_reminder",
   "dose_late",
@@ -64,6 +77,11 @@ export const notificationsTable = pgTable(
     // dispositivo (fora do escopo pedido — a história testa taxa por
     // período, não taxa por dispositivo com denominador exato).
     deliveredViaPlatform: pushPlatformEnum("delivered_via_platform"),
+    // ZELO-32: motivo da última falha de envio a algum dispositivo do
+    // cuidador (ver claimAndSendReminder em dose-reminders.ts) — nulo
+    // quando todo dispositivo recebeu com sucesso, ou quando o cuidador
+    // não tinha nenhuma assinatura de push ativa (nada foi sequer tentado).
+    lastFailureReason: pushFailureReasonEnum("last_failure_reason"),
     ackedAt: timestamp("acked_at", { withTimezone: true }),
     escalationLevel: integer("escalation_level").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -88,6 +106,12 @@ export const notificationsTable = pgTable(
       table.type,
       table.sentAt
     ),
+    // ZELO-32: o painel operacional agrega SEM recorte de família (é uma
+    // pergunta sobre o serviço inteiro, não sobre uma família) — o índice
+    // acima começa em familyId e não ajuda aqui. Mesmo raciocínio da ZELO-29:
+    // sem isto, a consulta de 30 dias vira varredura completa conforme a
+    // tabela cresce (critério de aceite: painel responde em <2s).
+    adminMetricsIndex: index("idx_notifications_admin_metrics").on(table.type, table.sentAt),
   })
 );
 

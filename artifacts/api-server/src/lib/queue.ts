@@ -40,6 +40,10 @@
  *   dose-generation.ts). Sem isto, uma dose vencida de um tratamento que
  *   continua ativo fica "pending" pra sempre, e a seção "Perdidas" da tela
  *   inicial nunca recebe nada.
+ * - QUEUE_OPERATIONAL_MONITOR: job frequente (cron, a cada 2min — a
+ *   história pede detecção em menos de 5min) que roda as 3 checagens de
+ *   saúde operacional (ver lib/operational-monitor.ts): taxa de entrega,
+ *   fila travada, janela sem envio algum.
  */
 import { PgBoss } from "pg-boss";
 
@@ -50,6 +54,7 @@ export const QUEUE_DOSE_TAKEN = "dose-taken";
 export const QUEUE_DOSE_REMINDER = "dose-reminder";
 export const QUEUE_DELIVERY_CHECK = "delivery-check";
 export const QUEUE_MARK_LATE_DOSES = "mark-late-doses";
+export const QUEUE_OPERATIONAL_MONITOR = "operational-monitor";
 
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL must be set. Did you forget to provision a database?");
@@ -101,6 +106,7 @@ export async function startQueue(handlers: {
   extendWindows: () => Promise<void>;
   runTreatmentLifecycle: () => Promise<void>;
   markLateDoses: () => Promise<void>;
+  runOperationalChecks: () => Promise<void>;
   onDoseTaken: (data: { patientId: number; medicationId: number }) => Promise<void>;
   onDoseReminder: (data: { scheduledDoseId: number; level?: number }) => Promise<void>;
   onDeliveryCheck: (data: { notificationId: number }) => Promise<void>;
@@ -110,6 +116,7 @@ export async function startQueue(handlers: {
   await boss.createQueue(QUEUE_EXTEND_DOSE_WINDOW, { policy: "singleton" });
   await boss.createQueue(QUEUE_TREATMENT_LIFECYCLE, { policy: "singleton" });
   await boss.createQueue(QUEUE_MARK_LATE_DOSES, { policy: "singleton" });
+  await boss.createQueue(QUEUE_OPERATIONAL_MONITOR, { policy: "singleton" });
 
   // 03:00 UTC todo dia — não é crítico ser exato por fuso do paciente,
   // a janela é de 14 dias, algumas horas de folga não importam.
@@ -119,6 +126,8 @@ export async function startQueue(handlers: {
   // manhã não pode esperar até a madrugada seguinte pra aparecer em
   // "Perdidas" (ver dose-generation.ts).
   await boss.schedule(QUEUE_MARK_LATE_DOSES, "*/15 * * * *", null, { tz: "UTC" });
+  // A cada 2min — a história pede detecção de queda operacional em <5min.
+  await boss.schedule(QUEUE_OPERATIONAL_MONITOR, "*/2 * * * *", null, { tz: "UTC" });
 
   await boss.work(QUEUE_EXTEND_DOSE_WINDOW, async () => {
     await handlers.extendWindows();
@@ -128,6 +137,9 @@ export async function startQueue(handlers: {
   });
   await boss.work(QUEUE_MARK_LATE_DOSES, async () => {
     await handlers.markLateDoses();
+  });
+  await boss.work(QUEUE_OPERATIONAL_MONITOR, async () => {
+    await handlers.runOperationalChecks();
   });
   await boss.work(QUEUE_DOSE_TAKEN, async (jobs) => {
     for (const job of jobs) {

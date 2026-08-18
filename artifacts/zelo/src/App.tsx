@@ -13,6 +13,8 @@ import PatientDetailPage from '@/pages/PatientDetailPage';
 import CaregiversPage from '@/pages/CaregiversPage';
 import SettingsPage from '@/pages/SettingsPage';
 import IOSInstallGuidePage from '@/pages/IOSInstallGuidePage';
+import AdminPage from '@/pages/AdminPage';
+import StatusPage from '@/pages/StatusPage';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { usePendingDoseActions } from '@/hooks/use-pending-dose-actions';
 import {
@@ -25,7 +27,26 @@ import {
 const queryClient = new QueryClient();
 
 function Router() {
+  const [location] = useLocation();
   const { isAuthenticated, isLoading, user } = useAuth();
+
+  // ZELO-32: /status (público) e /admin (autenticação própria de operador)
+  // não têm nada a ver com sessão de cuidador — checados ANTES do gate de
+  // auth abaixo, que senão engoliria as duas sempre pra tela de login.
+  if (location === '/status') {
+    return (
+      <RoutedErrorBoundary>
+        <StatusPage />
+      </RoutedErrorBoundary>
+    );
+  }
+  if (location.startsWith('/admin')) {
+    return (
+      <RoutedErrorBoundary>
+        <AdminPage />
+      </RoutedErrorBoundary>
+    );
+  }
 
   if (isLoading) {
     return (
