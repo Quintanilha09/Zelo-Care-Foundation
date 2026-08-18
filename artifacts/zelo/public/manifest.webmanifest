@@ -1,0 +1,19 @@
+{
+  "name": "ZELO",
+  "short_name": "ZELO",
+  "description": "Cuidado compartilhado de medicação — a família inteira em dia.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#F8F7F5",
+  "theme_color": "#659A76",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

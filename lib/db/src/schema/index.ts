@@ -20,6 +20,7 @@ export * from "./consent-records";
 export * from "./caregiver-invites";
 export * from "./subscription-plans";
 export * from "./push-subscriptions";
+export * from "./notification-preferences";
 export * from "./alert-escalations";
 // autenticação: tokens e fluxos
 export * from "./email-verifications";

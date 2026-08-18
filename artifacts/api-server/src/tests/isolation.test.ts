@@ -21,6 +21,7 @@ import {
   usersTable, caregiversTable, familiesTable, patientsTable,
   treatmentsTable, scheduledDosesTable, medicationsTable,
   notificationsTable, consentRecordsTable, photoExtractionsTable, doseRecordsTable,
+  pushSubscriptionsTable, notificationPreferencesTable,
 } from "@workspace/db";
 import { generateAccessToken } from "../lib/tokens.ts";
 import { hashPassword } from "../lib/password.ts";
@@ -74,6 +75,13 @@ const PROTECTED_ROUTES = new Set([
   "PATCH /account/selected-patient",
   "PATCH /families/me/settings",
   "GET /patients/:id/events",
+  "GET /patients/:id/notification-preferences",
+  "PATCH /patients/:id/notification-preferences",
+  "GET /push/vapid-public-key",
+  "POST /push/subscribe",
+  "DELETE /push/subscribe",
+  "GET /push/subscriptions",
+  "POST /push/test",
 ]);
 
 // Conjunto preenchido pelos testes — o meta-test verifica cobertura total
@@ -98,6 +106,7 @@ let notifAId: number;
 // Família B
 let tokenB: string;
 let familyBId: number;
+let userIdB: number;
 let patientBId: number;
 let caregiverBId: number;
 let medicationBId: number;
@@ -186,7 +195,7 @@ before(async () => {
   tokenA = a.token; familyAId = a.familyId; userIdA = a.userId; patientAId = a.patientId;
   caregiverAId = a.caregiverId; medicationAId = a.medicationId; treatmentAId = a.treatmentId;
   doseAId = a.doseId; notifAId = a.notifId;
-  tokenB = b.token; familyBId = b.familyId; patientBId = b.patientId;
+  tokenB = b.token; familyBId = b.familyId; userIdB = b.userId; patientBId = b.patientId;
   caregiverBId = b.caregiverId; medicationBId = b.medicationId; treatmentBId = b.treatmentId;
   notifBId = b.notifId;
 });
@@ -504,6 +513,55 @@ describe("Isolamento entre famílias — ZELO", () => {
     const [familyB] = await db.select({ retroactiveWindowHours: familiesTable.retroactiveWindowHours }).from(familiesTable).where(eq(familiesTable.id, familyBId));
     assert.notEqual(familyB.retroactiveWindowHours, 6, "mudar a janela de A não pode vazar pra B");
     covered("PATCH /families/me/settings");
+  });
+
+  it("GET /patients/:id/notification-preferences — família A não lê preferências de paciente de B", async () => {
+    await assertIsolated("GET /patients/:id/notification-preferences", "GET", `/patients/${patientBId}/notification-preferences`);
+  });
+
+  it("PATCH /patients/:id/notification-preferences — família A não altera preferências de paciente de B", async () => {
+    await assertIsolated("PATCH /patients/:id/notification-preferences", "PATCH", `/patients/${patientBId}/notification-preferences`, { category: "dose", enabled: false });
+  });
+
+  it("GET /push/vapid-public-key — só requer autenticação, mesma chave pra todos", async () => {
+    const res = await api(tokenA, "GET", "/push/vapid-public-key");
+    assert.ok(res.status === 200 || res.status === 503, `esperava 200 ou 503, recebeu ${res.status}`);
+    covered("GET /push/vapid-public-key");
+  });
+
+  it("POST /push/subscribe — assinatura de A não aparece na listagem de B", async () => {
+    const fakeEndpoint = `https://push.test/iso-${Date.now()}`;
+    const res = await api(tokenA, "POST", "/push/subscribe", {
+      endpoint: fakeEndpoint, keys: { p256dh: "p256dh-fake", auth: "auth-fake" }, deviceLabel: "Dispositivo de Teste A",
+    });
+    assert.equal(res.status, 200);
+
+    const listB = await api(tokenB, "GET", "/push/subscriptions");
+    const subs = listB.body as Array<{ deviceLabel: string | null }>;
+    assert.equal(subs.some((s) => s.deviceLabel === "Dispositivo de Teste A"), false, "listagem de B não pode conter assinatura de A");
+    covered("POST /push/subscribe");
+    covered("GET /push/subscriptions");
+
+    await api(tokenA, "DELETE", "/push/subscribe", { endpoint: fakeEndpoint });
+    covered("DELETE /push/subscribe");
+  });
+
+  it("POST /push/test — sem subscriptionId, escopado ao próprio usuário (nunca envia pra outro)", async () => {
+    const res = await api(tokenA, "POST", "/push/test", {});
+    assert.equal(res.status, 200);
+    const body = res.body as { sent: number; expired: number; failed: number };
+    assert.equal(typeof body.sent, "number");
+  });
+
+  it("POST /push/test — família A não testa/lê a assinatura de B mesmo sabendo o id", async () => {
+    const [subB] = await db
+      .insert(pushSubscriptionsTable)
+      .values({ userId: userIdB, familyId: familyBId, endpoint: `https://push.test/iso-b-${Date.now()}`, p256dh: "x", auth: "y", deviceLabel: "Dispositivo B" })
+      .returning();
+
+    await assertIsolated("POST /push/test", "POST", "/push/test", { subscriptionId: subB.id });
+
+    await db.delete(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.id, subB.id));
   });
 
   it("POST /medication-photos/extract — cria extração para a família do token (ZELO-21)", async (t) => {

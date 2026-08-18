@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { PushDiagnostics } from "@/components/push-diagnostics";
 
 export default function SettingsPage() {
   const { user } = useAuth();
@@ -85,6 +86,8 @@ export default function SettingsPage() {
             <Button type="submit" disabled={saving}>{saving ? "Salvando…" : "Salvar"}</Button>
           )}
         </form>
+
+        <PushDiagnostics />
       </main>
     </div>
   );

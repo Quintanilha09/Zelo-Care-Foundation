@@ -5,6 +5,8 @@ import { authFetch } from "@/lib/auth-client";
 import { AppHeader } from "@/components/app-header";
 import { TreatmentForm } from "@/components/treatment-form";
 import { DoseCard } from "@/components/dose-card";
+import { PushPermissionPrompt } from "@/components/push-permission-prompt";
+import { NotificationPreferencesCard } from "@/components/notification-preferences-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -77,6 +79,7 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
   const [open, setOpen] = useState(false);
   const [reactivatingId, setReactivatingId] = useState<number | null>(null);
   const [reactivateEndDate, setReactivateEndDate] = useState("");
+  const [pushPromptTrigger, setPushPromptTrigger] = useState(0);
   const queryClient = useQueryClient();
 
   const { data: patient } = useQuery({ queryKey: ["patient", params.id], queryFn: () => fetchPatient(params.id) });
@@ -96,6 +99,10 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
     setOpen(false);
     void queryClient.invalidateQueries({ queryKey: ["treatments", params.id] });
     void queryClient.invalidateQueries({ queryKey: ["today-doses", params.id] });
+    // ZELO-26: nunca no primeiro segundo — só depois que o cuidador cadastra
+    // um tratamento de verdade. O componente decide sozinho se já mostrou
+    // antes ou se a permissão já foi respondida.
+    setPushPromptTrigger((n) => n + 1);
   };
 
   const handleRegister = async (doseId: number, outcome: "taken" | "skipped") => {
@@ -264,7 +271,10 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
             </div>
           </details>
         )}
+
+        <NotificationPreferencesCard patientId={Number(params.id)} />
       </main>
+      <PushPermissionPrompt trigger={pushPromptTrigger} />
     </div>
   );
 }

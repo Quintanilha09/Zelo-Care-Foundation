@@ -17,6 +17,8 @@ import notificationsRouter from "./notifications";
 import auditRouter from "./audit";
 import dashboardRouter from "./dashboard";
 import realtimeRouter from "./realtime";
+import pushRouter from "./push";
+import notificationPreferencesRouter from "./notification-preferences";
 
 const router = Router();
 
@@ -41,6 +43,8 @@ router.use(notificationsRouter);
 router.use(auditRouter);
 router.use(dashboardRouter);
 router.use(realtimeRouter);
+router.use(pushRouter);
+router.use(notificationPreferencesRouter);
 
 // Rotas de controle do relógio — APENAS fora de produção
 if (process.env.NODE_ENV !== "production") {
