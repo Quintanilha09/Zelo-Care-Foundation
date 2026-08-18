@@ -4,6 +4,7 @@ import { startQueue, stopQueue } from "./lib/queue";
 import { extendActiveTreatmentWindows, reconcileDoseQueue } from "./lib/dose-generation";
 import { runTreatmentLifecycleJob } from "./lib/treatment-lifecycle";
 import { decrementStockForDoseTaken } from "./lib/stock";
+import { sendDoseReminder } from "./lib/dose-reminders";
 
 const rawPort = process.env["PORT"];
 
@@ -28,6 +29,9 @@ await startQueue({
   },
   onDoseTaken: async ({ patientId, medicationId }) => {
     await decrementStockForDoseTaken(patientId, medicationId);
+  },
+  onDoseReminder: async ({ scheduledDoseId }) => {
+    await sendDoseReminder(scheduledDoseId);
   },
 });
 

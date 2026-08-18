@@ -22,6 +22,12 @@
  * - QUEUE_DOSE_TAKEN: um evento por dose registrada como tomada (ZELO-23).
  *   Decrementa estoque sem o módulo de registro de dose conhecer o de
  *   estoque — só publica o evento, quem decrementa é um worker separado.
+ * - QUEUE_DOSE_REMINDER: um job por dose criada, agendado pra disparar em
+ *   scheduled_at (ZELO-27). policy "exclusive" + singletonKey
+ *   `reminder:{doseId}:0` — mesma idempotência de enfileiramento que
+ *   QUEUE_DOSE_SCHEDULED. retryLimit/retryBackoff no nível da fila: uma
+ *   falha de infraestrutura (não de envio — ver lib/dose-reminders.ts) faz
+ *   o pg-boss retentar sozinho, sem lógica extra no handler.
  */
 import { PgBoss } from "pg-boss";
 
@@ -29,6 +35,7 @@ export const QUEUE_DOSE_SCHEDULED = "dose-scheduled";
 export const QUEUE_EXTEND_DOSE_WINDOW = "extend-dose-window";
 export const QUEUE_TREATMENT_LIFECYCLE = "treatment-lifecycle";
 export const QUEUE_DOSE_TAKEN = "dose-taken";
+export const QUEUE_DOSE_REMINDER = "dose-reminder";
 
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL must be set. Did you forget to provision a database?");
@@ -53,6 +60,17 @@ export async function ensureQueueStarted(): Promise<void> {
   await boss.start();
   await boss.createQueue(QUEUE_DOSE_SCHEDULED, { policy: "exclusive" });
   await boss.createQueue(QUEUE_DOSE_TAKEN, { policy: "standard" });
+  // 30s inicial, dobra a cada tentativa (com jitter), até 10min, 5 tentativas
+  // — número não vem da spec (só pede "backoff exponencial" + "limite"),
+  // escolhido pra não bater no serviço de push a cada segundo numa falha
+  // persistente, mas ainda assim recuperar rápido de um blip momentâneo.
+  await boss.createQueue(QUEUE_DOSE_REMINDER, {
+    policy: "exclusive",
+    retryLimit: 5,
+    retryBackoff: true,
+    retryDelay: 30,
+    retryDelayMax: 600,
+  });
 }
 
 /**
@@ -68,6 +86,7 @@ export async function startQueue(handlers: {
   extendWindows: () => Promise<void>;
   runTreatmentLifecycle: () => Promise<void>;
   onDoseTaken: (data: { patientId: number; medicationId: number }) => Promise<void>;
+  onDoseReminder: (data: { scheduledDoseId: number }) => Promise<void>;
 }): Promise<void> {
   await ensureQueueStarted();
 
@@ -88,6 +107,11 @@ export async function startQueue(handlers: {
   await boss.work(QUEUE_DOSE_TAKEN, async (jobs) => {
     for (const job of jobs) {
       await handlers.onDoseTaken(job.data as { patientId: number; medicationId: number });
+    }
+  });
+  await boss.work(QUEUE_DOSE_REMINDER, async (jobs) => {
+    for (const job of jobs) {
+      await handlers.onDoseReminder(job.data as { scheduledDoseId: number });
     }
   });
 }

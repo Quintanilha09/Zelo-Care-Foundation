@@ -34,7 +34,7 @@ import { treatmentsTable, patientsTable, scheduledDosesTable } from "@workspace/
 import { expandSchedule, toLocalDateTime } from "@workspace/scheduling";
 import type { ScheduleConfig } from "@workspace/scheduling";
 import { Clock } from "./clock.ts";
-import { boss, QUEUE_DOSE_SCHEDULED, ensureQueueStarted } from "./queue.ts";
+import { boss, QUEUE_DOSE_SCHEDULED, QUEUE_DOSE_REMINDER, ensureQueueStarted } from "./queue.ts";
 
 export const DOSE_WINDOW_DAYS = 14;
 
@@ -102,6 +102,19 @@ export async function generateDosesForTreatment(treatmentId: number): Promise<nu
         inserted.map((d) => ({
           data: { scheduledDoseId: d.id, treatmentId, patientId: row.treatment.patientId, scheduledAt: d.scheduledAt.toISOString() },
           singletonKey: `dose-${d.id}`,
+        })),
+        { db: fromDrizzle(tx, sql) }
+      );
+
+      // ZELO-27: um lembrete por dose, agendado pra disparar exatamente na
+      // hora (startAfter) — nunca antes. Mesma transação que a dose: se o
+      // commit falhar, nem a dose nem o lembrete existem, os dois juntos.
+      await boss.insert(
+        QUEUE_DOSE_REMINDER,
+        inserted.map((d) => ({
+          data: { scheduledDoseId: d.id },
+          singletonKey: `reminder:${d.id}:0`,
+          startAfter: d.scheduledAt,
         })),
         { db: fromDrizzle(tx, sql) }
       );
