@@ -21,7 +21,7 @@ export * from "./caregiver-invites";
 export * from "./subscription-plans";
 export * from "./push-subscriptions";
 export * from "./notification-preferences";
-export * from "./alert-escalations";
+export * from "./operational-alerts";
 // autenticação: tokens e fluxos
 export * from "./email-verifications";
 export * from "./password-resets";
