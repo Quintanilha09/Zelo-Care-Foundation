@@ -6,9 +6,20 @@ import {
   timestamp,
   boolean,
   unique,
+  pgEnum,
 } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
 import { familiesTable } from "./families";
+
+// ZELO-29: categoria ampla de plataforma, pra métrica de entrega
+// ("iOS entrega pior que Android?") — não é o deviceLabel (texto livre,
+// escolhido pelo usuário), é calculada uma vez no momento de assinar.
+export const pushPlatformEnum = pgEnum("push_platform", [
+  "ios",
+  "android",
+  "desktop",
+  "unknown",
+]);
 
 // Assinaturas de notificação push por dispositivo.
 // Um usuário pode ter múltiplos dispositivos — cada um tem sua própria
@@ -33,6 +44,7 @@ export const pushSubscriptionsTable = pgTable(
     p256dh: text("p256dh"),
     auth: text("auth"),
     deviceLabel: text("device_label"),
+    platform: pushPlatformEnum("platform").notNull().default("unknown"),
     active: boolean("active").notNull().default(true),
     lastDeliveredAt: timestamp("last_delivered_at", { withTimezone: true }),
     failureCount: integer("failure_count").notNull().default(0),

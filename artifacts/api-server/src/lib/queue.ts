@@ -28,6 +28,18 @@
  *   QUEUE_DOSE_SCHEDULED. retryLimit/retryBackoff no nível da fila: uma
  *   falha de infraestrutura (não de envio — ver lib/dose-reminders.ts) faz
  *   o pg-boss retentar sozinho, sem lógica extra no handler.
+ * - QUEUE_DELIVERY_CHECK: um job por envio de nível 0 (ZELO-29), agendado
+ *   pra 3 minutos depois. Confirma se o service worker confirmou entrega
+ *   (POST /push/ack); se não, escala pro nível 1 automaticamente — "aciona
+ *   a cascata" da história, reaproveitando o mesmo caminho do botão manual
+ *   "Adiar 15 min" (ZELO-28).
+ * - QUEUE_MARK_LATE_DOSES: job frequente (cron, a cada 15min — não diário
+ *   como os dois de manutenção acima) que marca "late" toda scheduled_dose
+ *   "pending" vencida há mais de LATE_GRACE_MINUTES, de qualquer
+ *   tratamento, ativo ou não (ver markOverdueDosesAsLate em
+ *   dose-generation.ts). Sem isto, uma dose vencida de um tratamento que
+ *   continua ativo fica "pending" pra sempre, e a seção "Perdidas" da tela
+ *   inicial nunca recebe nada.
  */
 import { PgBoss } from "pg-boss";
 
@@ -36,6 +48,8 @@ export const QUEUE_EXTEND_DOSE_WINDOW = "extend-dose-window";
 export const QUEUE_TREATMENT_LIFECYCLE = "treatment-lifecycle";
 export const QUEUE_DOSE_TAKEN = "dose-taken";
 export const QUEUE_DOSE_REMINDER = "dose-reminder";
+export const QUEUE_DELIVERY_CHECK = "delivery-check";
+export const QUEUE_MARK_LATE_DOSES = "mark-late-doses";
 
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL must be set. Did you forget to provision a database?");
@@ -71,6 +85,7 @@ export async function ensureQueueStarted(): Promise<void> {
     retryDelay: 30,
     retryDelayMax: 600,
   });
+  await boss.createQueue(QUEUE_DELIVERY_CHECK, { policy: "exclusive" });
 }
 
 /**
@@ -85,24 +100,34 @@ export async function ensureQueueStarted(): Promise<void> {
 export async function startQueue(handlers: {
   extendWindows: () => Promise<void>;
   runTreatmentLifecycle: () => Promise<void>;
+  markLateDoses: () => Promise<void>;
   onDoseTaken: (data: { patientId: number; medicationId: number }) => Promise<void>;
   onDoseReminder: (data: { scheduledDoseId: number; level?: number }) => Promise<void>;
+  onDeliveryCheck: (data: { notificationId: number }) => Promise<void>;
 }): Promise<void> {
   await ensureQueueStarted();
 
   await boss.createQueue(QUEUE_EXTEND_DOSE_WINDOW, { policy: "singleton" });
   await boss.createQueue(QUEUE_TREATMENT_LIFECYCLE, { policy: "singleton" });
+  await boss.createQueue(QUEUE_MARK_LATE_DOSES, { policy: "singleton" });
 
   // 03:00 UTC todo dia — não é crítico ser exato por fuso do paciente,
   // a janela é de 14 dias, algumas horas de folga não importam.
   await boss.schedule(QUEUE_EXTEND_DOSE_WINDOW, "0 3 * * *", null, { tz: "UTC" });
   await boss.schedule(QUEUE_TREATMENT_LIFECYCLE, "5 3 * * *", null, { tz: "UTC" });
+  // A cada 15min, o dia todo: diferente dos dois acima, uma dose perdida de
+  // manhã não pode esperar até a madrugada seguinte pra aparecer em
+  // "Perdidas" (ver dose-generation.ts).
+  await boss.schedule(QUEUE_MARK_LATE_DOSES, "*/15 * * * *", null, { tz: "UTC" });
 
   await boss.work(QUEUE_EXTEND_DOSE_WINDOW, async () => {
     await handlers.extendWindows();
   });
   await boss.work(QUEUE_TREATMENT_LIFECYCLE, async () => {
     await handlers.runTreatmentLifecycle();
+  });
+  await boss.work(QUEUE_MARK_LATE_DOSES, async () => {
+    await handlers.markLateDoses();
   });
   await boss.work(QUEUE_DOSE_TAKEN, async (jobs) => {
     for (const job of jobs) {
@@ -112,6 +137,11 @@ export async function startQueue(handlers: {
   await boss.work(QUEUE_DOSE_REMINDER, async (jobs) => {
     for (const job of jobs) {
       await handlers.onDoseReminder(job.data as { scheduledDoseId: number; level?: number });
+    }
+  });
+  await boss.work(QUEUE_DELIVERY_CHECK, async (jobs) => {
+    for (const job of jobs) {
+      await handlers.onDeliveryCheck(job.data as { notificationId: number });
     }
   });
 }

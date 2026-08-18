@@ -53,6 +53,14 @@ function guessDeviceLabel(): string {
   return "Este dispositivo";
 }
 
+/** ZELO-29: categoria ampla, calculada uma vez ao assinar — pra métrica "iOS entrega pior que Android?". */
+function detectPlatform(): "ios" | "android" | "desktop" | "unknown" {
+  if (isIOS()) return "ios";
+  if (/Android/.test(navigator.userAgent)) return "android";
+  if (/Macintosh|Windows|Linux/.test(navigator.userAgent)) return "desktop";
+  return "unknown";
+}
+
 export type SubscribeResult =
   | { ok: true }
   | { ok: false; reason: "unsupported" | "permission_denied" | "not_configured" | "error"; detail?: string };
@@ -90,6 +98,7 @@ export async function subscribeToPush(): Promise<SubscribeResult> {
         endpoint: json.endpoint,
         keys: { p256dh: json.keys?.p256dh, auth: json.keys?.auth },
         deviceLabel: guessDeviceLabel(),
+        platform: detectPlatform(),
       }),
     });
     if (!res.ok) return { ok: false, reason: "error", detail: `HTTP ${res.status}` };

@@ -44,11 +44,22 @@ export interface PushPayload {
   // direto da notificação, sem abrir o app.
   scheduledDoseId?: number;
   patientId?: number;
+  // ZELO-29: id da linha em `notifications` — o service worker devolve isto
+  // no beacon de confirmação (POST /push/ack) pra marcar deliveredAt na
+  // notificação certa, não só lastDeliveredAt genérico da assinatura.
+  notificationId?: number;
 }
 
 export type PushSendResult =
   | { ok: true }
-  | { ok: false; reason: "not_configured" | "no_keys" | "expired" | "error"; detail?: string };
+  // ZELO-29: motivos distintos por código do serviço de push — 404/410
+  // (expired) é permanente, desativa a assinatura; 429 (rate_limited) e
+  // 5xx (error) são transitórios. A distinção é pra métrica/observabilidade
+  // precisa ("quanto disso é rate limit vs erro de verdade") — nenhum dos
+  // dois aciona uma retentativa própria além da que já existe (ver
+  // dose-reminders.ts: um envio não confirmado em 3min já escala pro nível
+  // seguinte, cobrindo os dois casos igualmente sem lógica duplicada).
+  | { ok: false; reason: "not_configured" | "no_keys" | "expired" | "rate_limited" | "error"; detail?: string };
 
 /** Envia pra UMA assinatura. Nunca lança — resultado sempre tipado. */
 export async function sendPushToSubscription(
@@ -79,6 +90,10 @@ export async function sendPushToSubscription(
       .set({ failureCount: sql`${pushSubscriptionsTable.failureCount} + 1` })
       .where(eq(pushSubscriptionsTable.id, subscription.id));
     logger.warn({ statusCode, subscriptionId: subscription.id }, "Falha ao enviar push");
+
+    if (statusCode === 429) {
+      return { ok: false, reason: "rate_limited", detail: "HTTP 429" };
+    }
     return { ok: false, reason: "error", detail: statusCode ? `HTTP ${statusCode}` : (err instanceof Error ? err.message : "erro desconhecido") };
   }
 }

@@ -84,14 +84,24 @@ async function handlePush(event) {
 
   const tag = data.tag;
   let doseIds = data.scheduledDoseId ? [data.scheduledDoseId] : [];
+  let notificationIds = data.notificationId ? [data.notificationId] : [];
 
   // ZELO-28: doses de tratamentos diferentes do mesmo paciente no mesmo
   // horário chegam como pushes SEPARADOS mas com o MESMO tag (ver
   // dose-reminders.ts) — mescla numa notificação só em vez de empilhar.
+  // notificationIds acompanha doseIds pelo mesmo motivo: cada dose do
+  // grupo tem sua PRÓPRIA linha em `notifications` (ZELO-27), então
+  // "marcar como tocada" ao clicar precisa confirmar todas elas, não só a
+  // última que chegou.
   if (tag) {
     const existing = await self.registration.getNotifications({ tag });
-    if (existing.length > 0 && existing[0].data && Array.isArray(existing[0].data.doseIds)) {
-      doseIds = Array.from(new Set([...existing[0].data.doseIds, ...doseIds]));
+    if (existing.length > 0 && existing[0].data) {
+      if (Array.isArray(existing[0].data.doseIds)) {
+        doseIds = Array.from(new Set([...existing[0].data.doseIds, ...doseIds]));
+      }
+      if (Array.isArray(existing[0].data.notificationIds)) {
+        notificationIds = Array.from(new Set([...existing[0].data.notificationIds, ...notificationIds]));
+      }
     }
   }
 
@@ -104,7 +114,7 @@ async function handlePush(event) {
     icon: "/favicon.svg",
     badge: "/favicon.svg",
     tag,
-    data: { url: data.url || "/", doseIds, patientId: data.patientId },
+    data: { url: data.url || "/", doseIds, notificationIds, patientId: data.patientId },
     // Botões só fazem sentido apontando pra UMA dose — ver o docblock do
     // módulo em dose-reminders.ts. Notificação agrupada abre o app ao
     // tocar no corpo, sem ação de um toque só.
@@ -114,19 +124,37 @@ async function handlePush(event) {
     ],
   });
 
-  // Diagnóstico "seus lembretes estão funcionando?" (/ajustes) — melhor
-  // esforço, nunca bloqueia a notificação em si se falhar.
+  // ZELO-29: a ÚNICA prova real de entrega que a web oferece — este beacon
+  // roda toda vez que o SW processa um evento `push` de verdade no
+  // aparelho (diferente de sentAt, que só prova que o SERVIÇO de push
+  // aceitou o envio). Confirma tanto o sinal genérico de diagnóstico da
+  // assinatura (ZELO-26, lastDeliveredAt) quanto, se o payload trouxer
+  // notificationId, a linha específica em `notifications` — é essa segunda
+  // parte que o job de verificação de 3min olha antes de escalar.
   try {
     const subscription = await self.registration.pushManager.getSubscription();
     if (subscription) {
       await fetch("/api/push/ack", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ endpoint: subscription.endpoint }),
+        body: JSON.stringify({ endpoint: subscription.endpoint, notificationId: data.notificationId }),
       });
     }
   } catch {
     // sem rede, servidor fora do ar — o push já foi mostrado, o ack é só diagnóstico
+  }
+}
+
+async function ackAction(notificationIds) {
+  if (!notificationIds || notificationIds.length === 0) return;
+  try {
+    await fetch("/api/push/ack", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ackedNotificationIds: notificationIds }),
+    });
+  } catch {
+    // melhor esforço — "tocou" é analítico, nunca deveria travar a ação real
   }
 }
 
@@ -136,7 +164,10 @@ self.addEventListener("notificationclick", (event) => {
 
   const notifData = event.notification.data || {};
   const doseIds = notifData.doseIds || [];
+  const notificationIds = notifData.notificationIds || [];
   const url = notifData.url || "/";
+
+  event.waitUntil(ackAction(notificationIds));
 
   if (event.action === "taken" && doseIds.length === 1) {
     event.waitUntil(dispatchOrQueue({ kind: "register", scheduledDoseId: doseIds[0], patientId: notifData.patientId, outcome: "taken" }));

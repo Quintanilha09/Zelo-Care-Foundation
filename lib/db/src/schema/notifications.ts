@@ -6,12 +6,14 @@ import {
   text,
   pgEnum,
   unique,
+  index,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { familiesTable } from "./families";
 import { treatmentsTable } from "./treatments";
 import { scheduledDosesTable } from "./scheduled-doses";
+import { pushPlatformEnum } from "./push-subscriptions";
 
 export const notificationTypeEnum = pgEnum("notification_type", [
   "dose_reminder",
@@ -56,6 +58,12 @@ export const notificationsTable = pgTable(
     body: text("body"),
     sentAt: timestamp("sent_at", { withTimezone: true }),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    // ZELO-29: qual plataforma confirmou — o mesmo cuidador pode ter mais de
+    // um dispositivo; grava a primeira a confirmar, pra métrica "iOS entrega
+    // pior que Android?" sem precisar de uma tabela de tentativa por
+    // dispositivo (fora do escopo pedido — a história testa taxa por
+    // período, não taxa por dispositivo com denominador exato).
+    deliveredViaPlatform: pushPlatformEnum("delivered_via_platform"),
     ackedAt: timestamp("acked_at", { withTimezone: true }),
     escalationLevel: integer("escalation_level").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -70,6 +78,15 @@ export const notificationsTable = pgTable(
       table.scheduledDoseId,
       table.caregiverId,
       table.escalationLevel
+    ),
+    // ZELO-29: a consulta de taxa de entrega por período filtra por
+    // família + tipo + intervalo de sentAt — sem este índice, isso vira
+    // varredura completa da tabela conforme ela cresce. O critério de
+    // aceite pede resposta em menos de 1 segundo.
+    deliveryStatsIndex: index("idx_notifications_delivery_stats").on(
+      table.familyId,
+      table.type,
+      table.sentAt
     ),
   })
 );

@@ -1,10 +1,10 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { startQueue, stopQueue } from "./lib/queue";
-import { extendActiveTreatmentWindows, reconcileDoseQueue } from "./lib/dose-generation";
+import { extendActiveTreatmentWindows, reconcileDoseQueue, markOverdueDosesAsLate } from "./lib/dose-generation";
 import { runTreatmentLifecycleJob } from "./lib/treatment-lifecycle";
 import { decrementStockForDoseTaken } from "./lib/stock";
-import { sendDoseReminder } from "./lib/dose-reminders";
+import { sendDoseReminder, checkDeliveryAndEscalate } from "./lib/dose-reminders";
 
 const rawPort = process.env["PORT"];
 
@@ -27,11 +27,17 @@ await startQueue({
   runTreatmentLifecycle: async () => {
     await runTreatmentLifecycleJob();
   },
+  markLateDoses: async () => {
+    await markOverdueDosesAsLate();
+  },
   onDoseTaken: async ({ patientId, medicationId }) => {
     await decrementStockForDoseTaken(patientId, medicationId);
   },
   onDoseReminder: async ({ scheduledDoseId, level }) => {
     await sendDoseReminder(scheduledDoseId, level);
+  },
+  onDeliveryCheck: async ({ notificationId }) => {
+    await checkDeliveryAndEscalate(notificationId);
   },
 });
 

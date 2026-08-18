@@ -83,6 +83,7 @@ const PROTECTED_ROUTES = new Set([
   "DELETE /push/subscribe",
   "GET /push/subscriptions",
   "POST /push/test",
+  "GET /push/delivery-stats",
 ]);
 
 // Conjunto preenchido pelos testes — o meta-test verifica cobertura total
@@ -568,6 +569,25 @@ describe("Isolamento entre famílias — ZELO", () => {
     await assertIsolated("POST /push/test", "POST", "/push/test", { subscriptionId: subB.id });
 
     await db.delete(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.id, subB.id));
+  });
+
+  it("GET /push/delivery-stats — família A não conta lembretes enviados pra B", async () => {
+    const [notifB] = await db
+      .insert(notificationsTable)
+      .values({ familyId: familyBId, patientId: patientBId, type: "dose_reminder", title: "ZELO", body: "teste", sentAt: new Date() })
+      .returning();
+
+    const res = await api(tokenA, "GET", "/push/delivery-stats?days=1");
+    assert.equal(res.status, 200);
+    const stats = res.body as { totalSent: number };
+    // Não dá pra provar "não conta B" olhando só o total de A (podem existir
+    // outros lembretes de A no período) — o que prova isolamento aqui é rodar
+    // de novo depois de apagar o de B e ver o total não mudar.
+    const totalWithB = stats.totalSent;
+    await db.delete(notificationsTable).where(eq(notificationsTable.id, notifB.id));
+    const resAfter = await api(tokenA, "GET", "/push/delivery-stats?days=1");
+    assert.equal((resAfter.body as { totalSent: number }).totalSent, totalWithB, "apagar o lembrete de B não pode mudar a contagem de A — nunca deveria ter contado");
+    covered("GET /push/delivery-stats");
   });
 
   it("POST /medication-photos/extract — cria extração para a família do token (ZELO-21)", async (t) => {
