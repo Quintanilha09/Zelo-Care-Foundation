@@ -18,6 +18,7 @@ import { requireCapability } from "../lib/capabilities.ts";
 import { audit } from "../lib/audit";
 import { Clock } from "../lib/clock.ts";
 import { rescheduleAppointmentReminders } from "../lib/appointment-reminders.ts";
+import { getPlanLimits } from "../lib/plan-limits.ts";
 
 const DateISO = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "data deve ser YYYY-MM-DD");
 const TimeOfDay = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "horário deve ser HH:mm");
@@ -117,6 +118,14 @@ router.post("/patients/:patientId/appointments", requireAuth, requireCapability(
 
   const patient = await loadPatient(patientId, getAuth(req).familyId);
   if (!patient) { res.status(404).json({ error: "Paciente não encontrado" }); return; }
+
+  // ZELO-38: "Consultas e exames" é recurso do plano Família por inteiro —
+  // mesmo desenho do relatório em PDF (ZELO-35), paywall duro na criação.
+  const limits = await getPlanLimits(getAuth(req).familyId);
+  if (!limits.appointments) {
+    res.status(403).json({ error: "Agenda de consultas é um recurso do plano Família.", code: "PLAN_LIMIT" });
+    return;
+  }
 
   const body = AppointmentBody.safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }

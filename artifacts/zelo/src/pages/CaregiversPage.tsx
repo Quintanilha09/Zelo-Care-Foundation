@@ -21,7 +21,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { User, UserPlus, X, Copy, Check, MessageCircle } from "lucide-react";
+import { User, UserPlus, X, Copy, Check, MessageCircle, Heart } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 type Role = "primary_caregiver" | "caregiver" | "hired_caregiver" | "observer";
@@ -66,6 +66,7 @@ function InviteDialog({ onCreated }: { onCreated: () => void }) {
   const [role, setRole] = useState<Role>("caregiver");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [paywallMessage, setPaywallMessage] = useState("");
   const [result, setResult] = useState<{ inviteLink: string; role: Role } | null>(null);
   const [copied, setCopied] = useState(false);
   const { toast } = useToast();
@@ -79,13 +80,20 @@ function InviteDialog({ onCreated }: { onCreated: () => void }) {
     e.preventDefault();
     setLoading(true);
     setError("");
+    setPaywallMessage("");
     try {
       const res = await authFetch("/api/invites", {
         method: "POST",
         body: JSON.stringify({ invitedEmail: email.trim() || undefined, role }),
       });
       if (!res.ok) {
-        const data = (await res.json()) as { error?: string };
+        const data = (await res.json()) as { error?: string; code?: string };
+        // ZELO-38: limite de plano é um momento diferente de um erro —
+        // tela quente, não um alerta vermelho de falha.
+        if (data.code === "PLAN_LIMIT") {
+          setPaywallMessage(data.error ?? "Cuidar junto é melhor. O plano Família libera cuidadores ilimitados.");
+          return;
+        }
         throw new Error(data.error ?? "Erro ao criar convite");
       }
       const data = (await res.json()) as { inviteLink: string; role: Role };
@@ -111,6 +119,7 @@ function InviteDialog({ onCreated }: { onCreated: () => void }) {
     setEmail("");
     setRole("caregiver");
     setError("");
+    setPaywallMessage("");
   };
 
   return (
@@ -119,7 +128,20 @@ function InviteDialog({ onCreated }: { onCreated: () => void }) {
         <UserPlus className="w-4 h-4" /> Convidar
       </Button>
       <DialogContent className="max-w-md">
-        {!result ? (
+        {paywallMessage ? (
+          <>
+            <DialogHeader>
+              <div className="mx-auto mb-2 w-10 h-10 rounded-full bg-zelo-green-bg flex items-center justify-center">
+                <Heart className="w-5 h-5 text-zelo-green-fg" />
+              </div>
+              <DialogTitle className="text-center">Cuidar junto é melhor</DialogTitle>
+              <DialogDescription className="text-center">{paywallMessage}</DialogDescription>
+            </DialogHeader>
+            <div className="flex justify-center pt-2">
+              <Button variant="secondary" onClick={reset}>Entendi</Button>
+            </div>
+          </>
+        ) : !result ? (
           <>
             <DialogHeader>
               <DialogTitle>Convidar cuidador</DialogTitle>

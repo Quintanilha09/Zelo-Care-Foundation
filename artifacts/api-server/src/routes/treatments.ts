@@ -17,6 +17,7 @@ import { audit } from "../lib/audit";
 import { Clock } from "../lib/clock";
 import { generateDosesForTreatment, clearFuturePendingDoses, cancelFutureDoses } from "../lib/dose-generation.ts";
 import { publishPatientEvent } from "../lib/realtime.ts";
+import { isPatientEditable, READ_ONLY_MESSAGE } from "../lib/plan-limits.ts";
 
 const router = Router();
 
@@ -168,6 +169,13 @@ router.post("/patients/:patientId/treatments", requireAuth, async (req, res): Pr
 
   const patient = await loadPatientInFamily(patientId, getAuth(req).familyId);
   if (!patient) { res.status(404).json({ error: "Paciente não encontrado" }); return; }
+
+  // ZELO-38: downgrade nunca apaga dado — paciente excedente do plano
+  // atual fica visível pra sempre, só não aceita tratamento novo.
+  if (!(await isPatientEditable(patientId, getAuth(req).familyId))) {
+    res.status(403).json({ error: READ_ONLY_MESSAGE, code: "PLAN_READ_ONLY" });
+    return;
+  }
 
   const body = CreateTreatmentBody.safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }

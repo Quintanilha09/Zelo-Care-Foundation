@@ -36,6 +36,14 @@ interface AuthUser {
     quietHoursStart: string;
     quietHoursEnd: string;
   };
+  // ZELO-38: "estado do plano visível no perfil, sem martelar no dia a dia".
+  plan?: {
+    isPaid: boolean;
+    limits: {
+      maxPatients: number | null; maxCaregivers: number | null; maxMedications: number | null;
+      historyDays: number | null; appointments: boolean; stockLowAlert: boolean;
+    };
+  } | null;
 }
 
 interface AuthContextValue {

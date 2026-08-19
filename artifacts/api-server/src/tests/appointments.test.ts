@@ -15,7 +15,7 @@ import { eq, and } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   usersTable, caregiversTable, familiesTable, patientsTable,
-  appointmentsTable, notificationsTable,
+  appointmentsTable, notificationsTable, subscriptionsTable,
 } from "@workspace/db";
 import { generateAccessToken } from "../lib/tokens.ts";
 import { hashPassword } from "../lib/password.ts";
@@ -83,6 +83,11 @@ before(async () => {
 
   const [patient] = await db.insert(patientsTable).values({ familyId, name: "Paciente Consultas Teste", timezone: "America/Sao_Paulo" }).returning();
   patientId = patient.id;
+
+  // ZELO-38: consultas são recurso do plano Família por inteiro — este
+  // arquivo não é sobre limite de plano, então usa premium como baseline
+  // (mesmo padrão de stock.test.ts/adherence-calendar.test.ts).
+  await db.insert(subscriptionsTable).values({ familyId, plan: "premium", status: "active" });
 });
 
 after(async () => {

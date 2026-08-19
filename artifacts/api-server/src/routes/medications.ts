@@ -11,6 +11,7 @@ import { medicationsTable } from "@workspace/db";
 import { z } from "zod";
 import { requireAuth } from "../middleware/require-auth";
 import { audit } from "../lib/audit";
+import { checkMedicationLimit } from "../lib/plan-limits.ts";
 
 const router = Router();
 
@@ -34,6 +35,12 @@ router.get("/medications", requireAuth, async (req, res): Promise<void> => {
 router.post("/medications", requireAuth, async (req, res): Promise<void> => {
   const body = CreateMedicationBody.safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  const medicationLimit = await checkMedicationLimit(getAuth(req).familyId);
+  if (!medicationLimit.allowed) {
+    res.status(403).json({ error: medicationLimit.message, code: "PLAN_LIMIT" });
+    return;
+  }
 
   // Nota: nome do medicamento NÃO é logado (campo sensível)
   const [med] = await db

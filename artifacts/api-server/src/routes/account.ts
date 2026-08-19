@@ -32,6 +32,8 @@ import { safeLog } from "../lib/safe-logger";
 import { revokeAllAccessTokensForUser, generateAccessToken, generateRefreshToken } from "../lib/tokens";
 import { Clock } from "../lib/clock";
 import { listCaregiverLinks, switchActiveFamily } from "../lib/active-family.ts";
+import { getPlanLimits } from "../lib/plan-limits.ts";
+import { hasPaidAccess } from "../lib/subscription.ts";
 
 const router = Router();
 
@@ -74,7 +76,14 @@ router.get("/account/me", requireAuth, async (req, res): Promise<void> => {
         .limit(1)
     : [];
 
-  res.json({ ...user, caregiver, family });
+  // ZELO-38: "estado do plano visível no perfil, sem ficar martelando no
+  // dia a dia" — só o suficiente pra tela de Ajustes mostrar "Grátis" ou
+  // "Família" e os limites em vigor, sem banner nem lembrete recorrente.
+  const plan = caregiver
+    ? { isPaid: await hasPaidAccess(caregiver.familyId), limits: await getPlanLimits(caregiver.familyId) }
+    : null;
+
+  res.json({ ...user, caregiver, family, plan });
 });
 
 // ── Paciente ativo (ZELO-22) ────────────────────────────────────────────

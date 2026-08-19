@@ -30,13 +30,18 @@ import {
 import { requireAuth } from "../middleware/require-auth";
 import { Clock } from "../lib/clock.ts";
 import { hasPaidAccess } from "../lib/subscription.ts";
+import { PLAN_LIMITS } from "../lib/plan-limits.ts";
 import { localDayBoundsUtc } from "@workspace/scheduling";
 
 const router = Router();
 
 const DateISO = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "data deve ser YYYY-MM-DD");
 const MAX_RANGE_DAYS = 366;
-const FREE_PLAN_WINDOW_DAYS = 7;
+// ZELO-38: fonte única dos limites de plano — nunca reimplementar o
+// número aqui, mesmo já sendo 7 desde a ZELO-33. `null` só existe no tipo
+// pra representar "ilimitado" do plano pago — o gratuito sempre tem um
+// número real, daí o `??` só ser uma garantia de tipo, nunca cair nele.
+const FREE_PLAN_WINDOW_DAYS = PLAN_LIMITS.free.historyDays ?? 7;
 
 async function loadPatient(patientId: number, familyId: number) {
   const [patient] = await db

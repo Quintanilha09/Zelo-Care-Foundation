@@ -14,6 +14,7 @@ import { requireAuth } from "../middleware/require-auth";
 import { Clock } from "../lib/clock";
 import { localDayBoundsUtc, toLocalDateTime } from "@workspace/scheduling";
 import { computeDaysRemaining, loadActiveTreatmentSchedule } from "../lib/stock.ts";
+import { getPlanLimits } from "../lib/plan-limits.ts";
 
 const router = Router();
 
@@ -150,7 +151,13 @@ router.get("/patients/:patientId/today-doses", requireAuth, async (req, res): Pr
     .from(stockEntriesTable)
     .innerJoin(medicationsTable, eq(stockEntriesTable.medicationId, medicationsTable.id))
     .where(eq(stockEntriesTable.patientId, patientId));
-  const lowStockItems = (
+  // ZELO-38: "alerta de estoque baixo" é recurso do plano Família — o
+  // CONTROLE de estoque em si (registrar/ajustar quantidade) continua
+  // liberado no gratuito, só o alerta calmo é que é gated. Rastrear tudo
+  // normalmente e só filtrar a resposta evita reimplementar a conta em
+  // dois lugares.
+  const planLimits = await getPlanLimits(getAuth(req).familyId);
+  const lowStockItems = planLimits.stockLowAlert ? (
     await Promise.all(
       stockRows.map(async (s) => {
         const activeTreatment = await loadActiveTreatmentSchedule(patientId, s.medicationId);
@@ -158,7 +165,7 @@ router.get("/patients/:patientId/today-doses", requireAuth, async (req, res): Pr
         return { ...s, ...days };
       })
     )
-  ).filter((s) => s.isLow);
+  ).filter((s) => s.isLow) : [];
 
   const [nextAppointment] = await db
     .select({ specialty: appointmentsTable.specialty, doctorName: appointmentsTable.doctorName, scheduledAt: appointmentsTable.scheduledAt })

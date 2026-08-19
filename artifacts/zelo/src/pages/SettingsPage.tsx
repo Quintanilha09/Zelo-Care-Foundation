@@ -127,6 +127,20 @@ export default function SettingsPage() {
           <p className="text-muted-foreground text-[15px]">Configurações da família.</p>
         </div>
 
+        {user?.plan && (
+          <div className="p-4 rounded-xl border bg-card flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm text-muted-foreground">Plano</p>
+              <p className="font-medium">{user.plan.isPaid ? "Família" : "Grátis"}</p>
+            </div>
+            {!user.plan.isPaid && (
+              <p className="text-sm text-muted-foreground text-right">
+                1 paciente · 1 cuidador · 3 medicamentos · 7 dias de histórico
+              </p>
+            )}
+          </div>
+        )}
+
         <form onSubmit={handleSave} className="space-y-4 p-4 rounded-xl border bg-card">
           <div className="space-y-1">
             <Label htmlFor="st-hours">Janela de registro retroativo (horas)</Label>

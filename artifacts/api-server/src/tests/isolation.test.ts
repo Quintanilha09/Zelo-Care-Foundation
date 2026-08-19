@@ -21,7 +21,7 @@ import {
   usersTable, caregiversTable, familiesTable, patientsTable,
   treatmentsTable, scheduledDosesTable, medicationsTable,
   notificationsTable, consentRecordsTable, photoExtractionsTable, doseRecordsTable,
-  pushSubscriptionsTable, notificationPreferencesTable,
+  pushSubscriptionsTable, notificationPreferencesTable, subscriptionsTable,
 } from "@workspace/db";
 import { generateAccessToken } from "../lib/tokens.ts";
 import { hashPassword } from "../lib/password.ts";
@@ -213,6 +213,13 @@ before(async () => {
   tokenB = b.token; familyBId = b.familyId; userIdB = b.userId; patientBId = b.patientId;
   caregiverBId = b.caregiverId; medicationBId = b.medicationId; treatmentBId = b.treatmentId;
   notifBId = b.notifId;
+
+  // ZELO-38: este arquivo não é sobre limite de plano — família A já
+  // nasce com paciente/medicamento/cuidador próprios no fixture, então
+  // fica no gratuito por padrão sem isto e esbarra nos limites novos em
+  // testes que esperam poder criar mais um (POST /patients, POST
+  // /invites). Mesmo padrão já usado em stock.test.ts/adherence-calendar.test.ts.
+  await db.insert(subscriptionsTable).values({ familyId: familyAId, plan: "premium", status: "active" });
 });
 
 after(async () => {

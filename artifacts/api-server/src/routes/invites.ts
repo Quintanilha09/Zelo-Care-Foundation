@@ -27,6 +27,7 @@ import { safeLog } from "../lib/safe-logger";
 import { Clock } from "../lib/clock";
 import { publishPatientEvent } from "../lib/realtime.ts";
 import { switchActiveFamily } from "../lib/active-family.ts";
+import { checkCaregiverLimit } from "../lib/plan-limits.ts";
 
 const router = Router();
 
@@ -41,6 +42,15 @@ router.post("/invites", requirePrimaryCaregiver, async (req, res): Promise<void>
   const body = CreateInviteBody.safeParse(req.body);
   if (!body.success) {
     res.status(400).json({ error: body.error.message });
+    return;
+  }
+
+  // ZELO-38: o momento do paywall É este — convidar o segundo cuidador no
+  // gratuito não gera convite nenhum, nunca (nem um que fique pendente
+  // sem poder ser aceito depois — bloqueia aqui, na criação).
+  const caregiverLimit = await checkCaregiverLimit(getAuth(req).familyId);
+  if (!caregiverLimit.allowed) {
+    res.status(403).json({ error: caregiverLimit.message, code: "PLAN_LIMIT" });
     return;
   }
 

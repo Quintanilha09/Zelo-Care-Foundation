@@ -14,6 +14,7 @@ import { safeLog } from "../lib/safe-logger";
 import { audit } from "../lib/audit";
 import { Clock } from "../lib/clock";
 import { clearFuturePendingDoses, generateDosesForTreatment } from "../lib/dose-generation.ts";
+import { checkPatientLimit } from "../lib/plan-limits.ts";
 
 const router = Router();
 
@@ -70,6 +71,14 @@ router.post("/patients", requireAuth, async (req, res): Promise<void> => {
     return;
   }
 
+  // ZELO-38: limite é sobre PACIENTE ATIVO — reativar um arquivado ou
+  // cadastrar um novo excedente é o mesmo movimento, checado aqui.
+  const patientLimit = await checkPatientLimit(getAuth(req).familyId);
+  if (!patientLimit.allowed) {
+    res.status(403).json({ error: patientLimit.message, code: "PLAN_LIMIT" });
+    return;
+  }
+
   const { healthConsent, ...patientData } = body.data;
 
   const [patient] = await db.transaction(async (tx) => {
@@ -121,6 +130,16 @@ router.post("/patients/:patientId/archive", requireAuth, async (req, res): Promi
 
   const body = ArchivePatientBody.safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  // ZELO-38: reativar (archived: false) conta pro limite igual cadastrar
+  // um paciente novo — senão seria um contorno óbvio do limite.
+  if (body.data.archived === false) {
+    const patientLimit = await checkPatientLimit(getAuth(req).familyId);
+    if (!patientLimit.allowed) {
+      res.status(403).json({ error: patientLimit.message, code: "PLAN_LIMIT" });
+      return;
+    }
+  }
 
   const [updated] = await db
     .update(patientsTable)

@@ -12,7 +12,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   usersTable, caregiversTable, familiesTable, patientsTable, medicationsTable,
-  treatmentsTable, stockEntriesTable, appointmentsTable,
+  treatmentsTable, stockEntriesTable, appointmentsTable, subscriptionsTable,
 } from "@workspace/db";
 import { generateAccessToken } from "../lib/tokens.ts";
 import { hashPassword } from "../lib/password.ts";
@@ -157,6 +157,11 @@ describe("GET /patients/:id/today-doses — enriquecido para a tela inicial", ()
   });
 
   it("lista estoque baixo quando os dias restantes (pela posologia prescrita) ficam <= 5 — não por quantidade absoluta", async () => {
+    // ZELO-38: alerta de estoque baixo é recurso do plano Família — este
+    // teste é especificamente sobre o alerta, então precisa do plano pago
+    // (escopado só a este teste, pra não mudar o padrão gratuito dos outros).
+    await db.insert(subscriptionsTable).values({ familyId, plan: "premium", status: "active" });
+
     // 2 doses/dia (ver lib/stock.ts) — 8 comprimidos dá ~4 dias, abaixo do limite de 5.
     const treatmentRes = await api("POST", `/patients/${patientId}/treatments`, {
       medicationId,
@@ -177,6 +182,7 @@ describe("GET /patients/:id/today-doses — enriquecido para a tela inicial", ()
 
     await db.delete(stockEntriesTable).where(eq(stockEntriesTable.id, stock.id));
     await db.delete(treatmentsTable).where(eq(treatmentsTable.id, treatmentId));
+    await db.delete(subscriptionsTable).where(eq(subscriptionsTable.familyId, familyId));
   });
 
   it("mostra a próxima consulta futura quando existe", async () => {
