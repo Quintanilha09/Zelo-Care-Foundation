@@ -125,6 +125,13 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
   const [endDate, setEndDate] = useState("");
   const [escalationProfile, setEscalationProfile] = useState<EscalationProfile>("standard");
 
+  // ZELO-34: opcional de propósito — sem estoque informado, o app nunca
+  // insiste; sem quantidade, não tenta calcular dias restantes de coisa nenhuma.
+  const [trackStock, setTrackStock] = useState(false);
+  const [stockQuantity, setStockQuantity] = useState("");
+  const [stockUnit, setStockUnit] = useState("comprimidos");
+  const [prescriptionExpiresAt, setPrescriptionExpiresAt] = useState("");
+
   const [times, setTimes] = useState(["08:00"]);
   const [intervalHours, setIntervalHours] = useState(8);
   const [everyNStartTime, setEveryNStartTime] = useState("08:00");
@@ -286,6 +293,9 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
           endDate: endDate || undefined,
           instructions: instructions.trim() || undefined,
           escalationProfile,
+          ...(trackStock && stockQuantity
+            ? { initialStock: { quantity: Number(stockQuantity), unit: stockUnit, prescriptionExpiresAt: prescriptionExpiresAt || undefined } }
+            : {}),
         }),
       });
       if (!res.ok) {
@@ -471,6 +481,30 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
       <div className="space-y-2">
         <Label htmlFor="tf-instructions">Instruções (opcional)</Label>
         <Textarea id="tf-instructions" value={instructions} onChange={(e) => setInstructions(e.target.value)} rows={2} placeholder="Tomar em jejum, por exemplo" />
+      </div>
+
+      <div className="rounded-lg border p-4 space-y-3">
+        <label className="flex items-center gap-2 cursor-pointer text-[15px] font-medium">
+          <Checkbox checked={trackStock} onCheckedChange={(c) => setTrackStock(c === true)} />
+          Acompanhar estoque (opcional)
+        </label>
+        {trackStock && (
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="tf-stock-qty">Quantidade na caixa/cartela</Label>
+              <Input id="tf-stock-qty" type="number" min={0} value={stockQuantity} onChange={(e) => setStockQuantity(e.target.value)} placeholder="30" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="tf-stock-unit">Unidade</Label>
+              <Input id="tf-stock-unit" value={stockUnit} onChange={(e) => setStockUnit(e.target.value)} placeholder="comprimidos" />
+            </div>
+            <div className="space-y-2 col-span-2">
+              <Label htmlFor="tf-rx-expires">Validade da receita (opcional)</Label>
+              <Input id="tf-rx-expires" type="date" value={prescriptionExpiresAt} onChange={(e) => setPrescriptionExpiresAt(e.target.value)} />
+              <p className="text-xs text-muted-foreground">Se a receita vencer antes do estoque acabar, o aviso de reposição antecipa.</p>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="space-y-2">

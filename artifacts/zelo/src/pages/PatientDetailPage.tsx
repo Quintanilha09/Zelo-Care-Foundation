@@ -11,9 +11,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
+} from "@/components/ui/select";
+import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
-import { ArrowLeft, Plus, Pill } from "lucide-react";
+import { ArrowLeft, Plus, Pill, Package } from "lucide-react";
 
 interface Patient {
   id: number;
@@ -39,6 +42,17 @@ interface ScheduledDose {
   scheduledLocalTime: string;
   status: "pending" | "taken" | "skipped" | "late";
   dose: string | null;
+}
+
+interface StockEntry {
+  id: number;
+  medicationId: number;
+  medicationName: string;
+  quantityRemaining: number;
+  unit: string;
+  prescriptionExpiresAt: string | null;
+  effectiveDaysRemaining: number | null;
+  isLow: boolean;
 }
 
 const SCHEDULE_LABELS: Record<string, string> = {
@@ -75,6 +89,12 @@ async function fetchTodayDoses(id: string): Promise<ScheduledDose[]> {
   return data.doses;
 }
 
+async function fetchStock(id: string): Promise<StockEntry[]> {
+  const res = await authFetch(`/api/patients/${id}/stock`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
 export default function PatientDetailPage({ params }: { params: { id: string } }) {
   const [open, setOpen] = useState(false);
   const [reactivatingId, setReactivatingId] = useState<number | null>(null);
@@ -82,9 +102,18 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
   const [pushPromptTrigger, setPushPromptTrigger] = useState(0);
   const queryClient = useQueryClient();
 
+  // ZELO-34: ajuste manual/reposição — um formulário mínimo por vez, não
+  // uma tela própria (a lista de estoque já é curta o bastante pra caber
+  // aqui direto na página do paciente).
+  const [adjustingMedicationId, setAdjustingMedicationId] = useState<number | null>(null);
+  const [adjustMode, setAdjustMode] = useState<"add" | "set">("add");
+  const [adjustAmount, setAdjustAmount] = useState("");
+  const [adjustReason, setAdjustReason] = useState("");
+
   const { data: patient } = useQuery({ queryKey: ["patient", params.id], queryFn: () => fetchPatient(params.id) });
   const { data: treatments, isLoading } = useQuery({ queryKey: ["treatments", params.id], queryFn: () => fetchTreatments(params.id) });
   const { data: todayDoses } = useQuery({ queryKey: ["today-doses", params.id], queryFn: () => fetchTodayDoses(params.id) });
+  const { data: stock } = useQuery({ queryKey: ["stock", params.id], queryFn: () => fetchStock(params.id) });
 
   const medicationByTreatment = new Map((treatments ?? []).map((t) => [t.id, { name: t.medicationName, dose: t.dose }]));
 
@@ -99,6 +128,7 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
     setOpen(false);
     void queryClient.invalidateQueries({ queryKey: ["treatments", params.id] });
     void queryClient.invalidateQueries({ queryKey: ["today-doses", params.id] });
+    void queryClient.invalidateQueries({ queryKey: ["stock", params.id] });
     // ZELO-26: nunca no primeiro segundo — só depois que o cuidador cadastra
     // um tratamento de verdade. O componente decide sozinho se já mostrou
     // antes ou se a permissão já foi respondida.
@@ -110,7 +140,23 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
       method: "POST",
       body: JSON.stringify({ scheduledDoseId: doseId, takenAt: new Date().toISOString(), outcome }),
     });
-    if (res.ok) void queryClient.invalidateQueries({ queryKey: ["today-doses", params.id] });
+    if (res.ok) {
+      void queryClient.invalidateQueries({ queryKey: ["today-doses", params.id] });
+      void queryClient.invalidateQueries({ queryKey: ["stock", params.id] }); // decremento automático (ZELO-34) pode ter mudado dias restantes
+    }
+  };
+
+  const handleAdjustStock = async (medicationId: number) => {
+    const amount = Number(adjustAmount);
+    if (!amount && amount !== 0) return;
+    const body = adjustMode === "add" ? { addQuantity: amount, reason: adjustReason || undefined } : { setQuantity: amount, reason: adjustReason || undefined };
+    const res = await authFetch(`/api/patients/${params.id}/stock/${medicationId}`, { method: "PATCH", body: JSON.stringify(body) });
+    if (res.ok) {
+      setAdjustingMedicationId(null);
+      setAdjustAmount("");
+      setAdjustReason("");
+      void queryClient.invalidateQueries({ queryKey: ["stock", params.id] });
+    }
   };
 
   // ZELO-20: reativar sempre pede a data de fim de novo (ou deixa em branco
@@ -275,6 +321,55 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
               ))}
             </div>
           </details>
+        )}
+
+        {stock && stock.length > 0 && (
+          <div className="space-y-3">
+            <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
+              <Package className="w-3.5 h-3.5" /> Estoque
+            </h3>
+            {stock.map((s) => (
+              <div key={s.id} className={`p-4 rounded-xl border ${s.isLow ? "bg-zelo-amber-bg border-zelo-amber/30" : "bg-card"}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-medium">{s.medicationName}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {s.quantityRemaining} {s.unit}
+                      {s.effectiveDaysRemaining !== null && ` · cerca de ${Math.round(s.effectiveDaysRemaining)} dia(s) restantes`}
+                    </p>
+                    {s.prescriptionExpiresAt && (
+                      <p className="text-xs text-muted-foreground">Receita válida até {new Date(`${s.prescriptionExpiresAt}T00:00:00`).toLocaleDateString("pt-BR")}</p>
+                    )}
+                  </div>
+                  {adjustingMedicationId !== s.medicationId && (
+                    <Button size="sm" variant="outline" onClick={() => { setAdjustingMedicationId(s.medicationId); setAdjustMode("add"); setAdjustAmount(""); setAdjustReason(""); }}>
+                      Ajustar
+                    </Button>
+                  )}
+                </div>
+
+                {adjustingMedicationId === s.medicationId && (
+                  <div className="mt-3 space-y-2 pt-3 border-t">
+                    <div className="flex gap-2">
+                      <Select value={adjustMode} onValueChange={(v) => setAdjustMode(v as "add" | "set")}>
+                        <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="add">Somar (repor)</SelectItem>
+                          <SelectItem value="set">Corrigir para</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Input type="number" value={adjustAmount} onChange={(e) => setAdjustAmount(e.target.value)} placeholder={s.unit} className="flex-1" />
+                    </div>
+                    <Input value={adjustReason} onChange={(e) => setAdjustReason(e.target.value)} placeholder="Motivo (opcional)" />
+                    <div className="flex gap-2">
+                      <Button size="sm" onClick={() => void handleAdjustStock(s.medicationId)}>Salvar</Button>
+                      <Button size="sm" variant="ghost" onClick={() => setAdjustingMedicationId(null)}>Cancelar</Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         )}
 
         <NotificationPreferencesCard patientId={Number(params.id)} />

@@ -42,7 +42,7 @@ interface HomeData {
   patientTimezone: string;
   doses: HomeDose[];
   lateDoses: number;
-  lowStockItems: { medicationName: string; quantityRemaining: number; unit: string }[];
+  lowStockItems: { medicationId: number; medicationName: string; quantityRemaining: number; unit: string; effectiveDaysRemaining: number | null }[];
   nextAppointment: { specialty: string; doctorName: string | null; scheduledAt: string } | null;
 }
 
@@ -161,10 +161,32 @@ export default function HomePage() {
   const [justificationNeededFor, setJustificationNeededFor] = useState<number | null>(null);
   const [retroError, setRetroError] = useState<string | null>(null);
 
+  // ZELO-34: "já comprou?" — um toque abre um campo mínimo (quantidade),
+  // não navega pra outra tela. O alerta em si (lowStockItems) já vem
+  // recalculado do servidor a cada busca; não precisa de um "resolver"
+  // separado, some sozinho quando os dias restantes voltam a ficar acima
+  // do limite.
+  const [restockingMedicationId, setRestockingMedicationId] = useState<number | null>(null);
+  const [restockAmount, setRestockAmount] = useState("");
+
   const handleSwitchPatient = async (idStr: string) => {
     const id = Number(idStr);
     setSelectedPatientId(id);
     void authFetch("/api/account/selected-patient", { method: "PATCH", body: JSON.stringify({ patientId: id }) });
+  };
+
+  const handleRestock = async (medicationId: number) => {
+    const amount = Number(restockAmount);
+    if (!amount || amount <= 0) return;
+    const res = await authFetch(`/api/patients/${selectedPatientId}/stock/${medicationId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ addQuantity: amount }),
+    });
+    if (res.ok) {
+      setRestockingMedicationId(null);
+      setRestockAmount("");
+      void queryClient.invalidateQueries({ queryKey: ["home", selectedPatientId] });
+    }
   };
 
   const handleRegister = async (
@@ -439,9 +461,37 @@ export default function HomePage() {
 
             {(home.lowStockItems.length > 0 || home.nextAppointment) && (
               <div className="pt-2 space-y-2">
-                {home.lowStockItems.map((item, i) => (
-                  <div key={i} className="flex items-center gap-2 text-sm text-zelo-amber-fg bg-zelo-amber-bg rounded-lg px-3 py-2">
-                    <Package className="w-4 h-4 shrink-0" /> Estoque baixo: {item.medicationName} ({item.quantityRemaining} {item.unit})
+                {home.lowStockItems.map((item) => (
+                  <div key={item.medicationId} className="text-sm text-zelo-amber-fg bg-zelo-amber-bg rounded-lg px-3 py-2 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Package className="w-4 h-4 shrink-0" />
+                      <span className="flex-1">
+                        Estoque baixo: {item.medicationName} ({item.quantityRemaining} {item.unit})
+                        {item.effectiveDaysRemaining !== null && ` — cerca de ${Math.round(item.effectiveDaysRemaining)} dia(s)`}
+                      </span>
+                      {restockingMedicationId !== item.medicationId && (
+                        <button
+                          type="button"
+                          className="underline shrink-0"
+                          onClick={() => { setRestockingMedicationId(item.medicationId); setRestockAmount(""); }}
+                        >
+                          Já comprou?
+                        </button>
+                      )}
+                    </div>
+                    {restockingMedicationId === item.medicationId && (
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number" min="1" inputMode="numeric" autoFocus
+                          placeholder={`Quantos ${item.unit}?`}
+                          value={restockAmount}
+                          onChange={(e) => setRestockAmount(e.target.value)}
+                          className="h-8 bg-background"
+                        />
+                        <Button size="sm" onClick={() => void handleRestock(item.medicationId)}>Registrar</Button>
+                        <Button size="sm" variant="ghost" onClick={() => setRestockingMedicationId(null)}>Cancelar</Button>
+                      </div>
+                    )}
                   </div>
                 ))}
                 {home.nextAppointment && (

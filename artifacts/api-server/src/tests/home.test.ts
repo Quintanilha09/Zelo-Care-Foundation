@@ -156,16 +156,27 @@ describe("GET /patients/:id/today-doses — enriquecido para a tela inicial", ()
     await db.delete(treatmentsTable).where(eq(treatmentsTable.id, treatmentId));
   });
 
-  it("lista estoque baixo só quando abaixo do limite configurado", async () => {
+  it("lista estoque baixo quando os dias restantes (pela posologia prescrita) ficam <= 5 — não por quantidade absoluta", async () => {
+    // 2 doses/dia (ver lib/stock.ts) — 8 comprimidos dá ~4 dias, abaixo do limite de 5.
+    const treatmentRes = await api("POST", `/patients/${patientId}/treatments`, {
+      medicationId,
+      scheduleConfig: { scheduleType: "times_per_day", times: ["08:00", "20:00"] },
+      startDate: Clock.todayInTimezone("America/Sao_Paulo"),
+    });
+    const treatmentId = (treatmentRes.body as { id: number }).id;
+
     const [stock] = await db.insert(stockEntriesTable).values({
-      patientId, medicationId, quantityRemaining: 2, unit: "comprimidos", lowStockThreshold: 5,
+      patientId, medicationId, quantityRemaining: 8, unit: "comprimidos",
     }).returning();
 
     const res = await api("GET", `/patients/${patientId}/today-doses`);
-    const body = res.body as { lowStockItems: Array<{ medicationName: string }> };
-    assert.ok(body.lowStockItems.some((i) => i.medicationName === "Medicamento Fictício Home Teste"));
+    const body = res.body as { lowStockItems: Array<{ medicationName: string; effectiveDaysRemaining: number | null }> };
+    const item = body.lowStockItems.find((i) => i.medicationName === "Medicamento Fictício Home Teste");
+    assert.ok(item, "8 comprimidos a ~2/dia é bem menos que 5 dias restantes — devia aparecer");
+    assert.ok(item!.effectiveDaysRemaining !== null && item!.effectiveDaysRemaining <= 5);
 
     await db.delete(stockEntriesTable).where(eq(stockEntriesTable.id, stock.id));
+    await db.delete(treatmentsTable).where(eq(treatmentsTable.id, treatmentId));
   });
 
   it("mostra a próxima consulta futura quando existe", async () => {

@@ -8,7 +8,7 @@ import { getAuth } from "../lib/auth-types.ts";
 import { Router } from "express";
 import { eq, and } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { treatmentsTable, patientsTable, medicationsTable } from "@workspace/db";
+import { treatmentsTable, patientsTable, medicationsTable, stockEntriesTable } from "@workspace/db";
 import { z } from "zod";
 import { expandSchedule } from "@workspace/scheduling";
 import type { ScheduleConfig } from "@workspace/scheduling";
@@ -40,6 +40,13 @@ const CreateTreatmentBody = z.object({
   // ZELO-30: silent/standard/critical — controla se e quando a dose escala
   // além do(s) cuidador(es) principal(is) (ver dose-reminders.ts).
   escalationProfile: z.enum(["silent", "standard", "critical"]).optional(),
+  // ZELO-34: opcional de propósito — "sem estoque informado, a função fica
+  // desligada pra aquele tratamento, sem insistir" (a própria história).
+  initialStock: z.object({
+    quantity: z.number().positive(),
+    unit: z.string().min(1),
+    prescriptionExpiresAt: z.string().optional().nullable(),
+  }).optional(),
 });
 
 const UpdateTreatmentBody = CreateTreatmentBody.partial().extend({
@@ -197,6 +204,31 @@ router.post("/patients/:patientId/treatments", requireAuth, async (req, res): Pr
     actorType: "caregiver",
     ipAddress: req.ip,
   });
+
+  // ZELO-34: "quantidade inicial informada no cadastro do tratamento" —
+  // upsert por (patientId, medicationId): represcrever o mesmo medicamento
+  // (dose mudou, por exemplo) atualiza o estoque conhecido em vez de tentar
+  // criar uma segunda linha e esbarrar na constraint única.
+  if (body.data.initialStock) {
+    await db
+      .insert(stockEntriesTable)
+      .values({
+        patientId,
+        medicationId: body.data.medicationId,
+        quantityRemaining: body.data.initialStock.quantity,
+        unit: body.data.initialStock.unit,
+        prescriptionExpiresAt: body.data.initialStock.prescriptionExpiresAt ?? null,
+      })
+      .onConflictDoUpdate({
+        target: [stockEntriesTable.patientId, stockEntriesTable.medicationId],
+        set: {
+          quantityRemaining: body.data.initialStock.quantity,
+          unit: body.data.initialStock.unit,
+          prescriptionExpiresAt: body.data.initialStock.prescriptionExpiresAt ?? null,
+          updatedAt: Clock.now(),
+        },
+      });
+  }
 
   // Gera a janela inicial de doses. Falha aqui não deve derrubar a criação
   // do tratamento — o tratamento já existe e é válido mesmo sem doses ainda;

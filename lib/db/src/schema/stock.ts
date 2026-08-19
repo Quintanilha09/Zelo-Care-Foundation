@@ -5,6 +5,7 @@ import {
   timestamp,
   text,
   real,
+  date,
   unique,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
@@ -24,7 +25,10 @@ export const stockEntriesTable = pgTable(
       .references(() => medicationsTable.id, { onDelete: "cascade" }),
     quantityRemaining: real("quantity_remaining").notNull(),
     unit: text("unit").notNull(), // "comprimidos", "ml", "unidades"
-    lowStockThreshold: real("low_stock_threshold"),
+    // ZELO-34: quando a receita vence antes do estoque acabar, o alerta
+    // precisa antecipar — consulta nova demora a marcar. Nula quando não
+    // informada (a maioria dos casos, receita sem prazo definido).
+    prescriptionExpiresAt: date("prescription_expires_at", { mode: "string" }),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow()

@@ -13,6 +13,7 @@ import {
 import { requireAuth } from "../middleware/require-auth";
 import { Clock } from "../lib/clock";
 import { localDayBoundsUtc } from "@workspace/scheduling";
+import { computeDaysRemaining, loadActiveTreatmentSchedule } from "../lib/stock.ts";
 
 const router = Router();
 
@@ -56,10 +57,26 @@ router.get("/dashboard", requireAuth, async (req, res): Promise<void> => {
     .from(appointmentsTable)
     .where(and(gte(appointmentsTable.scheduledAt, Clock.now()), eq(appointmentsTable.status, "scheduled")));
 
+  // ZELO-34: mesma definição de "baixo" (dias restantes por posologia) do
+  // resto do app. Corrigido no caminho: esta consulta nunca filtrava por
+  // família (contava estoque de TODAS as famílias no total) — join por
+  // patientsTable pra escopar corretamente, igual todo outro dado aqui.
   const stockItems = await db
-    .select({ qty: stockEntriesTable.quantityRemaining, threshold: stockEntriesTable.lowStockThreshold })
-    .from(stockEntriesTable);
-  const lowStock = stockItems.filter((s) => s.threshold != null && s.qty <= (s.threshold ?? 0)).length;
+    .select({
+      patientId: stockEntriesTable.patientId, medicationId: stockEntriesTable.medicationId,
+      quantityRemaining: stockEntriesTable.quantityRemaining, unit: stockEntriesTable.unit,
+      prescriptionExpiresAt: stockEntriesTable.prescriptionExpiresAt, patientTimezone: patientsTable.timezone,
+    })
+    .from(stockEntriesTable)
+    .innerJoin(patientsTable, eq(stockEntriesTable.patientId, patientsTable.id))
+    .where(eq(patientsTable.familyId, familyId));
+  const lowStockFlags = await Promise.all(
+    stockItems.map(async (s) => {
+      const activeTreatment = await loadActiveTreatmentSchedule(s.patientId, s.medicationId);
+      return computeDaysRemaining(s, activeTreatment, s.patientTimezone).isLow;
+    })
+  );
+  const lowStock = lowStockFlags.filter(Boolean).length;
 
   res.json({
     familyId,
@@ -119,17 +136,29 @@ router.get("/patients/:patientId/today-doses", requireAuth, async (req, res): Pr
     ))
     .orderBy(scheduledDosesTable.scheduledAt);
 
+  // ZELO-34: "baixo" é dias restantes (a partir da posologia prescrita),
+  // não uma quantidade absoluta — a mesma definição usada em GET /stock e
+  // no worker de decremento (lib/stock.ts), nunca reimplementada aqui.
   const stockRows = await db
     .select({
+      medicationId: stockEntriesTable.medicationId,
       medicationName: medicationsTable.name,
       quantityRemaining: stockEntriesTable.quantityRemaining,
       unit: stockEntriesTable.unit,
-      lowStockThreshold: stockEntriesTable.lowStockThreshold,
+      prescriptionExpiresAt: stockEntriesTable.prescriptionExpiresAt,
     })
     .from(stockEntriesTable)
     .innerJoin(medicationsTable, eq(stockEntriesTable.medicationId, medicationsTable.id))
     .where(eq(stockEntriesTable.patientId, patientId));
-  const lowStockItems = stockRows.filter((s) => s.lowStockThreshold != null && s.quantityRemaining <= s.lowStockThreshold);
+  const lowStockItems = (
+    await Promise.all(
+      stockRows.map(async (s) => {
+        const activeTreatment = await loadActiveTreatmentSchedule(patientId, s.medicationId);
+        const days = computeDaysRemaining(s, activeTreatment, patient.timezone);
+        return { ...s, ...days };
+      })
+    )
+  ).filter((s) => s.isLow);
 
   const [nextAppointment] = await db
     .select({ specialty: appointmentsTable.specialty, doctorName: appointmentsTable.doctorName, scheduledAt: appointmentsTable.scheduledAt })
@@ -146,7 +175,9 @@ router.get("/patients/:patientId/today-doses", requireAuth, async (req, res): Pr
     pendingDoses: doses.filter((d) => d.status === "pending").length,
     lateDoses: doses.filter((d) => d.status === "late").length,
     doses,
-    lowStockItems: lowStockItems.map(({ medicationName, quantityRemaining, unit }) => ({ medicationName, quantityRemaining, unit })),
+    lowStockItems: lowStockItems.map(({ medicationId, medicationName, quantityRemaining, unit, effectiveDaysRemaining }) => ({
+      medicationId, medicationName, quantityRemaining, unit, effectiveDaysRemaining,
+    })),
     nextAppointment: nextAppointment ?? null,
   });
 });
