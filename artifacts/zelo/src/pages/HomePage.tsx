@@ -43,7 +43,7 @@ interface HomeData {
   doses: HomeDose[];
   lateDoses: number;
   lowStockItems: { medicationId: number; medicationName: string; quantityRemaining: number; unit: string; effectiveDaysRemaining: number | null }[];
-  nextAppointment: { specialty: string; doctorName: string | null; scheduledAt: string } | null;
+  nextAppointment: { specialty: string; doctorName: string | null; scheduledAt: string; localDate: string; localTime: string } | null;
 }
 
 async function fetchPatients(): Promise<Patient[]> {
@@ -311,30 +311,37 @@ export default function HomePage() {
           </div>
         )}
 
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-sm text-muted-foreground">Cuidando de</p>
-            <h2 className="text-2xl font-semibold">{currentPatient?.name ?? "…"}</h2>
+        {activePatients.length > 0 && (
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm text-muted-foreground">Cuidando de</p>
+              <h2 className="text-2xl font-semibold">{currentPatient?.name ?? "…"}</h2>
+            </div>
+            {activePatients.length > 1 && (
+              <Select value={selectedPatientId ? String(selectedPatientId) : undefined} onValueChange={handleSwitchPatient}>
+                <SelectTrigger className="w-40"><SelectValue placeholder="Trocar paciente" /></SelectTrigger>
+                <SelectContent>
+                  {activePatients.map((p) => (
+                    <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
-          {activePatients.length > 1 && (
-            <Select value={selectedPatientId ? String(selectedPatientId) : undefined} onValueChange={handleSwitchPatient}>
-              <SelectTrigger className="w-40"><SelectValue placeholder="Trocar paciente" /></SelectTrigger>
-              <SelectContent>
-                {activePatients.map((p) => (
-                  <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-        </div>
+        )}
 
         {isLoading && !isPlaceholderData && <HomeSkeleton />}
 
-        {!isLoading && selectedPatientId && activePatients.length === 0 && (
+        {/* BUG corrigido: essa condição exigia selectedPatientId já definido,
+            mas a seleção automática (useEffect acima) só roda quando JÁ
+            existe paciente — pra quem não tem nenhum, selectedPatientId
+            nunca sai de null, e este estado vazio nunca aparecia. Sintoma
+            real: cuidadora nova via só "Cuidando de …" sem nada embaixo. */}
+        {!patients ? null : activePatients.length === 0 && (
           <div className="text-center py-16 border rounded-xl border-dashed">
             <Pill className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
-            <p className="text-foreground font-medium">Nenhum paciente ainda</p>
-            <p className="text-muted-foreground text-sm mt-1 mb-4">Cadastre a primeira pessoa que você cuida.</p>
+            <p className="text-foreground font-medium text-lg">Você ainda não está cuidando de ninguém</p>
+            <p className="text-muted-foreground text-sm mt-1 mb-4">Cadastre a primeira pessoa que você cuida pra começar.</p>
             <Link href="/pacientes"><Button className="gap-2"><Plus className="w-4 h-4" /> Cadastrar paciente</Button></Link>
           </div>
         )}
@@ -495,10 +502,12 @@ export default function HomePage() {
                   </div>
                 ))}
                 {home.nextAppointment && (
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted rounded-lg px-3 py-2">
-                    <CalendarClock className="w-4 h-4 shrink-0" />
-                    Próxima consulta: {home.nextAppointment.specialty} em {new Date(home.nextAppointment.scheduledAt).toLocaleDateString("pt-BR")}
-                  </div>
+                  <Link href={`/pacientes/${selectedPatientId}/consultas`}>
+                    <a className="flex items-center gap-2 text-sm text-muted-foreground bg-muted rounded-lg px-3 py-2 hover:bg-muted/70">
+                      <CalendarClock className="w-4 h-4 shrink-0" />
+                      Próxima consulta: {home.nextAppointment.specialty} em {home.nextAppointment.localDate.split("-").reverse().join("/")}
+                    </a>
+                  </Link>
                 )}
               </div>
             )}
