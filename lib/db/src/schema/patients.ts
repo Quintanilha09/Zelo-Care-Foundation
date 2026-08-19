@@ -22,6 +22,13 @@ export const patientsTable = pgTable("patients", {
   birthDate: date("birth_date", { mode: "string" }),
   timezone: text("timezone").notNull(), // ex: "America/Sao_Paulo"
   notes: text("notes"),
+  // ZELO-37: "se o cuidador quiser marcar algo como preocupante, ele
+  // escreve na observação — a ação do app é oferecer o contato de
+  // emergência já cadastrado, encaminhar, nunca avaliar." Vive no
+  // paciente (não na família): quem chamar em uma emergência pode
+  // depender de qual paciente, mesmo dentro da mesma família.
+  emergencyContactName: text("emergency_contact_name"),
+  emergencyContactPhone: text("emergency_contact_phone"),
   // Arquivar suspende doses futuras sem apagar histórico. Nunca DELETE aqui —
   // exclusão de verdade é o fluxo de LGPD (export-deletion), não este campo.
   archived: boolean("archived").notNull().default(false),

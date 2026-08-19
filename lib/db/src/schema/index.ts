@@ -29,3 +29,4 @@ export * from "./export-tokens";
 export * from "./oauth-login-codes";
 export * from "./deletion-requests";
 export * from "./adherence-reports";
+export * from "./activities";

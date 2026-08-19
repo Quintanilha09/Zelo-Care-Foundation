@@ -25,6 +25,9 @@ const CreatePatientBody = z.object({
   birthDate: z.string().optional().nullable(),
   timezone: z.string().default("America/Sao_Paulo"),
   notes: z.string().optional().nullable(),
+  // ZELO-37: pra quando algo parecer preocupante — o app encaminha, nunca avalia.
+  emergencyContactName: z.string().optional().nullable(),
+  emergencyContactPhone: z.string().optional().nullable(),
   healthConsent: z.object({
     givenBy: z.enum(["self", "legal_representative"]),
     version: z.string().min(1),
@@ -36,6 +39,8 @@ const UpdatePatientBody = z.object({
   birthDate: z.string().optional().nullable(),
   timezone: z.string().optional(),
   notes: z.string().optional().nullable(),
+  emergencyContactName: z.string().optional().nullable(),
+  emergencyContactPhone: z.string().optional().nullable(),
 });
 
 // ── Listar pacientes ──────────────────────────────────────────────────────
