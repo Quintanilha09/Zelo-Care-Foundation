@@ -1,8 +1,15 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-BR" translate="no">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+    <!-- lang="pt-BR" sozinho não impede o Chrome de oferecer tradução —
+         a decisão dele também considera o idioma preferido do navegador
+         do visitante, não só o da página. translate="no" + a meta abaixo
+         bloqueiam a tradução automática de vez (Google Translate mexe no
+         DOM por fora do React; qualquer atualização de tela depois disso
+         quebra com "removeChild" — não é bug de lógica do app). -->
+    <meta name="google" content="notranslate" />
     <title>ZELO</title>
     <meta name="description" content="ZELO — built on Replit. Update this description to reflect the app." />
     <meta name="robots" content="index, follow" />
@@ -26,7 +33,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root" translate="no"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
