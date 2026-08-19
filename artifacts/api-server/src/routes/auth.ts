@@ -24,6 +24,7 @@ import { db } from "@workspace/db";
 import {
   usersTable,
   caregiversTable,
+  caregiverInvitesTable,
   familiesTable,
   refreshTokensTable,
   emailVerificationsTable,
@@ -51,6 +52,7 @@ import {
   passwordResetLimiter,
 } from "../lib/rate-limit";
 import { Clock } from "../lib/clock";
+import { resolveActiveCaregiver } from "../lib/active-family.ts";
 
 const router = Router();
 
@@ -64,6 +66,11 @@ const RegisterBody = z.object({
   consentHealthData: z.boolean(),     // aceite para tratamento de dados de saúde
   consentRepresentative: z.enum(["self", "legal_representative"]).optional(),
   familyName: z.string().min(2).max(100).optional(),
+  // Quem chega por um link de convite entra na família de QUEM CONVIDOU —
+  // sem isto, o cadastro criava uma família própria vazia por cima, e a
+  // pessoa acabava entrando nela em vez de na família pra qual foi
+  // convidada (ver lib/active-family.ts).
+  inviteToken: z.string().min(1).optional(),
 });
 
 router.post("/auth/register", registerLimiter, async (req, res): Promise<void> => {
@@ -104,6 +111,27 @@ router.post("/auth/register", registerLimiter, async (req, res): Promise<void> =
   const passwordHash = await hashPassword(body.data.password);
   const ip = req.ip ?? "unknown";
 
+  // Convite válido = a pessoa entra na família de quem convidou, e NÃO
+  // ganha uma família própria. Convite inválido/expirado não bloqueia o
+  // cadastro (a conta é legítima de qualquer forma) — só cai no caminho
+  // normal de criar a própria família.
+  const invite = body.data.inviteToken
+    ? (
+        await db
+          .select()
+          .from(caregiverInvitesTable)
+          .where(
+            and(
+              eq(caregiverInvitesTable.tokenHash, hashToken(body.data.inviteToken)),
+              eq(caregiverInvitesTable.used, false),
+              eq(caregiverInvitesTable.status, "pending"),
+              gt(caregiverInvitesTable.expiresAt, Clock.now())
+            )
+          )
+          .limit(1)
+      )[0]
+    : undefined;
+
   // Tudo em uma transação: usuário + família + cuidador + consentimentos
   const { userId, familyId, caregiverId } = await db.transaction(async (tx) => {
     // 1. Criar usuário
@@ -118,28 +146,43 @@ router.post("/auth/register", registerLimiter, async (req, res): Promise<void> =
       })
       .returning({ id: usersTable.id });
 
-    // 2. Criar família
-    const familyName = body.data.familyName ?? `Família de ${body.data.name}`;
-    const slug = familyName
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .slice(0, 50) + `-${Date.now()}`;
-    const [newFamily] = await tx
-      .insert(familiesTable)
-      .values({ name: familyName, slug })
-      .returning({ id: familiesTable.id });
+    // 2. Família: a do convite, quando veio por convite; senão, uma nova.
+    let targetFamilyId: number;
+    if (invite) {
+      targetFamilyId = invite.familyId;
+      await tx
+        .update(caregiverInvitesTable)
+        .set({ used: true, usedAt: Clock.now(), usedByUserId: newUser.id, status: "accepted" })
+        .where(eq(caregiverInvitesTable.id, invite.id));
+    } else {
+      const familyName = body.data.familyName ?? `Família de ${body.data.name}`;
+      const slug = familyName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .slice(0, 50) + `-${Date.now()}`;
+      const [newFamily] = await tx
+        .insert(familiesTable)
+        .values({ name: familyName, slug })
+        .returning({ id: familiesTable.id });
+      targetFamilyId = newFamily.id;
+    }
 
-    // 3. Criar cuidador principal vinculado ao usuário
+    // 3. Criar cuidador vinculado ao usuário — com o papel do convite quando
+    // houver: quem foi convidada como cuidadora contratada não vira dona da
+    // família de quem convidou.
     const [newCaregiver] = await tx
       .insert(caregiversTable)
       .values({
-        familyId: newFamily.id,
+        familyId: targetFamilyId,
         userId: newUser.id,
         name: body.data.name,
         email: body.data.email.toLowerCase(),
-        role: "primary_caregiver",
+        role: invite ? invite.role : "primary_caregiver",
       })
       .returning({ id: caregiversTable.id });
+
+    // A família da sessão já nasce resolvida (ver lib/active-family.ts).
+    await tx.update(usersTable).set({ activeFamilyId: targetFamilyId }).where(eq(usersTable.id, newUser.id));
 
     // 4. Registrar consentimento dos Termos de Uso
     await tx.insert(consentRecordsTable).values({
@@ -162,7 +205,7 @@ router.post("/auth/register", registerLimiter, async (req, res): Promise<void> =
       // Quem está consentindo: o titular ou um representante legal
     });
 
-    return { userId: newUser.id, familyId: newFamily.id, caregiverId: newCaregiver.id };
+    return { userId: newUser.id, familyId: targetFamilyId, caregiverId: newCaregiver.id };
   });
 
   // 6. Token de verificação de e-mail
@@ -287,12 +330,9 @@ router.post("/auth/login", loginByIpLimiter, loginByEmailLimiter, async (req, re
     return;
   }
 
-  // Busca o cuidador vinculado ao usuário
-  const [caregiver] = await db
-    .select({ id: caregiversTable.id, familyId: caregiversTable.familyId, role: caregiversTable.role })
-    .from(caregiversTable)
-    .where(eq(caregiversTable.userId, user.id))
-    .limit(1);
+  // Com qual família a sessão abre — nunca "a primeira que vier", que é
+  // indeterminado pra quem é cuidador em mais de uma (ver lib/active-family.ts).
+  const caregiver = await resolveActiveCaregiver(user.id);
 
   if (!caregiver) {
     res.status(500).json({ error: "Conta sem vínculo familiar. Contate o suporte." });
@@ -360,11 +400,9 @@ router.post("/auth/refresh", async (req, res): Promise<void> => {
     return;
   }
 
-  const [caregiver] = await db
-    .select({ id: caregiversTable.id, familyId: caregiversTable.familyId, role: caregiversTable.role })
-    .from(caregiversTable)
-    .where(eq(caregiversTable.userId, existing.userId))
-    .limit(1);
+  // Mesma resolução do login — o refresh acontece a cada 15min e não pode
+  // trocar a família debaixo do usuário nem desfazer uma troca explícita.
+  const caregiver = await resolveActiveCaregiver(existing.userId);
 
   if (!caregiver) {
     res.status(401).json({ error: "Sessão inválida" });

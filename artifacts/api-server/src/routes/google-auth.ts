@@ -38,6 +38,7 @@ import {
 import { safeLog } from "../lib/safe-logger";
 import { audit } from "../lib/audit";
 import { Clock } from "../lib/clock";
+import { resolveActiveCaregiver } from "../lib/active-family.ts";
 
 const router = Router();
 
@@ -228,11 +229,10 @@ router.get("/auth/google/callback", async (req: Request, res: Response): Promise
         .where(eq(usersTable.id, userId));
     }
 
-    const [caregiver] = await db
-      .select({ id: caregiversTable.id, familyId: caregiversTable.familyId, role: caregiversTable.role })
-      .from(caregiversTable)
-      .where(eq(caregiversTable.userId, userId))
-      .limit(1);
+    // Mesma resolução do login por senha (lib/active-family.ts) — quem é
+    // cuidador em mais de uma família entra sempre na mesma, não numa
+    // arbitrária que muda entre sessões.
+    const caregiver = await resolveActiveCaregiver(userId);
 
     if (!caregiver) {
       safeLog.error({ action: "google_no_caregiver", userId }, "Conta sem cuidador vinculado");

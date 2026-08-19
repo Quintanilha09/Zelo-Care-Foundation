@@ -78,6 +78,8 @@ const PROTECTED_ROUTES = new Set([
   "POST /medication-photos/:id/confirm",
   "POST /medication-photos/:id/discard",
   "PATCH /account/selected-patient",
+  "GET /account/families",
+  "POST /account/switch-family",
   "PATCH /families/me/settings",
   "GET /patients/:id/events",
   "GET /patients/:id/notification-preferences",
@@ -527,6 +529,20 @@ describe("Isolamento entre famílias — ZELO", () => {
 
   it("PATCH /account/selected-patient — família A não seleciona paciente de B", async () => {
     await assertIsolated("PATCH /account/selected-patient", "PATCH", "/account/selected-patient", { patientId: patientBId });
+  });
+
+  it("GET /account/families — A só enxerga as famílias em que ELA é cuidadora, nunca a de B", async () => {
+    const res = await api(tokenA, "GET", "/account/families");
+    assert.equal(res.status, 200);
+    const families = res.body as Array<{ familyId: number }>;
+    assert.equal(families.some((f) => f.familyId === familyBId), false, "família de B não pode aparecer na listagem de A");
+    covered("GET /account/families");
+  });
+
+  it("POST /account/switch-family — A não entra na família de B sem ter vínculo lá", async () => {
+    const res = await api(tokenA, "POST", "/account/switch-family", { familyId: familyBId });
+    assert.equal(res.status, 404, "sem vínculo, o id vindo do cliente não vale nada");
+    covered("POST /account/switch-family");
   });
 
   it("GET /patients/:id/events — família A não assina o stream de paciente de B", async () => {

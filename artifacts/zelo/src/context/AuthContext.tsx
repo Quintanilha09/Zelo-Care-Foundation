@@ -45,6 +45,9 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   logoutAll: () => Promise<void>;
+  /** Troca a família ativa. O token carrega familyId/caregiverId/role, então
+   *  trocar de família é necessariamente trocar de token (ver active-family.ts). */
+  switchFamily: (familyId: number) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -160,8 +163,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }, []);
 
+  const switchFamily = useCallback(async (familyId: number) => {
+    const res = await authFetch('/api/account/switch-family', {
+      method: 'POST',
+      body: JSON.stringify({ familyId }),
+    });
+    if (!res.ok) {
+      const err = await res.json() as { error?: string };
+      throw new Error(err.error ?? 'Não foi possível trocar de família');
+    }
+    setTokens(await res.json() as { accessToken: string; refreshToken: string; expiresIn: number });
+    await loadMe();
+    // Recarrega a página: o paciente selecionado, as listas e todo cache do
+    // React Query pertencem à família anterior — recarregar é mais honesto
+    // (e mais simples) do que tentar invalidar cada consulta uma a uma.
+    window.location.href = '/';
+  }, [loadMe]);
+
   return (
-    <AuthContext.Provider value={{ user, isLoading, isAuthenticated: !!user, login, logout, logoutAll }}>
+    <AuthContext.Provider value={{ user, isLoading, isAuthenticated: !!user, login, logout, logoutAll, switchFamily }}>
       {children}
     </AuthContext.Provider>
   );

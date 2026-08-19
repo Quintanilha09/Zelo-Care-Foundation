@@ -132,10 +132,17 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
     }
     setLoading(true);
     try {
+      // Quando o cadastro acontece dentro do fluxo de convite (/convite?token=…),
+      // o token vai junto: a conta nasce já na família de quem convidou, em vez
+      // de criar uma família própria vazia que a pessoa nunca quis.
+      const inviteToken = new URLSearchParams(window.location.search).get('token');
       const res = await fetch(`${BASE}/api/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, password, consentTerms, consentHealthData: consentHealth }),
+        body: JSON.stringify({
+          name, email, password, consentTerms, consentHealthData: consentHealth,
+          ...(inviteToken ? { inviteToken } : {}),
+        }),
       });
       const data = await res.json() as { error?: string; message?: string };
       if (!res.ok) throw new Error(data.error ?? 'Erro ao criar conta');

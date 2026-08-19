@@ -1,6 +1,7 @@
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
+import { FamilySwitcher } from "@/components/family-switcher";
 import { cn } from "@/lib/utils";
 import { LogOut, Users, User, Settings } from "lucide-react";
 
@@ -21,6 +22,7 @@ export function AppHeader() {
           </div>
         </Link>
         <div className="flex items-center gap-1">
+          <FamilySwitcher />
           <Link href="/pacientes">
             <a className={cn(
               "flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium",

@@ -14,7 +14,7 @@ import { getAuth } from "../lib/auth-types.ts";
  */
 
 import { Router } from "express";
-import { eq, and, lte, gt } from "drizzle-orm";
+import { eq, and, lte, gt, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@workspace/db";
 import {
@@ -29,8 +29,9 @@ import { requireAuth, requirePrimaryCaregiver } from "../middleware/require-auth
 import { sendDeletionNotification } from "../lib/email";
 import { audit } from "../lib/audit";
 import { safeLog } from "../lib/safe-logger";
-import { revokeAllAccessTokensForUser } from "../lib/tokens";
+import { revokeAllAccessTokensForUser, generateAccessToken, generateRefreshToken } from "../lib/tokens";
 import { Clock } from "../lib/clock";
+import { listCaregiverLinks, switchActiveFamily } from "../lib/active-family.ts";
 
 const router = Router();
 
@@ -45,13 +46,17 @@ router.get("/account/me", requireAuth, async (req, res): Promise<void> => {
 
   if (!user) { res.status(404).json({ error: "Conta não encontrada" }); return; }
 
+  // Pelo caregiverId do TOKEN, nunca por userId: quem é cuidador em mais de
+  // uma família tem várias linhas, e buscar por userId devolvia uma
+  // arbitrária — a tela mostrava o nome de uma família e o token abria
+  // outra. O token é a autoridade sobre qual sessão está aberta.
   const [caregiver] = await db
     .select({
       id: caregiversTable.id, name: caregiversTable.name, role: caregiversTable.role,
       familyId: caregiversTable.familyId, selectedPatientId: caregiversTable.selectedPatientId,
     })
     .from(caregiversTable)
-    .where(eq(caregiversTable.userId, getAuth(req).userId))
+    .where(eq(caregiversTable.id, getAuth(req).caregiverId))
     .limit(1);
 
   const [family] = caregiver
@@ -96,6 +101,65 @@ router.patch("/account/selected-patient", requireAuth, async (req, res): Promise
     .returning({ id: caregiversTable.id, selectedPatientId: caregiversTable.selectedPatientId });
 
   res.json(updated);
+});
+
+// ── Famílias do usuário e troca de família ───────────────────────────────
+// Um usuário pode ser cuidador em várias famílias (cuidar da própria mãe E
+// ser cuidadora contratada de outra). O JWT carrega uma só, então trocar
+// exige emitir um par de tokens novo — não dá pra "mudar de família" sem
+// mudar o token, que é justamente onde familyId/caregiverId/role vivem.
+
+router.get("/account/families", requireAuth, async (req, res): Promise<void> => {
+  const links = await listCaregiverLinks(getAuth(req).userId);
+  if (links.length === 0) { res.json([]); return; }
+
+  const families = await db
+    .select({ id: familiesTable.id, name: familiesTable.name })
+    .from(familiesTable)
+    .where(inArray(familiesTable.id, links.map((l) => l.familyId)));
+
+  const nameById = new Map(families.map((f) => [f.id, f.name]));
+  res.json(
+    links.map((l) => ({
+      familyId: l.familyId,
+      name: nameById.get(l.familyId) ?? "Família",
+      role: l.role,
+      isActive: l.familyId === getAuth(req).familyId,
+    }))
+  );
+});
+
+const SwitchFamilyBody = z.object({ familyId: z.number().int().positive() });
+
+router.post("/account/switch-family", requireAuth, async (req, res): Promise<void> => {
+  const body = SwitchFamilyBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  const caregiver = await switchActiveFamily(getAuth(req).userId, body.data.familyId);
+  if (!caregiver) { res.status(404).json({ error: "Você não é cuidador nesta família" }); return; }
+
+  const accessToken = generateAccessToken(getAuth(req).userId, caregiver.familyId, caregiver.id, caregiver.role);
+  const { raw: refreshRaw, hash: refreshHash } = generateRefreshToken(getAuth(req).userId);
+  const REFRESH_TTL_DAYS = 30;
+  await db.insert(refreshTokensTable).values({
+    userId: getAuth(req).userId,
+    tokenHash: refreshHash,
+    userAgent: req.headers["user-agent"] ?? null,
+    ipAddress: req.ip ?? null,
+    expiresAt: new Date(Clock.now().getTime() + REFRESH_TTL_DAYS * 24 * 60 * 60 * 1000),
+  });
+
+  await audit({
+    familyId: caregiver.familyId,
+    entityType: "session",
+    entityId: String(caregiver.id),
+    action: "updated",
+    actorId: String(caregiver.id),
+    actorType: "caregiver",
+    ipAddress: req.ip,
+  });
+
+  res.json({ accessToken, refreshToken: refreshRaw, expiresIn: 15 * 60, userId: getAuth(req).userId });
 });
 
 // ── Ajustes da família (ZELO-24) ─────────────────────────────────────────
