@@ -17,14 +17,16 @@ import {
   usersTable,
   familiesTable,
   patientsTable,
+  refreshTokensTable,
 } from "@workspace/db";
-import { generateOneTimeToken, hashToken } from "../lib/tokens";
+import { generateOneTimeToken, hashToken, generateAccessToken, generateRefreshToken } from "../lib/tokens";
 import { sendCaregiverInviteEmail } from "../lib/email";
 import { requireAuth, requirePrimaryCaregiver } from "../middleware/require-auth";
 import { audit } from "../lib/audit";
 import { safeLog } from "../lib/safe-logger";
 import { Clock } from "../lib/clock";
 import { publishPatientEvent } from "../lib/realtime.ts";
+import { switchActiveFamily } from "../lib/active-family.ts";
 
 const router = Router();
 
@@ -175,7 +177,34 @@ router.post("/invites/accept", requireAuth, async (req, res): Promise<void> => {
     publishPatientEvent(p.id, { type: "caregiver_joined", caregiverName: newCaregiver.name });
   }
 
-  res.status(201).json({ message: "Convite aceito. Você agora é cuidador nesta família.", caregiver: newCaregiver });
+  // BUG corrigido (18/08/2026): esta rota só criava o vínculo em
+  // `caregivers`, mas nunca trocava a família ATIVA da sessão — quem já
+  // tinha uma conta (ex: própria família fantasma criada no cadastro) e
+  // aceitava um convite via /convite continuava vendo a família antiga
+  // depois do "Convite aceito", porque o token da sessão corrente nunca
+  // mudava. Mesmo sintoma do bug de multi-família já corrigido em
+  // auth.ts/active-family.ts, só que num caminho diferente (aceitar
+  // convite estando LOGADO, não durante o cadastro) — esquecido na
+  // correção original porque foi implementado por uma sessão paralela.
+  // Entrar numa família nova via convite sempre torna ela a ativa —
+  // mesmo padrão de switchActiveFamily (POST /account/switch-family).
+  await switchActiveFamily(getAuth(req).userId, invite.familyId);
+  const accessToken = generateAccessToken(getAuth(req).userId, invite.familyId, newCaregiver.id, newCaregiver.role);
+  const { raw: refreshRaw, hash: refreshHash } = generateRefreshToken(getAuth(req).userId);
+  const REFRESH_TTL_DAYS = 30;
+  await db.insert(refreshTokensTable).values({
+    userId: getAuth(req).userId,
+    tokenHash: refreshHash,
+    userAgent: req.headers["user-agent"] ?? null,
+    ipAddress: req.ip ?? null,
+    expiresAt: new Date(Clock.now().getTime() + REFRESH_TTL_DAYS * 24 * 60 * 60 * 1000),
+  });
+
+  res.status(201).json({
+    message: "Convite aceito. Você agora é cuidador nesta família.",
+    caregiver: newCaregiver,
+    accessToken, refreshToken: refreshRaw, expiresIn: 15 * 60,
+  });
 });
 
 // ── Listar convites ───────────────────────────────────────────────────────

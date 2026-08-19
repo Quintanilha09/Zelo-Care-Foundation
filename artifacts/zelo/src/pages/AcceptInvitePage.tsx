@@ -17,7 +17,7 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/context/AuthContext";
-import { authFetch } from "@/lib/auth-client";
+import { authFetch, setTokens } from "@/lib/auth-client";
 import { setPendingRedirect } from "@/lib/pending-redirect";
 import AuthPage from "./AuthPage";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -55,7 +55,10 @@ export default function AcceptInvitePage() {
           method: "POST",
           body: JSON.stringify({ token }),
         });
-        const data = (await res.json()) as { error?: string; message?: string };
+        const data = (await res.json()) as {
+          error?: string; message?: string;
+          accessToken?: string; refreshToken?: string; expiresIn?: number;
+        };
         if (cancelled) return;
         if (!res.ok) {
           setStatus("error");
@@ -64,7 +67,16 @@ export default function AcceptInvitePage() {
         }
         setStatus("accepted");
         setMessage(data.message ?? "Convite aceito!");
-        setTimeout(() => setLocation("/"), 2500);
+        // A família aceita agora É a família ativa da sessão (ver
+        // POST /invites/accept) — precisa trocar o token local pro mesmo
+        // valor, senão a tela inicial recarrega ainda presa na família
+        // antiga. Recarrega de verdade (não só navega) pelo mesmo motivo
+        // do switchFamily em AuthContext: todo cache do React Query
+        // pertence à família anterior.
+        if (data.accessToken && data.refreshToken && data.expiresIn) {
+          setTokens({ accessToken: data.accessToken, refreshToken: data.refreshToken, expiresIn: data.expiresIn });
+        }
+        setTimeout(() => { window.location.href = "/"; }, 2500);
       } catch {
         if (!cancelled) {
           setStatus("error");
