@@ -45,6 +45,8 @@ const PROTECTED_ROUTES = new Set([
   "GET /patients/:id/adherence-calendar",
   "GET /patients/:id/adherence-calendar/day",
   "POST /patients/:id/adherence-report",
+  "GET /patients/:id/appointments",
+  "PATCH /patients/:id/appointments/:appointmentId",
   "GET /patients/:id/stock",
   "PATCH /patients/:id/stock/:medicationId",
   "GET /caregivers",
@@ -315,6 +317,16 @@ describe("Isolamento entre famílias — ZELO", () => {
 
   it("POST /patients/:id/adherence-report — família A não gera relatório de paciente de B", async () => {
     await assertIsolated("POST /patients/:id/adherence-report", "POST", `/patients/${patientBId}/adherence-report`, { from: "2026-01-01", to: "2026-01-07" });
+  });
+
+  it("GET /patients/:id/appointments — família A não vê consultas de paciente de B", async () => {
+    await assertIsolated("GET /patients/:id/appointments", "GET", `/patients/${patientBId}/appointments`);
+  });
+
+  it("PATCH /patients/:id/appointments/:appointmentId — família A não edita consulta de paciente de B", async () => {
+    // O check de posse do PACIENTE falha antes de olhar o appointmentId —
+    // qualquer id serve aqui, não precisa de uma consulta de verdade em B.
+    await assertIsolated("PATCH /patients/:id/appointments/:appointmentId", "PATCH", `/patients/${patientBId}/appointments/999999`, { status: "cancelled" });
   });
 
   it("GET /patients/:id/stock — família A não acessa estoque de paciente de B", async () => {

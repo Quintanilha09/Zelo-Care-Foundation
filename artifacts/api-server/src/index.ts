@@ -6,6 +6,7 @@ import { runTreatmentLifecycleJob } from "./lib/treatment-lifecycle";
 import { decrementStockForDoseTaken } from "./lib/stock";
 import { sendDoseReminder, checkDeliveryAndEscalate } from "./lib/dose-reminders";
 import { runOperationalChecks } from "./lib/operational-monitor";
+import { sendAppointmentReminder } from "./lib/appointment-reminders";
 
 const rawPort = process.env["PORT"];
 
@@ -42,6 +43,9 @@ await startQueue({
   },
   onDeliveryCheck: async ({ notificationId }) => {
     await checkDeliveryAndEscalate(notificationId);
+  },
+  onAppointmentReminder: async ({ appointmentId, level }) => {
+    await sendAppointmentReminder(appointmentId, level);
   },
 });
 

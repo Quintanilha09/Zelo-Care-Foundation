@@ -12,7 +12,7 @@ import {
 } from "@workspace/db";
 import { requireAuth } from "../middleware/require-auth";
 import { Clock } from "../lib/clock";
-import { localDayBoundsUtc } from "@workspace/scheduling";
+import { localDayBoundsUtc, toLocalDateTime } from "@workspace/scheduling";
 import { computeDaysRemaining, loadActiveTreatmentSchedule } from "../lib/stock.ts";
 
 const router = Router();
@@ -178,7 +178,9 @@ router.get("/patients/:patientId/today-doses", requireAuth, async (req, res): Pr
     lowStockItems: lowStockItems.map(({ medicationId, medicationName, quantityRemaining, unit, effectiveDaysRemaining }) => ({
       medicationId, medicationName, quantityRemaining, unit, effectiveDaysRemaining,
     })),
-    nextAppointment: nextAppointment ?? null,
+    // ZELO-36: resolvido no fuso do PACIENTE aqui — mesmo cuidado da
+    // ZELO-19, nunca deixar o cliente reconverter o instante UTC sozinho.
+    nextAppointment: nextAppointment ? { ...nextAppointment, ...toLocalDateTime(nextAppointment.scheduledAt, patient.timezone) } : null,
   });
 });
 

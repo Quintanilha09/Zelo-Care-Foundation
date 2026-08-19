@@ -13,6 +13,7 @@ import { z } from "zod/v4";
 import { familiesTable } from "./families";
 import { treatmentsTable } from "./treatments";
 import { scheduledDosesTable } from "./scheduled-doses";
+import { appointmentsTable } from "./appointments";
 import { pushPlatformEnum } from "./push-subscriptions";
 
 // ZELO-32: mesmos valores de PushSendResult.reason (lib/push.ts) — não
@@ -66,6 +67,11 @@ export const notificationsTable = pgTable(
     // ver uniqueReminderPerCaregiverLevel). Nula para os outros tipos de
     // notificação (aviso de tratamento etc.), que não são por dose.
     scheduledDoseId: integer("scheduled_dose_id").references(() => scheduledDosesTable.id, { onDelete: "cascade" }),
+    // ZELO-36: mesma função que scheduledDoseId, mas pra lembrete de
+    // consulta — correlaciona a notificação a UMA consulta específica, base
+    // da chave de idempotência (junto de caregiverId+escalationLevel, ver
+    // uniqueAppointmentReminderPerCaregiverLevel). Nula pra todo outro tipo.
+    appointmentId: integer("appointment_id").references(() => appointmentsTable.id, { onDelete: "cascade" }),
     type: notificationTypeEnum("type").notNull(),
     title: text("title").notNull(),
     body: text("body"),
@@ -94,6 +100,14 @@ export const notificationsTable = pgTable(
     // do Postgres) — só afeta linhas de lembrete de dose de verdade.
     uniqueReminderPerCaregiverLevel: unique("uq_notif_dose_caregiver_level").on(
       table.scheduledDoseId,
+      table.caregiverId,
+      table.escalationLevel
+    ),
+    // ZELO-36: mesma garantia estrutural, pro lembrete de consulta — nunca
+    // reenvia o MESMO nível (1 semana/1 dia/2h) pro MESMO cuidador na MESMA
+    // consulta, mesmo com reprocessamento do job.
+    uniqueAppointmentReminderPerCaregiverLevel: unique("uq_notif_appointment_caregiver_level").on(
+      table.appointmentId,
       table.caregiverId,
       table.escalationLevel
     ),

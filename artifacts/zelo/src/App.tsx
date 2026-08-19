@@ -11,6 +11,7 @@ import HomePage from '@/pages/HomePage';
 import PatientsPage from '@/pages/PatientsPage';
 import PatientDetailPage from '@/pages/PatientDetailPage';
 import AdherenceCalendarPage from '@/pages/AdherenceCalendarPage';
+import AppointmentsPage from '@/pages/AppointmentsPage';
 import CaregiversPage from '@/pages/CaregiversPage';
 import SettingsPage from '@/pages/SettingsPage';
 import IOSInstallGuidePage from '@/pages/IOSInstallGuidePage';
@@ -98,6 +99,7 @@ function Router() {
         <Route path="/" component={HomePage} />
         <Route path="/pacientes" component={PatientsPage} />
         <Route path="/pacientes/:id/historico" component={AdherenceCalendarPage} />
+        <Route path="/pacientes/:id/consultas" component={AppointmentsPage} />
         <Route path="/pacientes/:id" component={PatientDetailPage} />
         <Route path="/cuidadores" component={CaregiversPage} />
         <Route path="/ajustes" component={SettingsPage} />

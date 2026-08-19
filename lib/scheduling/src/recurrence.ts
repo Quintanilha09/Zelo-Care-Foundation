@@ -29,7 +29,7 @@ function parseTimeOfDay(t: TimeOfDay): { hour: number; minute: number } {
 }
 
 /** Constrói o instante UTC para uma data civil + hora, no fuso dado. */
-function localToUtc(dateISO: string, time: TimeOfDay, zone: string): Date {
+export function localToUtc(dateISO: string, time: TimeOfDay, zone: string): Date {
   const { hour, minute } = parseTimeOfDay(time);
   const [year, month, day] = dateISO.split("-").map(Number);
   const dt = DateTime.fromObject({ year, month, day, hour, minute }, { zone });

@@ -193,6 +193,9 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
             <p className="text-muted-foreground text-[15px]">{patient?.timezone}</p>
           </div>
           <div className="flex items-center gap-2">
+            <Link href={`/pacientes/${params.id}/consultas`}>
+              <Button variant="outline">Consultas</Button>
+            </Link>
             <Link href={`/pacientes/${params.id}/historico`}>
               <Button variant="outline">Histórico</Button>
             </Link>

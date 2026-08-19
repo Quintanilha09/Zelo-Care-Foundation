@@ -44,6 +44,14 @@
  *   história pede detecção em menos de 5min) que roda as 3 checagens de
  *   saúde operacional (ver lib/operational-monitor.ts): taxa de entrega,
  *   fila travada, janela sem envio algum.
+ * - QUEUE_APPOINTMENT_REMINDER: um job por (consulta, nível) — 3 níveis
+ *   fixos (1 semana/1 dia/2h antes), agendados upfront na criação da
+ *   consulta (ZELO-36), mesmo desenho do QUEUE_DOSE_REMINDER: policy
+ *   "exclusive" + singletonKey `appt-reminder:{appointmentId}:{nivel}`.
+ *   Remarcar cancela os 3 antigos (deleteJob) e recria — mesma lição
+ *   aprendida no bug do "Adiar 15min" (ZELO-30): recriar com a mesma chave
+ *   sem apagar o job antigo primeiro é descartado em silêncio pela policy
+ *   exclusive.
  */
 import { PgBoss } from "pg-boss";
 
@@ -55,6 +63,7 @@ export const QUEUE_DOSE_REMINDER = "dose-reminder";
 export const QUEUE_DELIVERY_CHECK = "delivery-check";
 export const QUEUE_MARK_LATE_DOSES = "mark-late-doses";
 export const QUEUE_OPERATIONAL_MONITOR = "operational-monitor";
+export const QUEUE_APPOINTMENT_REMINDER = "appointment-reminder";
 
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL must be set. Did you forget to provision a database?");
@@ -91,6 +100,7 @@ export async function ensureQueueStarted(): Promise<void> {
     retryDelayMax: 600,
   });
   await boss.createQueue(QUEUE_DELIVERY_CHECK, { policy: "exclusive" });
+  await boss.createQueue(QUEUE_APPOINTMENT_REMINDER, { policy: "exclusive" });
 }
 
 /**
@@ -110,6 +120,7 @@ export async function startQueue(handlers: {
   onDoseTaken: (data: { patientId: number; medicationId: number }) => Promise<void>;
   onDoseReminder: (data: { scheduledDoseId: number; level?: number }) => Promise<void>;
   onDeliveryCheck: (data: { notificationId: number }) => Promise<void>;
+  onAppointmentReminder: (data: { appointmentId: number; level: number }) => Promise<void>;
 }): Promise<void> {
   await ensureQueueStarted();
 
@@ -154,6 +165,12 @@ export async function startQueue(handlers: {
   await boss.work(QUEUE_DELIVERY_CHECK, async (jobs) => {
     for (const job of jobs) {
       await handlers.onDeliveryCheck(job.data as { notificationId: number });
+    }
+  });
+  await boss.work(QUEUE_APPOINTMENT_REMINDER, async (jobs) => {
+    for (const job of jobs) {
+      const data = job.data as { appointmentId: number; level: number };
+      await handlers.onAppointmentReminder(data);
     }
   });
 }

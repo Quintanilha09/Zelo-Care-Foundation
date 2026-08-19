@@ -20,6 +20,7 @@ import dashboardRouter from "./dashboard";
 import adherenceCalendarRouter from "./adherence-calendar";
 import adherenceReportRouter from "./adherence-report";
 import stockRouter from "./stock";
+import appointmentsRouter from "./appointments";
 import realtimeRouter from "./realtime";
 import pushRouter from "./push";
 import notificationPreferencesRouter from "./notification-preferences";
@@ -54,6 +55,7 @@ router.use(adherenceCalendarRouter);
 // público (o link em si é a credencial) — mesmo padrão de admin.ts.
 router.use(adherenceReportRouter);
 router.use(stockRouter);
+router.use(appointmentsRouter);
 router.use(realtimeRouter);
 router.use(pushRouter);
 router.use(notificationPreferencesRouter);
