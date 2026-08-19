@@ -59,7 +59,14 @@ async function buildAll() {
       "@prisma/client",
       "@mikro-orm/*",
       "@grpc/*",
-      "@swc/*",
+      // "@swc/*" removido deste array de propósito (ZELO-36): fontkit
+      // (dependência do pdfkit) usa @swc/helpers de verdade em tempo de
+      // execução, um pacote 100% JS sem binário nativo nenhum — externalizar
+      // ele quebra em qualquer ambiente onde o pnpm não linka
+      // @swc/helpers num node_modules alcançável a partir de dist/ (a API
+      // não declara @swc/helpers como dependência própria, só chega via
+      // fontkit). Deixar SEM externalizar faz o esbuild empacotar o código
+      // dele direto no bundle — sem depender de resolução em runtime.
       "@aws-sdk/*",
       "@azure/*",
       "@opentelemetry/*",
