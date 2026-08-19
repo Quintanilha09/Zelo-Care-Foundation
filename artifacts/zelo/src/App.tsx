@@ -19,7 +19,9 @@ import IOSInstallGuidePage from '@/pages/IOSInstallGuidePage';
 import AdminPage from '@/pages/AdminPage';
 import StatusPage from '@/pages/StatusPage';
 import AcceptInvitePage from '@/pages/AcceptInvitePage';
+import ElderModePage from '@/pages/ElderModePage';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
+import { getElderModePatientId } from '@/lib/elder-mode';
 import { usePendingDoseActions } from '@/hooks/use-pending-dose-actions';
 import {
   Route,
@@ -93,6 +95,20 @@ function Router() {
   // inline no cadastro de cada paciente. /consentimento fica de pé só como
   // referência de texto legal, sem gate nenhum no fluxo.
   void user;
+
+  // ZELO-40: checado ANTES do Switch, DEPOIS do gate de autenticação — o
+  // modo idoso reaproveita a sessão do cuidador que o ativou neste
+  // aparelho. Uma vez travado, NENHUM caminho (URL digitada, botão voltar,
+  // notificação) escapa disto — é por isto que a checagem intercepta aqui,
+  // não como mais uma <Route>.
+  const elderModePatientId = getElderModePatientId();
+  if (elderModePatientId !== null) {
+    return (
+      <RoutedErrorBoundary>
+        <ElderModePage patientId={elderModePatientId} />
+      </RoutedErrorBoundary>
+    );
+  }
 
   return (
     <RoutedErrorBoundary>

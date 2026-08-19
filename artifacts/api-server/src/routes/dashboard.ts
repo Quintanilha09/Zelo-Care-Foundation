@@ -96,7 +96,7 @@ router.get("/patients/:patientId/today-doses", requireAuth, async (req, res): Pr
   if (isNaN(patientId)) { res.status(400).json({ error: "ID inválido" }); return; }
 
   const [patient] = await db
-    .select({ id: patientsTable.id, timezone: patientsTable.timezone, familyId: patientsTable.familyId })
+    .select({ id: patientsTable.id, name: patientsTable.name, timezone: patientsTable.timezone, familyId: patientsTable.familyId, elderModeEnabled: patientsTable.elderModeEnabled })
     .from(patientsTable)
     .where(and(eq(patientsTable.id, patientId), eq(patientsTable.familyId, getAuth(req).familyId)))
     .limit(1);
@@ -123,6 +123,7 @@ router.get("/patients/:patientId/today-doses", requireAuth, async (req, res): Pr
       registeredAt: doseRecordsTable.takenAt,
       registeredByCaregiverId: doseRecordsTable.caregiverId,
       registeredByCaregiverName: caregiversTable.name,
+      registeredViaElderMode: doseRecordsTable.registeredViaElderMode,
       recordId: doseRecordsTable.id,
     })
     .from(scheduledDosesTable)
@@ -136,6 +137,15 @@ router.get("/patients/:patientId/today-doses", requireAuth, async (req, res): Pr
       lte(scheduledDosesTable.scheduledAt, todayEnd)
     ))
     .orderBy(scheduledDosesTable.scheduledAt);
+
+  // ZELO-40: quando o registro veio do modo idoso, o nome exibido é o do
+  // PRÓPRIO paciente ("✓ 08:00 — Dona Maria"), não o do cuidador cuja
+  // sessão o aparelho travado estava usando — o caregiverId real (auditoria)
+  // não muda, só este rótulo.
+  const dosesWithDisplayName = doses.map((d) => ({
+    ...d,
+    registeredByCaregiverName: d.registeredViaElderMode ? patient.name : d.registeredByCaregiverName,
+  }));
 
   // ZELO-34: "baixo" é dias restantes (a partir da posologia prescrita),
   // não uma quantidade absoluta — a mesma definição usada em GET /stock e
@@ -177,11 +187,12 @@ router.get("/patients/:patientId/today-doses", requireAuth, async (req, res): Pr
   res.json({
     date: todayInPatientTz,
     patientTimezone: patient.timezone,
+    elderModeEnabled: patient.elderModeEnabled,
     totalDoses: doses.length,
     takenDoses: doses.filter((d) => d.status === "taken").length,
     pendingDoses: doses.filter((d) => d.status === "pending").length,
     lateDoses: doses.filter((d) => d.status === "late").length,
-    doses,
+    doses: dosesWithDisplayName,
     lowStockItems: lowStockItems.map(({ medicationId, medicationName, quantityRemaining, unit, effectiveDaysRemaining }) => ({
       medicationId, medicationName, quantityRemaining, unit, effectiveDaysRemaining,
     })),

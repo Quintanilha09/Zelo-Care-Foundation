@@ -6,6 +6,7 @@ import {
   text,
   pgEnum,
   unique,
+  boolean,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
@@ -46,6 +47,11 @@ export const doseRecordsTable = pgTable(
     // lista de motivos pré-definidos (a spec proíbe explicitamente julgar).
     justification: text("justification"),
     notes: text("notes"),
+    // ZELO-40: caregiverId continua sendo o cuidador de verdade (quem
+    // ativou o modo idoso naquele dispositivo) — auditoria não perde nada.
+    // Esta flag só muda o RÓTULO mostrado aos outros cuidadores: "✓ 08:00
+    // — Dona Maria" em vez do nome de quem estava logado no aparelho.
+    registeredViaElderMode: boolean("registered_via_elder_mode").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({

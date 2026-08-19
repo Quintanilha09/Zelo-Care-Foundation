@@ -52,6 +52,10 @@ const CreateDoseRecordBody = z.object({
   // lista de motivos.
   justification: z.string().trim().max(500).optional().nullable(),
   notes: z.string().optional().nullable(),
+  // ZELO-40: enviado pela tela do modo idoso — muda só o rótulo exibido
+  // ("Dona Maria" em vez do cuidador logado no aparelho), nunca quem é o
+  // caregiverId responsável de verdade (isso continua vindo do token).
+  viaElderMode: z.boolean().optional(),
 }).refine((b) => b.outcome !== "postponed" || !!b.postponedTo, {
   message: "postponedTo é obrigatório quando outcome é 'postponed'",
 });
@@ -185,6 +189,7 @@ router.post("/patients/:patientId/dose-records", requireAuth, requireCapability(
       postponedTo: body.data.postponedTo ? new Date(body.data.postponedTo) : null,
       justification: body.data.justification?.trim() || null,
       notes: body.data.notes ?? null,
+      registeredViaElderMode: body.data.viaElderMode ?? false,
     })
     .onConflictDoNothing()
     .returning();

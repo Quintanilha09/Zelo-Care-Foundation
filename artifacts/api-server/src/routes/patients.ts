@@ -9,7 +9,7 @@ import { eq, and } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { patientsTable, consentRecordsTable, treatmentsTable } from "@workspace/db";
 import { z } from "zod";
-import { requireAuth } from "../middleware/require-auth";
+import { requireAuth, requirePrimaryCaregiver } from "../middleware/require-auth";
 import { safeLog } from "../lib/safe-logger";
 import { audit } from "../lib/audit";
 import { Clock } from "../lib/clock";
@@ -157,6 +157,42 @@ router.post("/patients/:patientId/archive", requireAuth, async (req, res): Promi
     actorId: String(getAuth(req).caregiverId),
     actorType: "caregiver",
     diff: JSON.stringify({ archived: body.data.archived }),
+  });
+
+  res.json(updated);
+});
+
+// ── Modo idoso (ZELO-40) ────────────────────────────────────────────────────
+// Só o cuidador principal liga/desliga — é ele quem decide, fisicamente no
+// aparelho do idoso, se aquele acesso simplificado existe. Ativar o USO do
+// modo num dispositivo específico é uma ação só do frontend (localStorage),
+// sem nada pra provisionar aqui: o dispositivo reaproveita a própria sessão
+// de quem fez login nele.
+
+const ElderModeBody = z.object({ enabled: z.boolean() });
+
+router.patch("/patients/:patientId/elder-mode", requirePrimaryCaregiver, async (req, res): Promise<void> => {
+  const patientId = Number(req.params.patientId);
+  if (isNaN(patientId)) { res.status(400).json({ error: "ID inválido" }); return; }
+
+  const body = ElderModeBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  const [updated] = await db
+    .update(patientsTable)
+    .set({ elderModeEnabled: body.data.enabled, updatedAt: Clock.now() })
+    .where(and(eq(patientsTable.id, patientId), eq(patientsTable.familyId, getAuth(req).familyId)))
+    .returning();
+  if (!updated) { res.status(404).json({ error: "Paciente não encontrado" }); return; }
+
+  await audit({
+    familyId: getAuth(req).familyId,
+    entityType: "patient",
+    entityId: String(patientId),
+    action: "updated",
+    actorId: String(getAuth(req).caregiverId),
+    actorType: "caregiver",
+    diff: JSON.stringify({ elderModeEnabled: body.data.enabled }),
   });
 
   res.json(updated);

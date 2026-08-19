@@ -29,6 +29,11 @@ export const patientsTable = pgTable("patients", {
   // depender de qual paciente, mesmo dentro da mesma família.
   emergencyContactName: text("emergency_contact_name"),
   emergencyContactPhone: text("emergency_contact_phone"),
+  // ZELO-40: liga o modo idoso (tela única, letra grande, só "Tomei") pra
+  // este paciente. Ativado pelo cuidador principal — não é uma conta
+  // própria do paciente, é o dispositivo entrando num modo travado usando
+  // a sessão do cuidador que o ativou (ver ElderModePage no frontend).
+  elderModeEnabled: boolean("elder_mode_enabled").notNull().default(false),
   // Arquivar suspende doses futuras sem apagar histórico. Nunca DELETE aqui —
   // exclusão de verdade é o fluxo de LGPD (export-deletion), não este campo.
   archived: boolean("archived").notNull().default(false),

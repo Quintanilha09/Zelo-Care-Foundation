@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { authFetch } from "@/lib/auth-client";
+import { useAuth } from "@/context/AuthContext";
+import { activateElderModeOnThisDevice } from "@/lib/elder-mode";
 import { AppHeader } from "@/components/app-header";
 import { TreatmentForm } from "@/components/treatment-form";
 import { DoseCard } from "@/components/dose-card";
@@ -10,6 +12,7 @@ import { NotificationPreferencesCard } from "@/components/notification-preferenc
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select";
@@ -23,6 +26,7 @@ interface Patient {
   name: string;
   timezone: string;
   archived: boolean;
+  elderModeEnabled: boolean;
 }
 
 interface Treatment {
@@ -96,6 +100,9 @@ async function fetchStock(id: string): Promise<StockEntry[]> {
 }
 
 export default function PatientDetailPage({ params }: { params: { id: string } }) {
+  const { user } = useAuth();
+  const isPrimaryCaregiver = user?.caregiver?.role === "primary_caregiver";
+  const [elderModeSaving, setElderModeSaving] = useState(false);
   const [open, setOpen] = useState(false);
   const [reactivatingId, setReactivatingId] = useState<number | null>(null);
   const [reactivateEndDate, setReactivateEndDate] = useState("");
@@ -172,6 +179,24 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
       setReactivateEndDate("");
       void queryClient.invalidateQueries({ queryKey: ["treatments", params.id] });
     }
+  };
+
+  // ZELO-40: liga/desliga é só permissão ("este paciente PODE usar o modo
+  // idoso") — ativar de fato num aparelho específico é uma ação separada,
+  // feita fisicamente naquele dispositivo (ver lib/elder-mode.ts).
+  const handleToggleElderMode = async (enabled: boolean) => {
+    setElderModeSaving(true);
+    const res = await authFetch(`/api/patients/${params.id}/elder-mode`, {
+      method: "PATCH",
+      body: JSON.stringify({ enabled }),
+    });
+    if (res.ok) void queryClient.invalidateQueries({ queryKey: ["patient", params.id] });
+    setElderModeSaving(false);
+  };
+
+  const handleActivateElderModeOnDevice = () => {
+    activateElderModeOnThisDevice(Number(params.id));
+    window.location.href = "/";
   };
 
   const activeTreatments = (treatments ?? []).filter((t) => t.status === "active" || t.status === "paused");
@@ -375,6 +400,29 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
                 )}
               </div>
             ))}
+          </div>
+        )}
+
+        {isPrimaryCaregiver && (
+          <div className="p-4 rounded-xl border bg-card space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="font-medium">Modo idoso</p>
+                <p className="text-sm text-muted-foreground">
+                  Uma tela simples, com letra grande, só para {patient?.name ?? "a pessoa"} confirmar que tomou o remédio.
+                </p>
+              </div>
+              <Switch
+                checked={!!patient?.elderModeEnabled}
+                onCheckedChange={(checked) => void handleToggleElderMode(checked)}
+                disabled={elderModeSaving}
+              />
+            </div>
+            {patient?.elderModeEnabled && (
+              <Button variant="outline" size="sm" onClick={handleActivateElderModeOnDevice}>
+                Ativar neste dispositivo agora
+              </Button>
+            )}
           </div>
         )}
 
