@@ -18,6 +18,7 @@ import notificationsRouter from "./notifications";
 import auditRouter from "./audit";
 import dashboardRouter from "./dashboard";
 import adherenceCalendarRouter from "./adherence-calendar";
+import adherenceReportRouter from "./adherence-report";
 import stockRouter from "./stock";
 import realtimeRouter from "./realtime";
 import pushRouter from "./push";
@@ -49,6 +50,9 @@ router.use(notificationsRouter);
 router.use(auditRouter);
 router.use(dashboardRouter);
 router.use(adherenceCalendarRouter);
+// ZELO-35: mistura POST protegido (requireAuth) com GET /reports/:token
+// público (o link em si é a credencial) — mesmo padrão de admin.ts.
+router.use(adherenceReportRouter);
 router.use(stockRouter);
 router.use(realtimeRouter);
 router.use(pushRouter);

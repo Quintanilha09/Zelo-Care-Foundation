@@ -44,6 +44,7 @@ const PROTECTED_ROUTES = new Set([
   "GET /patients/:id/adherence-stats",
   "GET /patients/:id/adherence-calendar",
   "GET /patients/:id/adherence-calendar/day",
+  "POST /patients/:id/adherence-report",
   "GET /patients/:id/stock",
   "PATCH /patients/:id/stock/:medicationId",
   "GET /caregivers",
@@ -310,6 +311,10 @@ describe("Isolamento entre famílias — ZELO", () => {
 
   it("GET /patients/:id/adherence-calendar/day — família A não acessa detalhe de dia de paciente de B", async () => {
     await assertIsolated("GET /patients/:id/adherence-calendar/day", "GET", `/patients/${patientBId}/adherence-calendar/day?date=2026-01-01`);
+  });
+
+  it("POST /patients/:id/adherence-report — família A não gera relatório de paciente de B", async () => {
+    await assertIsolated("POST /patients/:id/adherence-report", "POST", `/patients/${patientBId}/adherence-report`, { from: "2026-01-01", to: "2026-01-07" });
   });
 
   it("GET /patients/:id/stock — família A não acessa estoque de paciente de B", async () => {

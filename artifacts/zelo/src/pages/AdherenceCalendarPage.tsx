@@ -10,6 +10,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { authFetch } from "@/lib/auth-client";
+import { useToast } from "@/hooks/use-toast";
 import { AppHeader } from "@/components/app-header";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,7 +19,7 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
-import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, FileText, Copy, ExternalLink } from "lucide-react";
 
 interface DayStatus { date: string; status: "green" | "amber" | "gray" }
 interface CalendarResponse {
@@ -108,12 +109,18 @@ function StatusDot({ status }: { status: DayStatus["status"] }) {
   return <span className={`inline-block w-2 h-2 rounded-full ${cls}`} />;
 }
 
+interface ReportResult { reportId: number; downloadUrl: string; expiresAt: string }
+
 export default function AdherenceCalendarPage({ params }: { params: { id: string } }) {
+  const { toast } = useToast();
   const [viewMode, setViewMode] = useState<"month" | "week">("month");
   const [anchor, setAnchor] = useState(todayISO());
   const [medicationFilter, setMedicationFilter] = useState("");
   const [caregiverFilter, setCaregiverFilter] = useState("");
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [report, setReport] = useState<ReportResult | null>(null);
+  const [reportError, setReportError] = useState<"paywall" | "erro" | null>(null);
+  const [generatingReport, setGeneratingReport] = useState(false);
 
   const from = viewMode === "month" ? startOfMonth(anchor) : startOfWeek(anchor);
   const to = viewMode === "month" ? endOfMonth(anchor) : endOfWeek(anchor);
@@ -134,8 +141,33 @@ export default function AdherenceCalendarPage({ params }: { params: { id: string
   for (const t of treatments ?? []) medications.set(t.id, t.medicationName);
   const uniqueMedications = Array.from(new Set(medications.values()));
 
-  const goPrev = () => setAnchor(viewMode === "month" ? addMonths(anchor, -1) : addDays(anchor, -7));
-  const goNext = () => setAnchor(viewMode === "month" ? addMonths(anchor, 1) : addDays(anchor, 7));
+  const goPrev = () => { setAnchor(viewMode === "month" ? addMonths(anchor, -1) : addDays(anchor, -7)); setReport(null); setReportError(null); };
+  const goNext = () => { setAnchor(viewMode === "month" ? addMonths(anchor, 1) : addDays(anchor, 7)); setReport(null); setReportError(null); };
+
+  const handleGenerateReport = async () => {
+    setGeneratingReport(true);
+    setReportError(null);
+    try {
+      const res = await authFetch(`/api/patients/${params.id}/adherence-report`, {
+        method: "POST",
+        body: JSON.stringify({ from, to }),
+      });
+      if (res.status === 403) { setReportError("paywall"); return; }
+      if (!res.ok) { setReportError("erro"); return; }
+      const data = (await res.json()) as ReportResult;
+      setReport(data);
+    } catch {
+      setReportError("erro");
+    } finally {
+      setGeneratingReport(false);
+    }
+  };
+
+  const handleCopyReportLink = () => {
+    if (!report) return;
+    void navigator.clipboard.writeText(`${window.location.origin}${report.downloadUrl}`);
+    toast({ description: "Link copiado" });
+  };
 
   const leadingBlanks = new Date(`${from}T00:00:00Z`).getUTCDay();
   const cells: Array<DayStatus | null> = [...Array(leadingBlanks).fill(null), ...(calendar?.days ?? [])];
@@ -250,6 +282,50 @@ export default function AdherenceCalendarPage({ params }: { params: { id: string
             )}
           </div>
         )}
+
+        <div className="rounded-lg border p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <FileText className="w-4 h-4 text-muted-foreground" />
+            <p className="text-[15px] font-medium">Relatório para o médico</p>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            PDF do período em exibição ({from} a {to}), pronto pra imprimir ou enviar por link. Nunca interpreta os dados — só mostra o que foi registrado.
+          </p>
+
+          {!report && (
+            <Button size="sm" onClick={() => void handleGenerateReport()} disabled={generatingReport} className="gap-2">
+              <FileText className="w-4 h-4" /> {generatingReport ? "Gerando…" : "Gerar relatório em PDF"}
+            </Button>
+          )}
+
+          {reportError === "paywall" && (
+            <p className="text-sm text-muted-foreground">
+              Relatório em PDF é um recurso do plano pago — ainda não disponível na sua família.
+            </p>
+          )}
+          {reportError === "erro" && (
+            <p className="text-sm text-muted-foreground">Não deu pra gerar o relatório agora. Tente de novo em instantes.</p>
+          )}
+
+          {report && (
+            <div className="space-y-2">
+              <p className="text-sm">
+                Relatório pronto — o link expira em {new Date(report.expiresAt).toLocaleDateString("pt-BR")}.
+              </p>
+              <div className="flex gap-2 flex-wrap">
+                <Button size="sm" variant="outline" onClick={handleCopyReportLink} className="gap-2">
+                  <Copy className="w-4 h-4" /> Copiar link
+                </Button>
+                <a href={report.downloadUrl} target="_blank" rel="noreferrer">
+                  <Button size="sm" variant="outline" className="gap-2">
+                    <ExternalLink className="w-4 h-4" /> Abrir
+                  </Button>
+                </a>
+                <Button size="sm" variant="ghost" onClick={() => setReport(null)}>Gerar outro</Button>
+              </div>
+            </div>
+          )}
+        </div>
       </main>
 
       <Dialog open={!!selectedDate} onOpenChange={(open) => !open && setSelectedDate(null)}>
