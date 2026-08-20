@@ -7,8 +7,11 @@
  *
  * O dispositivo travado neste modo usa a MESMA sessão do cuidador que o
  * ativou (ver lib/elder-mode.ts) — não existe conta própria do paciente.
- * Sair exige a senha do cuidador, atrás de um toque longo discreto num
- * canto sem nada visível — pensado pra nunca ser acionado sem querer.
+ * Sair exige a senha do cuidador, atrás de um toque longo (3s) num ícone
+ * discreto no canto — baixo contraste de propósito (não convida o idoso a
+ * mexer), mas VISÍVEL: a primeira versão era opacity-0 (invisível de
+ * verdade) e nem quem construiu a tela conseguiu encontrar a saída no
+ * teste ao vivo. Discreto ≠ escondido — essa é a lição.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -20,7 +23,7 @@ import { Input } from "@/components/ui/input";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
-import { Volume2, Check } from "lucide-react";
+import { Volume2, Check, Lock } from "lucide-react";
 
 interface ElderDose {
   id: number;
@@ -46,6 +49,7 @@ export default function ElderModePage({ patientId }: { patientId: number }) {
   const [password, setPassword] = useState("");
   const [exitError, setExitError] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
+  const [pressing, setPressing] = useState(false);
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { data } = useQuery({
@@ -89,9 +93,11 @@ export default function ElderModePage({ patientId }: { patientId: number }) {
   };
 
   const startPress = () => {
-    pressTimer.current = setTimeout(() => setExitOpen(true), LONG_PRESS_MS);
+    setPressing(true);
+    pressTimer.current = setTimeout(() => { setPressing(false); setExitOpen(true); }, LONG_PRESS_MS);
   };
   const cancelPress = () => {
+    setPressing(false);
     if (pressTimer.current) clearTimeout(pressTimer.current);
   };
   useEffect(() => cancelPress, []);
@@ -155,14 +161,20 @@ export default function ElderModePage({ patientId }: { patientId: number }) {
         </div>
       )}
 
-      {/* Saída discreta: segurar aqui por alguns segundos abre a saída —
-          invisível de propósito, nunca aparece como um botão na tela. */}
-      <div
-        className="absolute bottom-3 right-3 w-10 h-10 opacity-0"
+      {/* Saída do cuidador: baixo contraste (não convida o idoso a mexer),
+          mas VISÍVEL — segurar 3s abre o pedido de senha. */}
+      <button
+        type="button"
+        aria-label="Sair do modo idoso (cuidador)"
         onPointerDown={startPress}
         onPointerUp={cancelPress}
         onPointerLeave={cancelPress}
-      />
+        onPointerCancel={cancelPress}
+        className={`absolute bottom-4 right-4 flex flex-col items-center gap-1 rounded-full p-2 transition-transform ${pressing ? "scale-110" : ""}`}
+      >
+        <Lock className={`w-5 h-5 transition-colors ${pressing ? "text-[#2D2D2B]/60" : "text-[#2D2D2B]/25"}`} />
+        <span className="text-[10px] text-[#2D2D2B]/25">Sair</span>
+      </button>
 
       <Dialog open={exitOpen} onOpenChange={(open) => { setExitOpen(open); if (!open) { setPassword(""); setExitError(null); } }}>
         <DialogContent className="max-w-sm">
