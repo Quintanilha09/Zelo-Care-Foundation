@@ -11,10 +11,20 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { familiesTable } from "./families";
 
+// ZELO-56: "professional" é o tier de quem cuida de muita gente sem ser
+// instituição (cuidador autônomo, acompanhante, home care pequeno).
+// "basic" e "premium" vêm da fundação; hoje os dois resolvem para o plano
+// Família — ver api-server/src/lib/plan-limits.ts, que é a fonte única do
+// mapeamento assinatura → limites.
+//
+// Cobrança institucional (ILPI, casa de repouso) NÃO entra aqui: ela é por
+// leito ativo/mês e com cadastro verificado manualmente, não um tier
+// self-service — ver "ZELO - Extensao B2B Institucional.md" §6 e §8.
 export const subscriptionPlanEnum = pgEnum("subscription_plan", [
   "free",
   "basic",
   "premium",
+  "professional",
 ]);
 
 export const subscriptionStatusEnum = pgEnum("subscription_status", [

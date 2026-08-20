@@ -15,16 +15,20 @@ import { Button } from "@/components/ui/button";
 import {
   DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
-import { FAMILY_PLAN_HIGHLIGHTS } from "@/lib/plan-limits-client";
+import { planHighlights, type PlanTier } from "@/lib/plan-limits-client";
 import { Heart, Check } from "lucide-react";
 
 interface PlanPaywallProps {
   title: string;
   message: string;
   onDismiss: () => void;
+  /** Plano atual — decide qual próximo plano é oferecido. Quem já está no
+   *  maior tier contratável recebe o caminho do atendimento institucional. */
+  currentTier?: PlanTier;
 }
 
-export function PlanPaywall({ title, message, onDismiss }: PlanPaywallProps) {
+export function PlanPaywall({ title, message, onDismiss, currentTier }: PlanPaywallProps) {
+  const highlights = planHighlights(currentTier);
   return (
     <>
       <DialogHeader>
@@ -36,9 +40,9 @@ export function PlanPaywall({ title, message, onDismiss }: PlanPaywallProps) {
       </DialogHeader>
 
       <div className="rounded-xl border bg-zelo-green-bg/30 p-4 space-y-2">
-        <p className="text-sm font-medium">Com o plano Família:</p>
+        <p className="text-sm font-medium">{highlights.title}</p>
         <ul className="space-y-1.5">
-          {FAMILY_PLAN_HIGHLIGHTS.map((item) => (
+          {highlights.items.map((item) => (
             <li key={item} className="flex items-start gap-2 text-sm text-muted-foreground">
               <Check className="w-4 h-4 text-zelo-green-fg shrink-0 mt-0.5" />
               <span>{item}</span>

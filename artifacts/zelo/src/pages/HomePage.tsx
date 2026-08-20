@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { CheckCircle2, AlertCircle, Package, CalendarClock, WifiOff, Pill, Plus, Undo2, Clock as ClockIcon } from "lucide-react";
+import { CheckCircle2, AlertCircle, Package, CalendarClock, WifiOff, Pill, Plus, Undo2, Clock as ClockIcon, LayoutList } from "lucide-react";
 
 interface Patient { id: number; name: string; timezone: string; archived: boolean; }
 
@@ -316,20 +316,35 @@ export default function HomePage() {
         )}
 
         {activePatients.length > 0 && (
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm text-muted-foreground">Cuidando de</p>
-              <h2 className="text-2xl font-semibold">{currentPatient?.name ?? "…"}</h2>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm text-muted-foreground">Cuidando de</p>
+                <h2 className="text-2xl font-semibold">{currentPatient?.name ?? "…"}</h2>
+              </div>
+              {activePatients.length > 1 && (
+                <Select value={selectedPatientId ? String(selectedPatientId) : undefined} onValueChange={handleSwitchPatient}>
+                  <SelectTrigger className="w-40"><SelectValue placeholder="Trocar paciente" /></SelectTrigger>
+                  <SelectContent>
+                    {activePatients.map((p) => (
+                      <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
+
+            {/* ZELO-57: só faz sentido com mais de um paciente — com um só,
+                esta tela JÁ é o dia inteiro. Disponível em qualquer plano:
+                é ferramenta de não esquecer ninguém, e isso não entra em
+                paywall (mesma regra do registro de dose). */}
             {activePatients.length > 1 && (
-              <Select value={selectedPatientId ? String(selectedPatientId) : undefined} onValueChange={handleSwitchPatient}>
-                <SelectTrigger className="w-40"><SelectValue placeholder="Trocar paciente" /></SelectTrigger>
-                <SelectContent>
-                  {activePatients.map((p) => (
-                    <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Link href="/hoje">
+                <a className="flex items-center gap-2 text-sm text-muted-foreground bg-muted rounded-lg px-3 py-2 hover:bg-muted/70">
+                  <LayoutList className="w-4 h-4 shrink-0" />
+                  Ver o dia de todos os {activePatients.length} pacientes
+                </a>
+              </Link>
             )}
           </div>
         )}

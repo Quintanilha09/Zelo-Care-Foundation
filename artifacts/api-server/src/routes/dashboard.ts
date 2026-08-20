@@ -4,7 +4,7 @@ import { getAuth } from "../lib/auth-types.ts";
  * familyId vem do token JWT.
  */
 import { Router } from "express";
-import { eq, and, count, gte, lte } from "drizzle-orm";
+import { eq, and, count, gte, lte, inArray, isNull } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   patientsTable, caregiversTable, scheduledDosesTable, appointmentsTable, stockEntriesTable,
@@ -89,6 +89,107 @@ router.get("/dashboard", requireAuth, async (req, res): Promise<void> => {
     upcomingAppointments: apptRow?.count ?? 0,
     lowStockItems: lowStock,
   });
+});
+
+/**
+ * Painel do dia consolidado — ZELO-57.
+ *
+ * A tela inicial responde "está tudo em dia?" para UM paciente por vez.
+ * Quem cuida de 8, 12 ou 15 pessoas teria que trocar de paciente uma a
+ * uma pra descobrir o que está pendente agora — e é justamente essa
+ * pessoa que mais esquece alguém.
+ *
+ * DUAS CONSULTAS, INDEPENDENTE DA QUANTIDADE DE PACIENTES: uma pega os
+ * pacientes ativos da família, a outra pega as doses de hoje de todos
+ * eles de uma vez (`inArray`). Nunca uma consulta por paciente — mesmo
+ * cuidado do calendário de adesão (ZELO-33), pelo mesmo motivo: com 15
+ * pacientes, N+1 vira tela lenta na hora em que ela mais importa.
+ *
+ * Sem percentual de adesão e sem ranking entre pacientes, de propósito:
+ * isso viraria um placar de quem "está indo pior", o oposto do produto
+ * (CON-012). A ordenação é por URGÊNCIA (o que precisa de olho agora),
+ * não por desempenho.
+ */
+// Caminho sob /dashboard, não sob /patients: `GET /patients/:patientId`
+// (patients.ts) casaria com "/patients/today-summary" tratando
+// "today-summary" como id, e a resposta viraria 400 de ID inválido —
+// dependente da ordem de montagem dos routers, que é frágil demais pra se
+// apoiar. Um prefixo sem parâmetro elimina a ambiguidade por construção.
+router.get("/dashboard/today-summary", requireAuth, async (req, res): Promise<void> => {
+  const familyId = getAuth(req).familyId;
+
+  const patients = await db
+    .select({ id: patientsTable.id, name: patientsTable.name, timezone: patientsTable.timezone })
+    .from(patientsTable)
+    .where(and(eq(patientsTable.familyId, familyId), eq(patientsTable.archived, false)))
+    .orderBy(patientsTable.createdAt);
+
+  if (patients.length === 0) { res.json({ patients: [] }); return; }
+
+  // Cada paciente pode ter fuso próprio (ZELO-19), então o "dia de hoje"
+  // não é o mesmo intervalo pra todos. A janela consultada é a união dos
+  // dias locais; o recorte exato por paciente é feito depois, em memória.
+  const bounds = patients.map((p) => localDayBoundsUtc(Clock.todayInTimezone(p.timezone), p.timezone));
+  const windowStart = new Date(Math.min(...bounds.map((b) => b.start.getTime())));
+  const windowEnd = new Date(Math.max(...bounds.map((b) => b.end.getTime())));
+
+  const doses = await db
+    .select({
+      patientId: scheduledDosesTable.patientId,
+      scheduledAt: scheduledDosesTable.scheduledAt,
+      scheduledLocalTime: scheduledDosesTable.scheduledLocalTime,
+      status: scheduledDosesTable.status,
+      medicationName: medicationsTable.name,
+    })
+    .from(scheduledDosesTable)
+    .innerJoin(treatmentsTable, eq(scheduledDosesTable.treatmentId, treatmentsTable.id))
+    .innerJoin(medicationsTable, eq(treatmentsTable.medicationId, medicationsTable.id))
+    .where(and(
+      inArray(scheduledDosesTable.patientId, patients.map((p) => p.id)),
+      gte(scheduledDosesTable.scheduledAt, windowStart),
+      lte(scheduledDosesTable.scheduledAt, windowEnd)
+    ))
+    .orderBy(scheduledDosesTable.scheduledAt);
+
+  const now = Clock.now();
+  const summaries = patients.map((patient, i) => {
+    const { start, end } = bounds[i];
+    const ofPatient = doses.filter((d) =>
+      d.patientId === patient.id &&
+      d.scheduledAt.getTime() >= start.getTime() &&
+      d.scheduledAt.getTime() <= end.getTime()
+    );
+
+    const pending = ofPatient.filter((d) => d.status === "pending");
+    // "Sem registro" é o pior estado possível aqui — e nunca é vermelho na
+    // tela, nem chamado de falha de ninguém.
+    const missed = ofPatient.filter((d) => d.status === "late");
+    const dueNow = pending.filter((d) => d.scheduledAt.getTime() <= now.getTime());
+    const upcoming = pending.filter((d) => d.scheduledAt.getTime() > now.getTime());
+    const next = upcoming[0] ?? null;
+
+    return {
+      patientId: patient.id,
+      patientName: patient.name,
+      totalDoses: ofPatient.length,
+      missedDoses: missed.length,
+      dueNowDoses: dueNow.length,
+      upcomingDoses: upcoming.length,
+      takenDoses: ofPatient.filter((d) => d.status === "taken").length,
+      nextDose: next ? { medicationName: next.medicationName, scheduledLocalTime: next.scheduledLocalTime } : null,
+    };
+  });
+
+  // Ordem por urgência: quem tem dose sem registro primeiro, depois quem
+  // tem dose para agora, depois o resto. Nunca alfabética — a lista existe
+  // pra dizer "olhe para cá primeiro".
+  summaries.sort((a, b) =>
+    b.missedDoses - a.missedDoses ||
+    b.dueNowDoses - a.dueNowDoses ||
+    a.patientName.localeCompare(b.patientName, "pt-BR")
+  );
+
+  res.json({ patients: summaries });
 });
 
 router.get("/patients/:patientId/today-doses", requireAuth, async (req, res): Promise<void> => {

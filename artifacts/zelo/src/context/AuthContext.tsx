@@ -15,6 +15,7 @@ import {
   authFetch,
 } from '@/lib/auth-client';
 import { consumePendingRedirect } from '@/lib/pending-redirect';
+import type { PlanView } from '@/lib/plan-limits-client';
 
 interface AuthUser {
   userId: number;
@@ -37,13 +38,9 @@ interface AuthUser {
     quietHoursEnd: string;
   };
   // ZELO-38: "estado do plano visível no perfil, sem martelar no dia a dia".
-  plan?: {
-    isPaid: boolean;
-    limits: {
-      maxPatients: number | null; maxCaregivers: number | null; maxMedications: number | null;
-      historyDays: number | null; appointments: boolean; stockLowAlert: boolean;
-    };
-  } | null;
+  // ZELO-56: com mais de um tier pago, `isPaid` deixou de bastar — `tier` e
+  // `label` vêm junto, e `isPaid` fica por compatibilidade com telas antigas.
+  plan?: PlanView | null;
 }
 
 interface AuthContextValue {

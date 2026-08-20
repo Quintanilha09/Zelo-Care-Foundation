@@ -9,6 +9,7 @@ import AuthPage from '@/pages/AuthPage';
 import ConsentPage from '@/pages/ConsentPage';
 import HomePage from '@/pages/HomePage';
 import PatientsPage from '@/pages/PatientsPage';
+import TodaySummaryPage from '@/pages/TodaySummaryPage';
 import PatientDetailPage from '@/pages/PatientDetailPage';
 import AdherenceCalendarPage from '@/pages/AdherenceCalendarPage';
 import AppointmentsPage from '@/pages/AppointmentsPage';
@@ -117,6 +118,7 @@ function Router() {
     <RoutedErrorBoundary>
       <Switch>
         <Route path="/" component={HomePage} />
+        <Route path="/hoje" component={TodaySummaryPage} />
         <Route path="/pacientes" component={PatientsPage} />
         <Route path="/pacientes/:id/historico" component={AdherenceCalendarPage} />
         <Route path="/pacientes/:id/consultas" component={AppointmentsPage} />

@@ -32,8 +32,7 @@ import { safeLog } from "../lib/safe-logger";
 import { revokeAllAccessTokensForUser, generateAccessToken, generateRefreshToken } from "../lib/tokens";
 import { Clock } from "../lib/clock";
 import { listCaregiverLinks, switchActiveFamily } from "../lib/active-family.ts";
-import { getPlanLimits } from "../lib/plan-limits.ts";
-import { hasPaidAccess } from "../lib/subscription.ts";
+import { getPlanTier, PLAN_LIMITS, PLAN_LABELS } from "../lib/plan-limits.ts";
 import { verifyPassword } from "../lib/password";
 import { verifyPasswordLimiter } from "../lib/rate-limit";
 
@@ -86,8 +85,17 @@ router.get("/account/me", requireAuth, async (req, res): Promise<void> => {
   // ZELO-38: "estado do plano visível no perfil, sem ficar martelando no
   // dia a dia" — só o suficiente pra tela de Ajustes mostrar "Grátis" ou
   // "Família" e os limites em vigor, sem banner nem lembrete recorrente.
-  const plan = caregiver
-    ? { isPaid: await hasPaidAccess(caregiver.familyId), limits: await getPlanLimits(caregiver.familyId) }
+  // ZELO-56: com mais de um tier pago, `isPaid` deixou de bastar pra tela
+  // saber o que mostrar — `tier` e `label` vão junto. `isPaid` continua
+  // no payload porque telas antigas dependem dele.
+  const planTier = caregiver ? await getPlanTier(caregiver.familyId) : null;
+  const plan = caregiver && planTier
+    ? {
+        tier: planTier,
+        label: PLAN_LABELS[planTier],
+        isPaid: planTier !== "free",
+        limits: PLAN_LIMITS[planTier],
+      }
     : null;
 
   res.json({ ...user, caregiver, family, plan });
