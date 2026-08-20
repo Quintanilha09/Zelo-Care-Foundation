@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { authFetch } from "@/lib/auth-client";
 import { useAuth } from "@/context/AuthContext";
 import { activateElderModeOnThisDevice } from "@/lib/elder-mode";
@@ -13,13 +13,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
-import { ArrowLeft, Plus, Pill, Package } from "lucide-react";
+import { ArrowLeft, Plus, Pill, Package, Trash2 } from "lucide-react";
 
 interface Patient {
   id: number;
@@ -101,9 +103,18 @@ async function fetchStock(id: string): Promise<StockEntry[]> {
 
 export default function PatientDetailPage({ params }: { params: { id: string } }) {
   const { user } = useAuth();
+  const [, setLocation] = useLocation();
   const isPrimaryCaregiver = user?.caregiver?.role === "primary_caregiver";
   const [elderModeSaving, setElderModeSaving] = useState(false);
   const [open, setOpen] = useState(false);
+
+  // Excluir paciente (permanente) — só o dono da família, com confirmação
+  // digitando o nome exato, mesmo padrão do GitHub pra excluir repositório.
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteReason, setDeleteReason] = useState("");
+  const [deleteConfirmName, setDeleteConfirmName] = useState("");
+  const [deleteError, setDeleteError] = useState("");
+  const [deleting, setDeleting] = useState(false);
   const [reactivatingId, setReactivatingId] = useState<number | null>(null);
   const [reactivateEndDate, setReactivateEndDate] = useState("");
   const [pushPromptTrigger, setPushPromptTrigger] = useState(0);
@@ -197,6 +208,27 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
   const handleActivateElderModeOnDevice = () => {
     activateElderModeOnThisDevice(Number(params.id));
     window.location.href = "/";
+  };
+
+  const handleDeletePatient = async () => {
+    if (!patient) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      const res = await authFetch(`/api/patients/${params.id}`, {
+        method: "DELETE",
+        body: JSON.stringify({ reason: deleteReason.trim(), confirmName: deleteConfirmName }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error ?? "Erro ao excluir paciente");
+      }
+      setLocation("/pacientes");
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Erro");
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const activeTreatments = (treatments ?? []).filter((t) => t.status === "active" || t.status === "paused");
@@ -419,14 +451,82 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
               />
             </div>
             {patient?.elderModeEnabled && (
-              <Button variant="outline" size="sm" onClick={handleActivateElderModeOnDevice}>
-                Ativar neste dispositivo agora
-              </Button>
+              <>
+                <Button variant="outline" size="sm" onClick={handleActivateElderModeOnDevice}>
+                  Ativar neste dispositivo agora
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  Pra sair depois, segure por 3 segundos o ícone de cadeado no canto inferior direito da tela do modo idoso.
+                </p>
+              </>
             )}
           </div>
         )}
 
         <NotificationPreferencesCard patientId={Number(params.id)} />
+
+        {isPrimaryCaregiver && patient && (
+          <div className="p-4 rounded-xl border border-destructive/30 bg-destructive/5 space-y-3">
+            <div>
+              <p className="font-medium text-destructive">Excluir paciente</p>
+              <p className="text-sm text-muted-foreground">
+                Apaga {patient.name} e todo o histórico (tratamentos, doses, consultas, aferições) de forma permanente. Não é o mesmo que arquivar — não tem como desfazer.
+              </p>
+            </div>
+            <Dialog
+              open={deleteDialogOpen}
+              onOpenChange={(o) => { setDeleteDialogOpen(o); if (!o) { setDeleteReason(""); setDeleteConfirmName(""); setDeleteError(""); } }}
+            >
+              <Button variant="destructive" size="sm" className="gap-2" onClick={() => setDeleteDialogOpen(true)}>
+                <Trash2 className="w-4 h-4" /> Excluir paciente
+              </Button>
+              <DialogContent className="max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Excluir {patient.name}</DialogTitle>
+                  <DialogDescription>
+                    Esta ação é permanente e apaga todo o histórico do paciente. Conte rapidamente o motivo e digite o nome completo pra confirmar.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="del-reason">Motivo</Label>
+                    <Textarea
+                      id="del-reason"
+                      value={deleteReason}
+                      onChange={(e) => setDeleteReason(e.target.value)}
+                      placeholder="Ex: paciente cadastrado por engano, falecimento, etc."
+                      rows={2}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="del-confirm">
+                      Digite <span className="font-semibold">{patient.name}</span> pra confirmar
+                    </Label>
+                    <Input
+                      id="del-confirm"
+                      value={deleteConfirmName}
+                      onChange={(e) => setDeleteConfirmName(e.target.value)}
+                      autoComplete="off"
+                    />
+                  </div>
+                  {deleteError && (
+                    <Alert variant="destructive"><AlertDescription>{deleteError}</AlertDescription></Alert>
+                  )}
+                  <div className="flex gap-2 justify-end">
+                    <Button variant="ghost" onClick={() => setDeleteDialogOpen(false)} disabled={deleting}>Cancelar</Button>
+                    <Button
+                      variant="destructive"
+                      onClick={() => void handleDeletePatient()}
+                      disabled={deleting || !deleteReason.trim() || deleteConfirmName !== patient.name}
+                    >
+                      {deleting ? "Excluindo…" : "Excluir permanentemente"}
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
+        )}
       </main>
       <PushPermissionPrompt trigger={pushPromptTrigger} />
     </div>

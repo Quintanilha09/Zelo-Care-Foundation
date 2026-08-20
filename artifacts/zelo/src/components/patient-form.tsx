@@ -18,9 +18,14 @@ import { authFetch } from "@/lib/auth-client";
 interface PatientFormProps {
   onCreated: () => void;
   onCancel: () => void;
+  /** ZELO-38/paywall: quando o limite de plano bloqueia, o PAI decide como
+   *  mostrar isso (dialog quente, "Cuidar junto é melhor") — mesmo padrão
+   *  já usado no convite de cuidador (CaregiversPage), pra não ter um
+   *  título de dialog ("Cadastrar paciente") descolado do conteúdo. */
+  onPaywall: (message: string) => void;
 }
 
-export function PatientForm({ onCreated, onCancel }: PatientFormProps) {
+export function PatientForm({ onCreated, onCancel, onPaywall }: PatientFormProps) {
   const [name, setName] = useState("");
   const [birthDate, setBirthDate] = useState("");
   const [timezone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone);
@@ -46,7 +51,13 @@ export function PatientForm({ onCreated, onCancel }: PatientFormProps) {
         }),
       });
       if (!res.ok) {
-        const data = (await res.json()) as { error?: string };
+        const data = (await res.json()) as { error?: string; code?: string };
+        // ZELO-38 pedia só a mensagem; agora o momento do limite também
+        // aponta pra um lugar concreto de ver os planos, não só avisa.
+        if (data.code === "PLAN_LIMIT") {
+          onPaywall(data.error ?? "O plano gratuito cuida de 1 paciente. O plano Família libera até 5.");
+          return;
+        }
         throw new Error(data.error ?? "Erro ao cadastrar paciente");
       }
       onCreated();

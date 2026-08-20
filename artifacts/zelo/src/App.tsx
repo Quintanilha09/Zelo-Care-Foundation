@@ -15,6 +15,9 @@ import AppointmentsPage from '@/pages/AppointmentsPage';
 import RoutinePage from '@/pages/RoutinePage';
 import CaregiversPage from '@/pages/CaregiversPage';
 import SettingsPage from '@/pages/SettingsPage';
+import SettingsNotificationsPage from '@/pages/SettingsNotificationsPage';
+import SettingsRetroactivePage from '@/pages/SettingsRetroactivePage';
+import PlansPage from '@/pages/PlansPage';
 import IOSInstallGuidePage from '@/pages/IOSInstallGuidePage';
 import AdminPage from '@/pages/AdminPage';
 import StatusPage from '@/pages/StatusPage';
@@ -121,6 +124,9 @@ function Router() {
         <Route path="/pacientes/:id" component={PatientDetailPage} />
         <Route path="/cuidadores" component={CaregiversPage} />
         <Route path="/ajustes" component={SettingsPage} />
+        <Route path="/ajustes/notificacoes" component={SettingsNotificationsPage} />
+        <Route path="/ajustes/registro-retroativo" component={SettingsRetroactivePage} />
+        <Route path="/planos" component={PlansPage} />
         <Route path="/notificacoes/ios" component={IOSInstallGuidePage} />
         <Route path="/design" component={DesignReference} />
         <Route path="/consentimento" component={() => <ConsentPage onComplete={() => window.location.href = '/'} />} />

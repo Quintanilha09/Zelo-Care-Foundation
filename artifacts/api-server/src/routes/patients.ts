@@ -287,4 +287,60 @@ router.patch("/patients/:patientId", requireAuth, async (req, res): Promise<void
   res.json(updated);
 });
 
+// ── Excluir paciente (permanente) ───────────────────────────────────────────
+// Diferente de arquivar (suspende sem apagar): isto é exclusão de verdade,
+// via cascade do banco em cada tabela que referencia patients.id — tratamentos,
+// doses agendadas, registros de dose, aferições, atividades, consultas,
+// estoque, consentimentos, tudo junto, numa única operação atômica.
+// Só o cuidador principal (requirePrimaryCaregiver): quem foi convidado
+// nunca decide isso sozinho. Confirmação exige digitar o nome exato do
+// paciente — mesmo padrão de "digite o nome do repositório" do GitHub —
+// pra tornar impossível excluir por engano com um clique duplo ou script.
+
+const DeletePatientBody = z.object({
+  reason: z.string().trim().min(1).max(500),
+  confirmName: z.string().min(1),
+});
+
+router.delete("/patients/:patientId", requirePrimaryCaregiver, async (req, res): Promise<void> => {
+  const patientId = Number(req.params.patientId);
+  if (isNaN(patientId)) { res.status(400).json({ error: "ID inválido" }); return; }
+
+  const body = DeletePatientBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  const [patient] = await db
+    .select({ id: patientsTable.id, name: patientsTable.name })
+    .from(patientsTable)
+    .where(and(eq(patientsTable.id, patientId), eq(patientsTable.familyId, getAuth(req).familyId)))
+    .limit(1);
+  if (!patient) { res.status(404).json({ error: "Paciente não encontrado" }); return; }
+
+  if (body.data.confirmName !== patient.name) {
+    res.status(400).json({ error: "O nome digitado não confere com o nome do paciente.", code: "NAME_MISMATCH" });
+    return;
+  }
+
+  // Audit ANTES do delete — depois disso o entityId não corresponde mais a
+  // nenhuma linha viva, mas o log (imutável, sem FK real) preserva o motivo.
+  await audit({
+    familyId: getAuth(req).familyId,
+    entityType: "patient",
+    entityId: String(patientId),
+    action: "deleted",
+    actorId: String(getAuth(req).caregiverId),
+    actorType: "caregiver",
+    ipAddress: req.ip,
+    diff: JSON.stringify({ name: patient.name, reason: body.data.reason }),
+  });
+
+  await db
+    .delete(patientsTable)
+    .where(and(eq(patientsTable.id, patientId), eq(patientsTable.familyId, getAuth(req).familyId)));
+
+  safeLog.info({ action: "deleted", entityType: "patient", familyId: getAuth(req).familyId }, "Paciente excluído permanentemente");
+
+  res.json({ deleted: true });
+});
+
 export default router;

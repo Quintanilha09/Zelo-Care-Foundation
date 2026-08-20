@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
-import { Plus, User, ChevronRight } from "lucide-react";
+import { Plus, User, ChevronRight, Heart } from "lucide-react";
 
 interface Patient {
   id: number;
@@ -26,12 +26,19 @@ async function fetchPatients(): Promise<Patient[]> {
 
 export default function PatientsPage() {
   const [open, setOpen] = useState(false);
+  const [paywallMessage, setPaywallMessage] = useState("");
   const queryClient = useQueryClient();
   const { data: patients, isLoading } = useQuery({ queryKey: ["patients"], queryFn: fetchPatients });
 
   const handleCreated = () => {
     setOpen(false);
+    setPaywallMessage("");
     void queryClient.invalidateQueries({ queryKey: ["patients"] });
+  };
+
+  const handleOpenChange = (o: boolean) => {
+    setOpen(o);
+    if (!o) setPaywallMessage("");
   };
 
   return (
@@ -43,17 +50,35 @@ export default function PatientsPage() {
             <h2 className="text-2xl font-semibold">Quem você cuida</h2>
             <p className="text-muted-foreground text-[15px]">Escolha um paciente para ver os tratamentos.</p>
           </div>
-          <Dialog open={open} onOpenChange={setOpen}>
+          <Dialog open={open} onOpenChange={handleOpenChange}>
             <Button onClick={() => setOpen(true)} className="gap-2">
               <Plus className="w-4 h-4" />
               Adicionar
             </Button>
             <DialogContent className="max-w-lg">
-              <DialogHeader>
-                <DialogTitle>Cadastrar paciente</DialogTitle>
-                <DialogDescription>Leva menos de um minuto.</DialogDescription>
-              </DialogHeader>
-              <PatientForm onCreated={handleCreated} onCancel={() => setOpen(false)} />
+              {paywallMessage ? (
+                <>
+                  <DialogHeader>
+                    <div className="mx-auto mb-2 w-10 h-10 rounded-full bg-zelo-green-bg flex items-center justify-center">
+                      <Heart className="w-5 h-5 text-zelo-green-fg" />
+                    </div>
+                    <DialogTitle className="text-center">Cuidar junto é melhor</DialogTitle>
+                    <DialogDescription className="text-center">{paywallMessage}</DialogDescription>
+                  </DialogHeader>
+                  <div className="flex justify-center gap-2 pt-2">
+                    <Button variant="ghost" onClick={() => setOpen(false)}>Agora não</Button>
+                    <Link href="/planos"><Button>Ver planos</Button></Link>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <DialogHeader>
+                    <DialogTitle>Cadastrar paciente</DialogTitle>
+                    <DialogDescription>Leva menos de um minuto.</DialogDescription>
+                  </DialogHeader>
+                  <PatientForm onCreated={handleCreated} onCancel={() => setOpen(false)} onPaywall={setPaywallMessage} />
+                </>
+              )}
             </DialogContent>
           </Dialog>
         </div>

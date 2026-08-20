@@ -6,6 +6,7 @@
  * só esconder o botão que o backend rejeitaria de qualquer forma.
  */
 import { useState } from "react";
+import { Link } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { authFetch } from "@/lib/auth-client";
 import { useAuth } from "@/context/AuthContext";
@@ -137,8 +138,9 @@ function InviteDialog({ onCreated }: { onCreated: () => void }) {
               <DialogTitle className="text-center">Cuidar junto é melhor</DialogTitle>
               <DialogDescription className="text-center">{paywallMessage}</DialogDescription>
             </DialogHeader>
-            <div className="flex justify-center pt-2">
-              <Button variant="secondary" onClick={reset}>Entendi</Button>
+            <div className="flex justify-center gap-2 pt-2">
+              <Button variant="ghost" onClick={reset}>Agora não</Button>
+              <Link href="/planos"><Button>Ver planos</Button></Link>
             </div>
           </>
         ) : !result ? (
