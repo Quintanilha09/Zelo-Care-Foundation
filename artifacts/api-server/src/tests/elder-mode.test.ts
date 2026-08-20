@@ -256,6 +256,64 @@ describe("Sair do modo idoso — confirmação de senha", () => {
   });
 });
 
+describe("Relógio do cliente não pode derrubar um registro legítimo", () => {
+  // BUG REAL: o cliente sempre mandava `new Date().toISOString()` pra dizer
+  // "acabei de tomar", e o servidor comparava com o relógio DELE sem
+  // tolerância. Alguns segundos de dessincronia entre os dois relógios —
+  // comum, e fora do controle dos dois lados — recusavam o registro com
+  // "não é possível registrar uma dose no futuro". Foi o que travou o
+  // "Tomei" num aparelho real.
+  async function pendingDoseId(times: [string, string]): Promise<{ doseId: number; treatmentId: number }> {
+    const res = await api("POST", `/patients/${patientId}/treatments`, {
+      medicationId,
+      scheduleConfig: { scheduleType: "times_per_day", times },
+      startDate: Clock.todayInTimezone("America/Sao_Paulo"),
+    });
+    const treatmentId = (res.body as { id: number }).id;
+    const home = await api("GET", `/patients/${patientId}/today-doses`);
+    const dose = (home.body as { doses: Array<{ id: number; status: string }> }).doses.find((d) => d.status === "pending");
+    assert.ok(dose, "precisa haver dose pendente pro teste");
+    return { doseId: dose!.id, treatmentId };
+  }
+
+  it("sem takenAt, o servidor ancora no próprio relógio e registra", async () => {
+    const { doseId, treatmentId } = await pendingDoseId(["00:03", "23:57"]);
+    const res = await api("POST", `/patients/${patientId}/dose-records`, {
+      scheduledDoseId: doseId, outcome: "taken", viaElderMode: true,
+    });
+    assert.equal(res.status, 201, "'agora' sem timestamp do cliente é o caminho normal do modo idoso");
+    await db.delete(treatmentsTable).where(eq(treatmentsTable.id, treatmentId));
+  });
+
+  it("relógio do aparelho adiantado alguns minutos NÃO derruba o registro", async () => {
+    const { doseId, treatmentId } = await pendingDoseId(["00:04", "23:56"]);
+    const adiantado = new Date(Clock.now().getTime() + 2 * 60_000).toISOString();
+    const res = await api("POST", `/patients/${patientId}/dose-records`, {
+      scheduledDoseId: doseId, takenAt: adiantado, outcome: "taken",
+    });
+    assert.equal(res.status, 201, "2 minutos de dessincronia é relógio, não intenção — precisa registrar");
+
+    // e o horário gravado é ancorado no servidor, nunca no futuro
+    const registered = res.body as { takenAt: string };
+    assert.ok(
+      new Date(registered.takenAt).getTime() <= Clock.now().getTime() + 1000,
+      "o takenAt gravado não pode ficar no futuro"
+    );
+    await db.delete(treatmentsTable).where(eq(treatmentsTable.id, treatmentId));
+  });
+
+  it("mas uma dose realmente no futuro (amanhã) continua recusada — ZELO-24", async () => {
+    const { doseId, treatmentId } = await pendingDoseId(["00:05", "23:55"]);
+    const amanha = new Date(Clock.now().getTime() + 24 * 3_600_000).toISOString();
+    const res = await api("POST", `/patients/${patientId}/dose-records`, {
+      scheduledDoseId: doseId, takenAt: amanha, outcome: "taken",
+    });
+    assert.equal(res.status, 400);
+    assert.match((res.body as { error: string }).error, /futuro/i);
+    await db.delete(treatmentsTable).where(eq(treatmentsTable.id, treatmentId));
+  });
+});
+
 describe("Registrar dose no modo idoso nunca é bloqueado por plano", () => {
   it("paciente excedente do plano gratuito continua aceitando 'Tomei'", async () => {
     // BUG REAL: a ZELO-38 marcava o paciente excedente como somente-leitura

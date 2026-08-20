@@ -157,7 +157,8 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
   const handleRegister = async (doseId: number, outcome: "taken" | "skipped") => {
     const res = await authFetch(`/api/patients/${params.id}/dose-records`, {
       method: "POST",
-      body: JSON.stringify({ scheduledDoseId: doseId, takenAt: new Date().toISOString(), outcome }),
+      // Sem `takenAt`: "agora" é o relógio do servidor (ver dose-records.ts).
+      body: JSON.stringify({ scheduledDoseId: doseId, outcome }),
     });
     if (res.ok) {
       void queryClient.invalidateQueries({ queryKey: ["today-doses", params.id] });

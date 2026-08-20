@@ -51,16 +51,33 @@ async function fetchDoses(patientId: number): Promise<{ doses: ElderDose[]; elde
   return res.json();
 }
 
-/** Lê a mensagem que o servidor mandou, sem nunca deixar vazar texto
- *  técnico/em inglês pra esta tela. O servidor do ZELO responde erro
- *  sempre como `{ error, code? }` em português. */
+/**
+ * Traduz uma resposta de erro em algo que a pessoa na frente da tela
+ * consiga agir. O servidor do ZELO responde `{ error, code? }` em
+ * português, mas nem toda resposta dele serve como está: um 404 do
+ * catch-all de /api chega como "Rota não encontrada", que não diz nada a
+ * ninguém — e é justamente o que aparece quando o navegador já está numa
+ * versão mais nova que a do servidor (deploy do front sem reiniciar a API).
+ */
 async function readServerError(res: Response, fallback: string): Promise<string> {
+  let serverMessage = "";
   try {
     const body = (await res.json()) as { error?: string };
-    return body?.error?.trim() || fallback;
+    serverMessage = body?.error?.trim() ?? "";
   } catch {
-    return fallback;
+    // resposta sem JSON (proxy, gateway) — cai nas mensagens por status
   }
+
+  if (res.status === 404 && (!serverMessage || /rota n[ãa]o encontrada/i.test(serverMessage))) {
+    return "O aplicativo está mais novo que o servidor. Peça pra quem cuida de você reiniciar o servidor do ZELO.";
+  }
+  if (res.status === 429) {
+    return serverMessage || "Muitas tentativas seguidas. Aguarde alguns minutos.";
+  }
+  if (res.status >= 500) {
+    return "O servidor teve um problema agora. Tente de novo em instantes.";
+  }
+  return serverMessage || fallback;
 }
 
 export default function ElderModePage({ patientId }: { patientId: number }) {
@@ -103,8 +120,11 @@ export default function ElderModePage({ patientId }: { patientId: number }) {
       const res = await authFetch(`/api/patients/${patientId}/dose-records`, {
         method: "POST",
         body: JSON.stringify({
+          // Sem `takenAt`: "agora" quem decide é o relógio do servidor. O
+          // relógio deste aparelho pode estar minutos fora de sincronia, e
+          // mandá-lo já fez um registro legítimo ser recusado como "dose
+          // no futuro" — ver routes/dose-records.ts.
           scheduledDoseId: nextDose.id,
-          takenAt: new Date().toISOString(),
           outcome: "taken",
           viaElderMode: true,
         }),

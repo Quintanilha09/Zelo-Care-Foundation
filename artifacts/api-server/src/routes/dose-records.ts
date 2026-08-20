@@ -49,6 +49,12 @@ const router = Router();
 
 const UNDO_WINDOW_MS = 60_000;
 
+// Margem para relógios fora de sincronia entre o aparelho e o servidor.
+// 5 minutos cobre com folga o drift típico de um celular/PC sem NTP e a
+// latência de rede, e continua muito abaixo do menor intervalo real entre
+// doses — ou seja, nunca faz uma dose ser confundida com a seguinte.
+const CLOCK_SKEW_TOLERANCE_MS = 5 * 60_000;
+
 const ListQuery = z.object({
   from: z.string().optional(),
   to: z.string().optional(),
@@ -57,7 +63,10 @@ const ListQuery = z.object({
 const CreateDoseRecordBody = z.object({
   scheduledDoseId: z.number().int().positive(),
   // patientId vem de req.params — não aceitar do body evita confusão
-  takenAt: z.string(),
+  // OPCIONAL de propósito: ausente = "agora, segundo o relógio do
+  // servidor". Só o registro retroativo (ZELO-24) manda um instante
+  // explícito — ver a explicação no handler.
+  takenAt: z.string().optional(),
   outcome: z.enum(["taken", "skipped", "postponed"]),
   postponedTo: z.string().optional().nullable(),
   // ZELO-24: só exigida pelo servidor quando takenAt cai fora da janela
@@ -160,12 +169,38 @@ router.post("/patients/:patientId/dose-records", requireAuth, requireCapability(
     return;
   }
 
-  // ZELO-24: nunca registrar dose no futuro.
-  const takenAt = new Date(body.data.takenAt);
-  if (takenAt.getTime() > Clock.now().getTime()) {
+  // "Agora" é resolvido pelo relógio do SERVIDOR, não pelo do cliente.
+  //
+  // Antes, o cliente sempre mandava `new Date().toISOString()` pra dizer
+  // "acabei de tomar", e o servidor comparava esse instante com o relógio
+  // DELE sem tolerância nenhuma. Bastavam alguns segundos de dessincronia
+  // entre os dois relógios (comum, e fora do controle de qualquer um dos
+  // lados) pra um registro legítimo ser recusado com "não é possível
+  // registrar uma dose no futuro" — foi exatamente o que travou o "Tomei"
+  // do modo idoso num aparelho real.
+  //
+  // Agora `takenAt` é opcional: ausente significa "agora, segundo o
+  // servidor", que é a única fonte confiável. O registro retroativo
+  // (ZELO-24) continua mandando o instante explicitamente, que é o caso em
+  // que a intenção do cuidador sobre o horário realmente importa.
+  const now = Clock.now();
+  let takenAt = body.data.takenAt ? new Date(body.data.takenAt) : now;
+
+  if (Number.isNaN(takenAt.getTime())) {
+    res.status(400).json({ error: "Horário inválido." });
+    return;
+  }
+
+  // ZELO-24: dose no futuro continua proibida — mas só quando é intenção
+  // de verdade (registrar a dose de amanhã). Um futuro de poucos minutos é
+  // relógio fora de sincronia, não intenção: aceita e ancora no relógio do
+  // servidor, em vez de recusar um registro legítimo.
+  const futureMs = takenAt.getTime() - now.getTime();
+  if (futureMs > CLOCK_SKEW_TOLERANCE_MS) {
     res.status(400).json({ error: "Não é possível registrar uma dose no futuro." });
     return;
   }
+  if (futureMs > 0) takenAt = now;
 
   // ZELO-24: fora da janela retroativa da família, exige justificativa —
   // dentro dela, só confirmar o horário real já basta.

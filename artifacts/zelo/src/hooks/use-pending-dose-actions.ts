@@ -34,8 +34,13 @@ export function usePendingDoseActions(enabled: boolean): void {
           const res = await authFetch(`/api/patients/${action.patientId}/dose-records`, {
             method: "POST",
             body: JSON.stringify({
+              // Sem `takenAt`: o servidor ancora no relógio dele. Mesmo
+              // comportamento efetivo de antes (o instante da sincronização),
+              // sem o risco de o relógio deste aparelho estar fora de sincronia.
+              // Melhoria conhecida, fora do escopo aqui: usar o `queuedAt` da
+              // fila quando a ação ficou offline por muito tempo — hoje o
+              // tipo PendingAction descarta esse campo de propósito.
               scheduledDoseId: action.scheduledDoseId,
-              takenAt: new Date().toISOString(),
               outcome: action.outcome ?? "taken",
             }),
           });

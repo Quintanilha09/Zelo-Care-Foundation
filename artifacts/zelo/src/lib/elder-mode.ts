@@ -7,6 +7,16 @@
  * naquele dispositivo. Um módulo minúsculo, mas compartilhado entre quem
  * ativa (PatientDetailPage), quem intercepta a navegação (App.tsx) e quem
  * desativa (ElderModePage), pra nunca haver duas strings de chave divergentes.
+ *
+ * ESCOPO DA "TRANCA", explícito de propósito: isto simplifica a interface,
+ * não é uma prisão de segurança. Quem souber abrir o console do navegador
+ * apaga esta chave e sai — e tudo bem: a pessoa que o modo protege (o
+ * idoso confirmando o próprio remédio) não faz isso, e quem faz é
+ * justamente quem deveria conseguir sair. Vale como saída de emergência
+ * documentada quando a senha do cuidador se perde:
+ *   localStorage.removeItem("zelo_elder_mode_patient_id")
+ * As outras duas saídas são a senha (na própria tela) e o cuidador
+ * principal desligando o modo remotamente pelo aparelho dele.
  */
 
 const KEY = "zelo_elder_mode_patient_id";

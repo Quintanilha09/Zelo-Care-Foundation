@@ -207,7 +207,11 @@ export default function HomePage() {
       method: "POST",
       body: JSON.stringify({
         scheduledDoseId: doseId,
-        takenAt: opts?.takenAt ?? new Date().toISOString(),
+        // Só manda horário quando o cuidador escolheu um explicitamente
+        // (registro retroativo, ZELO-24). Pro caso comum "registrar agora",
+        // o servidor usa o relógio dele — o deste aparelho pode estar fora
+        // de sincronia e derrubar o registro como "dose no futuro".
+        takenAt: opts?.takenAt,
         outcome,
         justification: opts?.justification || undefined,
       }),
