@@ -106,6 +106,7 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
   const [, setLocation] = useLocation();
   const isPrimaryCaregiver = user?.caregiver?.role === "primary_caregiver";
   const [elderModeSaving, setElderModeSaving] = useState(false);
+  const [elderModeError, setElderModeError] = useState("");
   const [open, setOpen] = useState(false);
 
   // Excluir paciente (permanente) — só o dono da família, com confirmação
@@ -197,17 +198,33 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
   // feita fisicamente naquele dispositivo (ver lib/elder-mode.ts).
   const handleToggleElderMode = async (enabled: boolean) => {
     setElderModeSaving(true);
-    const res = await authFetch(`/api/patients/${params.id}/elder-mode`, {
-      method: "PATCH",
-      body: JSON.stringify({ enabled }),
-    });
-    if (res.ok) void queryClient.invalidateQueries({ queryKey: ["patient", params.id] });
-    setElderModeSaving(false);
+    setElderModeError("");
+    try {
+      const res = await authFetch(`/api/patients/${params.id}/elder-mode`, {
+        method: "PATCH",
+        body: JSON.stringify({ enabled }),
+      });
+      if (!res.ok) {
+        // Antes isto falhava em silêncio: o interruptor voltava sozinho e
+        // ninguém sabia por quê (ex: 403 de quem não é cuidador principal).
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        setElderModeError(data.error ?? "Não foi possível alterar o modo idoso.");
+        return;
+      }
+      void queryClient.invalidateQueries({ queryKey: ["patient", params.id] });
+    } catch {
+      setElderModeError("Sem conexão agora. Tente de novo.");
+    } finally {
+      setElderModeSaving(false);
+    }
   };
 
   const handleActivateElderModeOnDevice = () => {
     activateElderModeOnThisDevice(Number(params.id));
-    window.location.href = "/";
+    // Recarrega de fato (não navega pela SPA) pro gate do modo idoso em
+    // App.tsx ser reavaliado do zero. BASE_URL respeita o subcaminho em que
+    // o app está publicado — "/" fixo quebraria numa publicação aninhada.
+    window.location.replace(import.meta.env.BASE_URL || "/");
   };
 
   const handleDeletePatient = async () => {
@@ -450,13 +467,17 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
                 disabled={elderModeSaving}
               />
             </div>
+            {elderModeError && (
+              <Alert variant="destructive"><AlertDescription>{elderModeError}</AlertDescription></Alert>
+            )}
             {patient?.elderModeEnabled && (
               <>
                 <Button variant="outline" size="sm" onClick={handleActivateElderModeOnDevice}>
                   Ativar neste dispositivo agora
                 </Button>
                 <p className="text-xs text-muted-foreground">
-                  Pra sair depois, toque em "Sair" (vermelho, canto inferior direito) e confirme com sua senha.
+                  Pra sair depois, toque em "Sair" (vermelho, canto inferior direito da tela) e confirme com sua senha.
+                  Se o aparelho ficar fora de alcance, desligar este interruptor aqui também destrava ele sozinho.
                 </p>
               </>
             )}

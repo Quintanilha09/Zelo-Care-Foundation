@@ -15,6 +15,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   usersTable, caregiversTable, familiesTable, patientsTable, medicationsTable, treatmentsTable,
+  scheduledDosesTable,
 } from "@workspace/db";
 import { generateAccessToken } from "../lib/tokens.ts";
 import { hashPassword } from "../lib/password.ts";
@@ -31,6 +32,10 @@ let patientId: number;
 let medicationId: number;
 let otherFamilyId: number;
 let otherPatientId: number;
+
+// Senha real do cuidador de teste — a saída do modo idoso é confirmada por
+// senha, então ela precisa ser conhecida aqui pra testar os dois lados.
+const CAREGIVER_PASSWORD = "senha-de-teste-123";
 
 async function api(method: string, path: string, body?: unknown, authToken = token): Promise<{ status: number; body: unknown }> {
   const payload = body !== undefined ? JSON.stringify(body) : undefined;
@@ -73,7 +78,7 @@ before(async () => {
   const [family] = await db.insert(familiesTable).values({ name: "Família Modo Idoso Teste", slug: `elder-mode-test-${Date.now()}` }).returning();
   familyId = family.id;
 
-  const [user] = await db.insert(usersTable).values({ email: `elder-mode-${Date.now()}@zelo.test`, name: "Cuidador Principal", passwordHash: await hashPassword("x"), emailVerified: true, status: "active" }).returning();
+  const [user] = await db.insert(usersTable).values({ email: `elder-mode-${Date.now()}@zelo.test`, name: "Cuidador Principal", passwordHash: await hashPassword(CAREGIVER_PASSWORD), emailVerified: true, status: "active" }).returning();
   const [caregiver] = await db.insert(caregiversTable).values({ familyId, userId: user.id, name: "Cuidador Principal", role: "primary_caregiver" }).returning();
   token = generateAccessToken(user.id, familyId, caregiver.id, "primary_caregiver");
 
@@ -203,5 +208,90 @@ describe("Registro de dose via modo idoso — atribuição na tela inicial", () 
     assert.equal(registered.registeredByCaregiverName, "Cuidador Principal");
 
     await db.delete(treatmentsTable).where(eq(treatmentsTable.id, treatmentId));
+  });
+});
+
+/**
+ * Testes de REGRESSÃO dos dois bugs que travaram o modo idoso num teste
+ * ao vivo. Ambos eram falhas silenciosas — nada aparecia na tela — então
+ * cada um vira aqui uma afirmação concreta sobre o contrato do servidor.
+ */
+describe("Sair do modo idoso — confirmação de senha", () => {
+  it("GET /account/me devolve o email do próprio usuário", async () => {
+    // BUG REAL: a consulta de /account/me não selecionava `email`, mesmo
+    // com o cliente declarando depender dele. `user.email` chegava
+    // undefined e o botão "Sair" (que fazia `if (!user?.email) return`)
+    // virava um no-op permanente e mudo — o cuidador ficava preso no modo
+    // idoso, sem nenhuma mensagem.
+    const res = await api("GET", "/account/me");
+    assert.equal(res.status, 200);
+    const body = res.body as { email?: string };
+    assert.ok(body.email, "/account/me precisa devolver email — o cliente depende disso");
+    assert.ok(body.email!.includes("@"));
+  });
+
+  it("senha correta confirma (200) e NÃO derruba a sessão em uso", async () => {
+    const res = await api("POST", "/account/verify-password", { password: CAREGIVER_PASSWORD });
+    assert.equal(res.status, 200);
+    assert.equal((res.body as { verified: boolean }).verified, true);
+
+    // O aparelho no modo idoso continua usando a MESMA sessão do cuidador —
+    // confirmar a senha não pode rotacionar token nem deslogar ninguém
+    // (foi por isso que este endpoint existe em vez de refazer login).
+    const stillAuthed = await api("GET", "/account/me");
+    assert.equal(stillAuthed.status, 200, "a sessão precisa continuar válida depois de confirmar a senha");
+  });
+
+  it("senha errada responde 401 com mensagem em português, nunca em silêncio", async () => {
+    const res = await api("POST", "/account/verify-password", { password: "senha-errada" });
+    assert.equal(res.status, 401);
+    const body = res.body as { error: string; code: string };
+    assert.equal(body.code, "INVALID_PASSWORD");
+    assert.ok(body.error && body.error.length > 0, "precisa ter texto pra tela mostrar — o bug anterior era não ter feedback nenhum");
+  });
+
+  it("sem autenticação, 401 — a confirmação nunca é um caminho aberto", async () => {
+    const res = await api("POST", "/account/verify-password", { password: CAREGIVER_PASSWORD }, "token-invalido");
+    assert.equal(res.status, 401);
+  });
+});
+
+describe("Registrar dose no modo idoso nunca é bloqueado por plano", () => {
+  it("paciente excedente do plano gratuito continua aceitando 'Tomei'", async () => {
+    // BUG REAL: a ZELO-38 marcava o paciente excedente como somente-leitura
+    // e isso incluía REGISTRAR DOSE. Na prática, o idoso apertava "Tomei"
+    // no modo idoso e levava um 403 de limite de plano — ele não tem
+    // relação com a assinatura de quem cuida dele, e registrar a dose é o
+    // dado vital do produto (mesma razão pela qual a ZELO-39 exige que o
+    // app siga funcionando com pagamento em atraso).
+    //
+    // Esta família de teste não tem assinatura, ou seja, está no plano
+    // gratuito (1 paciente) — este segundo paciente é o excedente.
+    const [excedente] = await db.insert(patientsTable)
+      .values({ familyId, name: "Paciente Excedente", timezone: "America/Sao_Paulo" })
+      .returning();
+
+    const [treatment] = await db.insert(treatmentsTable).values({
+      patientId: excedente.id, medicationId, scheduleType: "times_per_day",
+      scheduleConfig: { scheduleType: "times_per_day", times: ["08:00"] },
+      startDate: Clock.todayInTimezone("America/Sao_Paulo"),
+    }).returning();
+
+    const [dose] = await db.insert(scheduledDosesTable).values({
+      treatmentId: treatment.id, patientId: excedente.id,
+      scheduledAt: Clock.now(),
+      scheduledLocalDate: Clock.todayInTimezone("America/Sao_Paulo"),
+      scheduledLocalTime: "08:00", status: "pending",
+    }).returning();
+
+    const res = await api("POST", `/patients/${excedente.id}/dose-records`, {
+      scheduledDoseId: dose.id,
+      takenAt: Clock.now().toISOString(),
+      outcome: "taken",
+      viaElderMode: true,
+    });
+    assert.equal(res.status, 201, "'Tomei' precisa funcionar mesmo no paciente fora do limite do plano");
+
+    await db.delete(patientsTable).where(eq(patientsTable.id, excedente.id));
   });
 });

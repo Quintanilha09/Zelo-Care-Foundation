@@ -34,14 +34,21 @@ import { Clock } from "../lib/clock";
 import { listCaregiverLinks, switchActiveFamily } from "../lib/active-family.ts";
 import { getPlanLimits } from "../lib/plan-limits.ts";
 import { hasPaidAccess } from "../lib/subscription.ts";
+import { verifyPassword } from "../lib/password";
+import { verifyPasswordLimiter } from "../lib/rate-limit";
 
 const router = Router();
 
 // ── Dados da conta ────────────────────────────────────────────────────────
 
 router.get("/account/me", requireAuth, async (req, res): Promise<void> => {
+  // `email` é dado do PRÓPRIO usuário autenticado (não de terceiro), e o
+  // cliente já declarava depender dele — mas a consulta nunca o selecionava,
+  // então `user.email` chegava `undefined` no frontend e qualquer código que
+  // dependesse dele falhava em silêncio (foi exatamente o que travou a saída
+  // do modo idoso). Tipo e resposta agora batem de verdade.
   const [user] = await db
-    .select({ id: usersTable.id, name: usersTable.name, emailVerified: usersTable.emailVerified, status: usersTable.status, createdAt: usersTable.createdAt })
+    .select({ id: usersTable.id, name: usersTable.name, email: usersTable.email, emailVerified: usersTable.emailVerified, status: usersTable.status, createdAt: usersTable.createdAt })
     .from(usersTable)
     .where(eq(usersTable.id, getAuth(req).userId))
     .limit(1);
@@ -84,6 +91,44 @@ router.get("/account/me", requireAuth, async (req, res): Promise<void> => {
     : null;
 
   res.json({ ...user, caregiver, family, plan });
+});
+
+// ── Confirmar a senha do próprio usuário autenticado ─────────────────────
+// Existe para "confirme que é você" ANTES de uma ação sensível (sair do modo
+// idoso é a primeira), sem os efeitos colaterais de reusar POST /auth/login
+// pra isso: login rotaciona o par de tokens, recarrega a sessão e passa pelo
+// rate limiter de login (5 tentativas/15min por IP) — reaproveitar ali
+// derrubava a sessão do aparelho e travava o cuidador por tentativa errada.
+// Aqui a sessão fica intocada: só responde "a senha confere?".
+//
+// Nunca revela se a conta existe/tem senha — quem chega aqui já está
+// autenticado, então a única resposta possível é sobre a senha em si.
+
+const VerifyPasswordBody = z.object({ password: z.string().min(1).max(128) });
+
+router.post("/account/verify-password", requireAuth, verifyPasswordLimiter, async (req, res): Promise<void> => {
+  const body = VerifyPasswordBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: "Informe a senha." }); return; }
+
+  const [user] = await db
+    .select({ passwordHash: usersTable.passwordHash })
+    .from(usersTable)
+    .where(eq(usersTable.id, getAuth(req).userId))
+    .limit(1);
+
+  // Conta criada só por Google não tem senha local — dizer "senha incorreta"
+  // seria mentira e deixaria a pessoa tentando pra sempre.
+  if (!user?.passwordHash) {
+    res.status(400).json({ error: "Esta conta entra pelo Google e não tem senha.", code: "NO_PASSWORD_SET" });
+    return;
+  }
+
+  if (!(await verifyPassword(user.passwordHash, body.data.password))) {
+    res.status(401).json({ error: "Senha incorreta.", code: "INVALID_PASSWORD" });
+    return;
+  }
+
+  res.json({ verified: true });
 });
 
 // ── Paciente ativo (ZELO-22) ────────────────────────────────────────────

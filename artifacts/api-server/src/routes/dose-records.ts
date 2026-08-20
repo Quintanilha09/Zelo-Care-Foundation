@@ -16,6 +16,20 @@ import { getAuth } from "../lib/auth-types.ts";
  * (padrão 24h) entre os dois, registra sem perguntar mais nada. Fora dela,
  * pede uma justificativa curta — texto livre, neutro, sem lista de motivos
  * pré-definidos que julgue o cuidador. Dose no futuro é sempre rejeitada.
+ *
+ * REGISTRAR DOSE NUNCA É BLOQUEADO POR PLANO (revisão da ZELO-38, feita
+ * depois de um teste ao vivo): a ZELO-38 aplicava aqui a regra de
+ * "paciente excedente vira somente-leitura", e o efeito prático foi um
+ * idoso, no modo idoso (ZELO-40), apertando "Tomei" e recebendo um aviso
+ * de limite de plano — ele não tem nada a ver com a assinatura de quem
+ * cuida dele. Mais grave: registrar a dose é o dado vital do produto, e a
+ * própria spec já fixa o princípio em ZELO-39 ("o app continua
+ * funcionando na falha de pagamento; lembrete de remédio nunca é cortado
+ * por cartão recusado"). O paywall legítimo é sobre CRESCER (paciente
+ * novo, cuidador novo, tratamento/medicamento novo) e sobre recurso extra
+ * (relatório, consultas, alerta de estoque, histórico longo) — nunca
+ * sobre registrar o que já foi prescrito. `isPatientEditable` continua
+ * valendo em treatments.ts, que é exatamente "crescer".
  */
 import { Router } from "express";
 import { eq, and, gte, lte } from "drizzle-orm";
@@ -30,7 +44,6 @@ import { Clock } from "../lib/clock";
 import { boss, QUEUE_DOSE_TAKEN, QUEUE_DOSE_REMINDER, ensureQueueStarted } from "../lib/queue.ts";
 import { ESCALATION_LEVEL_SNOOZE } from "../lib/dose-reminders.ts";
 import { publishPatientEvent } from "../lib/realtime.ts";
-import { isPatientEditable, READ_ONLY_MESSAGE } from "../lib/plan-limits.ts";
 
 const router = Router();
 
@@ -123,12 +136,9 @@ router.post("/patients/:patientId/dose-records", requireAuth, requireCapability(
     .limit(1);
   if (!patient) { res.status(404).json({ error: "Paciente não encontrado" }); return; }
 
-  // ZELO-38: downgrade nunca apaga dado — paciente excedente do plano
-  // atual fica visível pra sempre, só não aceita registro novo.
-  if (!(await isPatientEditable(patientId, getAuth(req).familyId))) {
-    res.status(403).json({ error: READ_ONLY_MESSAGE, code: "PLAN_READ_ONLY" });
-    return;
-  }
+  // NÃO existe checagem de limite de plano aqui, de propósito — ver a
+  // regra logo abaixo. Registrar que a dose foi tomada é a função vital do
+  // produto e nunca é bloqueada por plano.
 
   // Verifica que a dose agendada pertence ao paciente, e pega o medicationId
   // (via treatment) pro evento DoseTaken e o nome do medicamento pro evento

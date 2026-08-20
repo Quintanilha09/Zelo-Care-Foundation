@@ -64,6 +64,26 @@ export const passwordResetLimiter = rateLimit({
   message: { error: "Muitas tentativas. Aguarde antes de tentar novamente." },
 });
 
+/** Confirmação de senha do usuário JÁ autenticado ("confirme que é você"
+ *  antes de uma ação sensível): 10 por 15 min por usuário.
+ *
+ *  Limite próprio, separado do de login, de propósito: quem já está
+ *  autenticado errar a senha aqui não pode consumir a cota de LOGIN e
+ *  trancar a conta pra entrar de novo — foi o que aconteceria ao reusar
+ *  /auth/login pra confirmar a saída do modo idoso. A chave é o userId do
+ *  token (não o IP), já que o aparelho é compartilhado por definição. */
+export const verifyPasswordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10 * M,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const auth = (req as { user?: { userId?: number } }).user;
+    return `verify-password:${auth?.userId ?? "unknown"}`;
+  },
+  message: { error: "Muitas tentativas de senha. Aguarde alguns minutos." },
+});
+
 /** Reenvio de verificação: 2 por hora por IP. */
 export const resendVerificationLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,

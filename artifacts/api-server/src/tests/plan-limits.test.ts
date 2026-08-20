@@ -258,7 +258,15 @@ describe("Downgrade nunca apaga dado — excedente vira somente-leitura", () => 
     await setPlan(null);
   });
 
-  it("registrar dose no paciente excedente também é bloqueado, mas ler o histórico dele não", async () => {
+  // REGRA REVISADA depois de um teste ao vivo (ver cabeçalho de
+  // routes/dose-records.ts): a ZELO-38 bloqueava TAMBÉM o registro de dose
+  // do paciente excedente. Na prática isso significou um idoso, no modo
+  // idoso (ZELO-40), apertando "Tomei" e recebendo aviso de limite de
+  // plano — ele não tem relação nenhuma com a assinatura de quem cuida
+  // dele, e registrar a dose é o dado vital do produto. O paywall ficou só
+  // onde é sobre CRESCER (tratamento novo, acima), nunca sobre registrar o
+  // que já foi prescrito. Este teste agora prova a regra nova.
+  it("registrar dose NUNCA é bloqueado por plano, nem no paciente excedente — é a função vital do produto", async () => {
     await setPlan("premium");
     const p1 = await createPatient("A");
     const patient1Id = (p1.body as { id: number }).id;
@@ -280,13 +288,36 @@ describe("Downgrade nunca apaga dado — excedente vira somente-leitura", () => 
 
     const registerRes = await api("POST", `/patients/${patient2Id}/dose-records`, {
       scheduledDoseId: dose.id, takenAt: "2026-01-01T11:00:00Z", outcome: "taken",
+      justification: "registro de teste fora da janela",
     });
-    assert.equal(registerRes.status, 403);
-    assert.equal((registerRes.body as { code: string }).code, "PLAN_READ_ONLY");
+    assert.equal(registerRes.status, 201, "o paciente excedente continua aceitando REGISTRO de dose — plano nunca corta isso");
 
     // ler continua funcionando — nunca some
     const readRes = await api("GET", `/patients/${patient2Id}/today-doses`);
     assert.equal(readRes.status, 200);
+
+    await setPlan("premium");
+    await cleanupPatients();
+    await cleanupMedications();
+    await setPlan(null);
+  });
+
+  it("mas CRIAR tratamento novo no paciente excedente continua bloqueado — isso é crescer, não registrar", async () => {
+    await setPlan("premium");
+    const p1 = await createPatient("C");
+    const p2 = await createPatient("D");
+    const patient2Id = (p2.body as { id: number }).id;
+    void p1;
+    const med = await api("POST", "/medications", { name: "Medicamento Limite Crescer" });
+    const medicationId = (med.body as { id: number }).id;
+
+    await setPlan(null);
+
+    const treatRes = await api("POST", `/patients/${patient2Id}/treatments`, {
+      medicationId, scheduleConfig: { scheduleType: "times_per_day", times: ["08:00"] }, startDate: "2026-01-01",
+    });
+    assert.equal(treatRes.status, 403);
+    assert.equal((treatRes.body as { code: string }).code, "PLAN_READ_ONLY");
 
     await setPlan("premium");
     await cleanupPatients();
