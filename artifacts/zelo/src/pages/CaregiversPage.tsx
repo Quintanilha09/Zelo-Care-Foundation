@@ -6,9 +6,12 @@
  * só esconder o botão que o backend rejeitaria de qualquer forma.
  */
 import { useState } from "react";
-import { Link } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { authFetch } from "@/lib/auth-client";
+import { PlanPaywall } from "@/components/plan-paywall";
+import {
+  caregiverLimitReached, caregiverLimitMessage, type PlanView,
+} from "@/lib/plan-limits-client";
 import { useAuth } from "@/context/AuthContext";
 import { AppHeader } from "@/components/app-header";
 import { CaregiverBadge } from "@/components/caregiver-badge";
@@ -22,7 +25,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { User, UserPlus, X, Copy, Check, MessageCircle, Heart } from "lucide-react";
+import { User, UserPlus, X, Copy, Check, MessageCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 type Role = "primary_caregiver" | "caregiver" | "hired_caregiver" | "observer";
@@ -61,7 +64,11 @@ async function fetchInvites(): Promise<Invite[]> {
   return res.json();
 }
 
-function InviteDialog({ onCreated }: { onCreated: () => void }) {
+function InviteDialog({ onCreated, plan, caregiverCount }: {
+  onCreated: () => void;
+  plan: PlanView | null | undefined;
+  caregiverCount: number;
+}) {
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<Role>("caregiver");
@@ -123,26 +130,28 @@ function InviteDialog({ onCreated }: { onCreated: () => void }) {
     setPaywallMessage("");
   };
 
+  // Mesmo cuidado da tela de pacientes: se o limite já foi atingido, o
+  // convite nem chega a abrir o formulário — mostra direto o convite ao
+  // plano. O 403 do servidor segue tratado abaixo (é ele a autoridade).
+  const handleInviteClick = () => {
+    if (caregiverLimitReached(plan, caregiverCount)) {
+      setPaywallMessage(caregiverLimitMessage());
+    }
+    setOpen(true);
+  };
+
   return (
     <Dialog open={open} onOpenChange={(v) => (v ? setOpen(true) : reset())}>
-      <Button onClick={() => setOpen(true)} className="gap-2">
+      <Button onClick={handleInviteClick} className="gap-2">
         <UserPlus className="w-4 h-4" /> Convidar
       </Button>
       <DialogContent className="max-w-md">
         {paywallMessage ? (
-          <>
-            <DialogHeader>
-              <div className="mx-auto mb-2 w-10 h-10 rounded-full bg-zelo-green-bg flex items-center justify-center">
-                <Heart className="w-5 h-5 text-zelo-green-fg" />
-              </div>
-              <DialogTitle className="text-center">Cuidar junto é melhor</DialogTitle>
-              <DialogDescription className="text-center">{paywallMessage}</DialogDescription>
-            </DialogHeader>
-            <div className="flex justify-center gap-2 pt-2">
-              <Button variant="ghost" onClick={reset}>Agora não</Button>
-              <Link href="/planos"><Button>Ver planos</Button></Link>
-            </div>
-          </>
+          <PlanPaywall
+            title="Cuidar junto é melhor"
+            message={paywallMessage}
+            onDismiss={reset}
+          />
         ) : !result ? (
           <>
             <DialogHeader>
@@ -241,7 +250,9 @@ export default function CaregiversPage() {
             <h2 className="text-2xl font-semibold">Quem cuida com você</h2>
             <p className="text-muted-foreground text-[15px]">Presença da família, visível para todo mundo.</p>
           </div>
-          {isPrimary && <InviteDialog onCreated={invalidate} />}
+          {isPrimary && (
+            <InviteDialog onCreated={invalidate} plan={user?.plan} caregiverCount={caregivers?.length ?? 0} />
+          )}
         </div>
 
         {isLoading && <p className="text-muted-foreground text-center py-8">Carregando…</p>}

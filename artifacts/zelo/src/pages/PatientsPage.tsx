@@ -2,13 +2,16 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { authFetch } from "@/lib/auth-client";
+import { useAuth } from "@/context/AuthContext";
 import { AppHeader } from "@/components/app-header";
 import { PatientForm } from "@/components/patient-form";
+import { PlanPaywall } from "@/components/plan-paywall";
+import { patientLimitReached, patientLimitMessage } from "@/lib/plan-limits-client";
 import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
-import { Plus, User, ChevronRight, Heart } from "lucide-react";
+import { Plus, User, ChevronRight } from "lucide-react";
 
 interface Patient {
   id: number;
@@ -28,7 +31,10 @@ export default function PatientsPage() {
   const [open, setOpen] = useState(false);
   const [paywallMessage, setPaywallMessage] = useState("");
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const { data: patients, isLoading } = useQuery({ queryKey: ["patients"], queryFn: fetchPatients });
+
+  const activePatients = (patients ?? []).filter((p) => !p.archived);
 
   const handleCreated = () => {
     setOpen(false);
@@ -41,6 +47,17 @@ export default function PatientsPage() {
     if (!o) setPaywallMessage("");
   };
 
+  // Checar ANTES de abrir o formulário: preencher nome, data de nascimento e
+  // consentimento pra só no "Salvar" ouvir que o plano não permite é um
+  // desperdício do tempo de quem cuida. O 403 do servidor continua tratado
+  // (é ele a autoridade) — isto só evita o caminho inútil.
+  const handleAddClick = () => {
+    if (patientLimitReached(user?.plan, activePatients.length)) {
+      setPaywallMessage(patientLimitMessage(user?.plan));
+    }
+    setOpen(true);
+  };
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <AppHeader />
@@ -51,25 +68,17 @@ export default function PatientsPage() {
             <p className="text-muted-foreground text-[15px]">Escolha um paciente para ver os tratamentos.</p>
           </div>
           <Dialog open={open} onOpenChange={handleOpenChange}>
-            <Button onClick={() => setOpen(true)} className="gap-2">
+            <Button onClick={handleAddClick} className="gap-2">
               <Plus className="w-4 h-4" />
               Adicionar
             </Button>
             <DialogContent className="max-w-lg">
               {paywallMessage ? (
-                <>
-                  <DialogHeader>
-                    <div className="mx-auto mb-2 w-10 h-10 rounded-full bg-zelo-green-bg flex items-center justify-center">
-                      <Heart className="w-5 h-5 text-zelo-green-fg" />
-                    </div>
-                    <DialogTitle className="text-center">Cuidar junto é melhor</DialogTitle>
-                    <DialogDescription className="text-center">{paywallMessage}</DialogDescription>
-                  </DialogHeader>
-                  <div className="flex justify-center gap-2 pt-2">
-                    <Button variant="ghost" onClick={() => setOpen(false)}>Agora não</Button>
-                    <Link href="/planos"><Button>Ver planos</Button></Link>
-                  </div>
-                </>
+                <PlanPaywall
+                  title="Mais uma pessoa pra cuidar"
+                  message={paywallMessage}
+                  onDismiss={() => setOpen(false)}
+                />
               ) : (
                 <>
                   <DialogHeader>
