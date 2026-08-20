@@ -456,7 +456,7 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
                   Ativar neste dispositivo agora
                 </Button>
                 <p className="text-xs text-muted-foreground">
-                  Pra sair depois, segure por 3 segundos o ícone de cadeado no canto inferior direito da tela do modo idoso.
+                  Pra sair depois, toque em "Sair" (vermelho, canto inferior direito) e confirme com sua senha.
                 </p>
               </>
             )}

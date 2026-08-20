@@ -7,13 +7,23 @@
  *
  * O dispositivo travado neste modo usa a MESMA sessão do cuidador que o
  * ativou (ver lib/elder-mode.ts) — não existe conta própria do paciente.
- * Sair exige a senha do cuidador, atrás de um toque longo (3s) num ícone
- * discreto no canto — baixo contraste de propósito (não convida o idoso a
- * mexer), mas VISÍVEL: a primeira versão era opacity-0 (invisível de
- * verdade) e nem quem construiu a tela conseguiu encontrar a saída no
- * teste ao vivo. Discreto ≠ escondido — essa é a lição.
+ *
+ * HISTÓRICO DO BOTÃO DE SAIR (duas rodadas de teste ao vivo já mudaram
+ * este desenho, registrado pra não repetir o mesmo erro):
+ * 1ª versão: opacity-0 — literalmente invisível, ninguém achava.
+ * 2ª versão: ícone visível, mas exigia segurar 3s — um rótulo "Sair"
+ *    implica CLIQUE, não segurar; um clique normal soltava antes do
+ *    temporizador completar e não acontecia nada, lido como "quebrado".
+ * 3ª versão (atual): botão vermelho, sempre visível, um toque só abre o
+ *    pedido de senha — a fricção contra saída acidental do idoso já é a
+ *    PRÓPRIA senha (ele não sabe a senha do cuidador), seguro segurar
+ *    não era necessário e só atrapalhava.
+ *
+ * A senha (via login real) é a segurança de verdade contra sair sem
+ * querer — coincidência do rótulo com o gesto importa mais do que
+ * discrição extra que ninguém consegue operar.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { authFetch } from "@/lib/auth-client";
 import { useAuth } from "@/context/AuthContext";
@@ -23,7 +33,7 @@ import { Input } from "@/components/ui/input";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
-import { Volume2, Check, Lock } from "lucide-react";
+import { Volume2, Check, LogOut } from "lucide-react";
 
 interface ElderDose {
   id: number;
@@ -39,18 +49,19 @@ async function fetchDoses(patientId: number): Promise<{ doses: ElderDose[] }> {
   return res.json();
 }
 
-const LONG_PRESS_MS = 3000;
-
 export default function ElderModePage({ patientId }: { patientId: number }) {
   const { user, login } = useAuth();
   const queryClient = useQueryClient();
   const [confirmed, setConfirmed] = useState(false);
+  const [registering, setRegistering] = useState(false);
+  // Calma no tom, mas VISÍVEL — a versão anterior escondia qualquer falha
+  // de propósito ("nada que gere ansiedade") e o efeito colateral foi
+  // "cliquei e não aconteceu nada", indistinguível de quebrado de verdade.
+  const [takenError, setTakenError] = useState<string | null>(null);
   const [exitOpen, setExitOpen] = useState(false);
   const [password, setPassword] = useState("");
   const [exitError, setExitError] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
-  const [pressing, setPressing] = useState(false);
-  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { data } = useQuery({
     queryKey: ["elder-mode-doses", patientId],
@@ -58,29 +69,37 @@ export default function ElderModePage({ patientId }: { patientId: number }) {
     refetchInterval: 30_000,
   });
 
-  const nextDose = useMemo(
-    () => (data?.doses ?? []).find((d) => d.status === "pending") ?? null,
-    [data]
-  );
+  const nextDose = (data?.doses ?? []).find((d) => d.status === "pending") ?? null;
 
   const handleTaken = async () => {
-    if (!nextDose) return;
-    const res = await authFetch(`/api/patients/${patientId}/dose-records`, {
-      method: "POST",
-      body: JSON.stringify({
-        scheduledDoseId: nextDose.id,
-        takenAt: new Date().toISOString(),
-        outcome: "taken",
-        viaElderMode: true,
-      }),
-    });
-    void queryClient.invalidateQueries({ queryKey: ["elder-mode-doses", patientId] });
-    // Nada de mensagem de erro aqui — nada que gere ansiedade nesta tela.
-    // Se algo impediu o registro, a dose simplesmente continua pendente e
-    // o botão "Tomei" continua ali; quem resolve é o cuidador, depois.
-    if (!res.ok) return;
-    setConfirmed(true);
-    setTimeout(() => setConfirmed(false), 2500);
+    if (!nextDose || registering) return;
+    setRegistering(true);
+    setTakenError(null);
+    try {
+      const res = await authFetch(`/api/patients/${patientId}/dose-records`, {
+        method: "POST",
+        body: JSON.stringify({
+          scheduledDoseId: nextDose.id,
+          takenAt: new Date().toISOString(),
+          outcome: "taken",
+          viaElderMode: true,
+        }),
+      });
+      void queryClient.invalidateQueries({ queryKey: ["elder-mode-doses", patientId] });
+      if (!res.ok) {
+        setTakenError("Não deu pra registrar agora. Tente de novo.");
+        return;
+      }
+      setConfirmed(true);
+      setTimeout(() => setConfirmed(false), 2500);
+    } catch {
+      // authFetch lança quando a sessão não renova (ex: sem internet) — sem
+      // isto, essa falha desaparecia em silêncio, exatamente o "cliquei e
+      // não aconteceu nada" relatado no teste ao vivo.
+      setTakenError("Sem conexão no momento. Tente de novo.");
+    } finally {
+      setRegistering(false);
+    }
   };
 
   const handleListen = () => {
@@ -92,16 +111,6 @@ export default function ElderModePage({ patientId }: { patientId: number }) {
     window.speechSynthesis.speak(utterance);
   };
 
-  const startPress = () => {
-    setPressing(true);
-    pressTimer.current = setTimeout(() => { setPressing(false); setExitOpen(true); }, LONG_PRESS_MS);
-  };
-  const cancelPress = () => {
-    setPressing(false);
-    if (pressTimer.current) clearTimeout(pressTimer.current);
-  };
-  useEffect(() => cancelPress, []);
-
   const handleExitConfirm = async () => {
     if (!user?.email || !password) return;
     setVerifying(true);
@@ -110,8 +119,12 @@ export default function ElderModePage({ patientId }: { patientId: number }) {
       await login(user.email, password);
       deactivateElderModeOnThisDevice();
       window.location.href = "/";
-    } catch {
-      setExitError("Senha incorreta.");
+    } catch (err) {
+      // login() lança com a mensagem real do servidor (senha errada, limite
+      // de tentativas etc.) — só cai no genérico quando nem isso veio (ex:
+      // sem internet), pra nunca mostrar um erro técnico em inglês aqui.
+      const message = err instanceof Error && err.message && err.message !== "Failed to fetch" ? err.message : "Não deu pra verificar a senha agora. Tente de novo.";
+      setExitError(message);
     } finally {
       setVerifying(false);
     }
@@ -138,10 +151,12 @@ export default function ElderModePage({ patientId }: { patientId: number }) {
           <button
             type="button"
             onClick={() => void handleTaken()}
-            className="w-full min-h-24 rounded-3xl bg-zelo-green text-white text-4xl font-bold shadow-lg active:scale-[0.98] transition-transform"
+            disabled={registering}
+            className="w-full min-h-24 rounded-3xl bg-zelo-green text-white text-4xl font-bold shadow-lg active:scale-[0.98] transition-transform disabled:opacity-70"
           >
-            Tomei
+            {registering ? "Registrando…" : "Tomei"}
           </button>
+          {takenError && <p className="text-lg text-destructive">{takenError}</p>}
 
           <button
             type="button"
@@ -161,19 +176,14 @@ export default function ElderModePage({ patientId }: { patientId: number }) {
         </div>
       )}
 
-      {/* Saída do cuidador: baixo contraste (não convida o idoso a mexer),
-          mas VISÍVEL — segurar 3s abre o pedido de senha. */}
+      {/* Saída do cuidador: um toque abre o pedido de senha — a senha É a
+          fricção contra sair sem querer, não precisa de mais nenhuma. */}
       <button
         type="button"
-        aria-label="Sair do modo idoso (cuidador)"
-        onPointerDown={startPress}
-        onPointerUp={cancelPress}
-        onPointerLeave={cancelPress}
-        onPointerCancel={cancelPress}
-        className={`absolute bottom-4 right-4 flex flex-col items-center gap-1 rounded-full p-2 transition-transform ${pressing ? "scale-110" : ""}`}
+        onClick={() => setExitOpen(true)}
+        className="absolute bottom-4 right-4 flex items-center gap-1.5 px-3 py-2 rounded-full bg-destructive/10 text-destructive text-sm font-medium"
       >
-        <Lock className={`w-5 h-5 transition-colors ${pressing ? "text-[#2D2D2B]/60" : "text-[#2D2D2B]/25"}`} />
-        <span className="text-[10px] text-[#2D2D2B]/25">Sair</span>
+        <LogOut className="w-4 h-4" /> Sair
       </button>
 
       <Dialog open={exitOpen} onOpenChange={(open) => { setExitOpen(open); if (!open) { setPassword(""); setExitError(null); } }}>
