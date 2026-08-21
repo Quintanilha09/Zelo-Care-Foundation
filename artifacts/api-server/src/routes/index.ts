@@ -26,6 +26,7 @@ import activitiesRouter from "./activities";
 import realtimeRouter from "./realtime";
 import pushRouter from "./push";
 import notificationPreferencesRouter from "./notification-preferences";
+import patientAccessRouter from "./patient-access";
 
 const router = Router();
 
@@ -63,6 +64,11 @@ router.use(activitiesRouter);
 router.use(realtimeRouter);
 router.use(pushRouter);
 router.use(notificationPreferencesRouter);
+// ZELO-58: mistura três autenticações de propósito — gestão pelo cuidador
+// principal (requirePrimaryCaregiver), ativação pública (o token do link é
+// a credencial, como em adherence-report.ts) e as duas rotas do paciente
+// (requirePatientAccess, mecanismo próprio que nunca vira sessão de cuidador).
+router.use(patientAccessRouter);
 
 // Rotas de controle do relógio — APENAS fora de produção
 if (process.env.NODE_ENV !== "production") {

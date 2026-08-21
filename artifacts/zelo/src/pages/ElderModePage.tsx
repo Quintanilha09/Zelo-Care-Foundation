@@ -30,6 +30,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { authFetch } from "@/lib/auth-client";
 import { deactivateElderModeOnThisDevice } from "@/lib/elder-mode";
+import { patientFetch, getPatientAccessToken, clearPatientAccess } from "@/lib/patient-access";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -45,10 +46,40 @@ interface ElderDose {
   medicationName: string;
 }
 
-async function fetchDoses(patientId: number): Promise<{ doses: ElderDose[]; elderModeEnabled: boolean }> {
+/**
+ * Estado do dia, normalizado — a tela é a mesma nos dois modos de acesso:
+ *
+ *  - APARELHO DO PACIENTE (ZELO-58): token próprio, escopo de duas rotas,
+ *    nenhuma sessão de cuidador guardada aqui. É o caminho recomendado.
+ *  - APARELHO DO CUIDADOR (ZELO-40): o tablet compartilhado da casa, que o
+ *    cuidador controla, usando a sessão dele.
+ */
+interface ElderState {
+  nextDose: ElderDose | null;
+  elderModeEnabled: boolean;
+}
+
+async function fetchAsPatient(): Promise<ElderState> {
+  const res = await patientFetch("/api/patient-access/today");
+  if (!res.ok) throw new Error("Não foi possível carregar os remédios de hoje.");
+  const data = (await res.json()) as {
+    elderModeEnabled: boolean;
+    nextDose: { id: number; medicationName: string; dose: string | null; scheduledLocalTime: string } | null;
+  };
+  return {
+    elderModeEnabled: data.elderModeEnabled,
+    nextDose: data.nextDose ? { ...data.nextDose, status: "pending" } : null,
+  };
+}
+
+async function fetchAsCaregiver(patientId: number): Promise<ElderState> {
   const res = await authFetch(`/api/patients/${patientId}/today-doses`);
   if (!res.ok) throw new Error("Não foi possível carregar os remédios de hoje.");
-  return res.json();
+  const data = (await res.json()) as { doses: ElderDose[]; elderModeEnabled: boolean };
+  return {
+    elderModeEnabled: data.elderModeEnabled,
+    nextDose: data.doses.find((d) => d.status === "pending") ?? null,
+  };
 }
 
 /**
@@ -80,8 +111,12 @@ async function readServerError(res: Response, fallback: string): Promise<string>
   return serverMessage || fallback;
 }
 
-export default function ElderModePage({ patientId }: { patientId: number }) {
+/** `patientId` só existe no modo "aparelho do cuidador". No aparelho do
+ *  paciente, quem identifica é o próprio token — o cliente nem precisa
+ *  saber o id, e não saber é melhor: menos coisa exposta ali. */
+export default function ElderModePage({ patientId }: { patientId: number | null }) {
   const queryClient = useQueryClient();
+  const isPatientDevice = patientId === null;
 
   const [confirmed, setConfirmed] = useState(false);
   const [registering, setRegistering] = useState(false);
@@ -92,22 +127,25 @@ export default function ElderModePage({ patientId }: { patientId: number }) {
   const [exitError, setExitError] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
 
+  const queryKey = ["elder-mode-doses", isPatientDevice ? "patient-device" : patientId];
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ["elder-mode-doses", patientId],
-    queryFn: () => fetchDoses(patientId),
+    queryKey,
+    queryFn: () => (isPatientDevice ? fetchAsPatient() : fetchAsCaregiver(patientId!)),
     refetchInterval: 30_000,
   });
 
-  const nextDose = (data?.doses ?? []).find((d) => d.status === "pending") ?? null;
+  const nextDose = data?.nextDose ?? null;
 
   // SAÍDA DE EMERGÊNCIA REMOTA: o servidor é quem manda sobre este modo
   // estar permitido. Se o cuidador principal desligar o interruptor pelo
   // aparelho DELE, este aqui se destrava sozinho na próxima atualização
   // (que roda a cada 30s) — sem precisar da senha nem do aparelho em mãos.
-  // É a rede de segurança pra quando algo der errado com o botão "Sair".
+  // No aparelho do paciente vale o mesmo, e ainda tem a revogação do
+  // acesso, que derruba na requisição seguinte (401 → tela de erro).
   useEffect(() => {
     if (data && data.elderModeEnabled === false) {
       deactivateElderModeOnThisDevice();
+      clearPatientAccess();
       window.location.replace(import.meta.env.BASE_URL || "/");
     }
   }, [data]);
@@ -117,18 +155,23 @@ export default function ElderModePage({ patientId }: { patientId: number }) {
     setRegistering(true);
     setTakenError(null);
     try {
-      const res = await authFetch(`/api/patients/${patientId}/dose-records`, {
-        method: "POST",
-        body: JSON.stringify({
-          // Sem `takenAt`: "agora" quem decide é o relógio do servidor. O
-          // relógio deste aparelho pode estar minutos fora de sincronia, e
-          // mandá-lo já fez um registro legítimo ser recusado como "dose
-          // no futuro" — ver routes/dose-records.ts.
-          scheduledDoseId: nextDose.id,
-          outcome: "taken",
-          viaElderMode: true,
-        }),
-      });
+      // Nos dois modos, "agora" quem decide é o relógio do SERVIDOR — o
+      // relógio deste aparelho pode estar minutos fora de sincronia, e
+      // mandá-lo já fez um registro legítimo ser recusado como "dose no
+      // futuro" (ver routes/dose-records.ts).
+      const res = isPatientDevice
+        ? await patientFetch("/api/patient-access/taken", {
+            method: "POST",
+            body: JSON.stringify({ scheduledDoseId: nextDose.id }),
+          })
+        : await authFetch(`/api/patients/${patientId}/dose-records`, {
+            method: "POST",
+            body: JSON.stringify({
+              scheduledDoseId: nextDose.id,
+              outcome: "taken",
+              viaElderMode: true,
+            }),
+          });
 
       if (!res.ok) {
         // A mensagem REAL do servidor, não uma genérica — foi mascarar isso
@@ -143,12 +186,12 @@ export default function ElderModePage({ patientId }: { patientId: number }) {
       setConfirmed(true);
       setTimeout(() => setConfirmed(false), 2500);
     } catch {
-      // authFetch lança quando nem consegue renovar a sessão (offline, rede
-      // caída). Sem este catch, o clique morria em silêncio.
+      // Rede caída, ou sessão que não renova. Sem este catch, o clique
+      // morria em silêncio.
       setTakenError("Sem conexão agora. Tente de novo em instantes.");
     } finally {
       setRegistering(false);
-      void queryClient.invalidateQueries({ queryKey: ["elder-mode-doses", patientId] });
+      void queryClient.invalidateQueries({ queryKey });
     }
   };
 
@@ -166,15 +209,28 @@ export default function ElderModePage({ patientId }: { patientId: number }) {
   };
 
   /**
-   * Confirma a senha do cuidador e sai do modo idoso NESTE aparelho.
+   * Sair do modo idoso NESTE aparelho.
    *
-   * Usa POST /account/verify-password (endpoint dedicado) em vez de refazer
+   * No aparelho do PACIENTE (ZELO-58) não há senha a pedir: o aparelho não
+   * guarda sessão de cuidador nenhuma, então não existe nada pra proteger —
+   * sair é só apagar o token daqui. Pra voltar, o cuidador manda outro link.
+   *
+   * No aparelho do CUIDADOR (tablet compartilhado), a senha continua sendo
+   * pedida, porque ali sair de fato revela a sessão dele por baixo. Usa
+   * POST /account/verify-password (endpoint dedicado) em vez de refazer
    * login: login rotacionaria o par de tokens, recarregaria a sessão e
    * consumiria a cota do rate limiter de LOGIN — uma senha errada aqui
    * trancaria o cuidador pra entrar de novo. Aqui a sessão fica intacta.
    */
   const handleExitConfirm = async () => {
     if (verifying) return;
+
+    if (isPatientDevice) {
+      clearPatientAccess();
+      window.location.replace(import.meta.env.BASE_URL || "/");
+      return;
+    }
+
     if (!password) {
       setExitError("Digite sua senha de cuidador.");
       return;
@@ -291,22 +347,28 @@ export default function ElderModePage({ patientId }: { patientId: number }) {
           <DialogHeader>
             <DialogTitle>Sair do modo idoso</DialogTitle>
             <DialogDescription>
-              Confirme sua senha de cuidador para voltar ao aplicativo normal neste aparelho.
+              {isPatientDevice
+                ? "Este celular vai parar de te lembrar dos remédios. Pra voltar, peça um novo link para quem cuida de você."
+                : "Confirme sua senha de cuidador para voltar ao aplicativo normal neste aparelho."}
             </DialogDescription>
           </DialogHeader>
           <form
             className="space-y-3"
             onSubmit={(e) => { e.preventDefault(); void handleExitConfirm(); }}
           >
-            <Input
-              type="password"
-              autoFocus
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => { setPassword(e.target.value); setExitError(null); }}
-              placeholder="Sua senha"
-              disabled={verifying}
-            />
+            {/* No aparelho do paciente não há senha a pedir: não existe
+                sessão de cuidador guardada aqui pra proteger. */}
+            {!isPatientDevice && (
+              <Input
+                type="password"
+                autoFocus
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => { setPassword(e.target.value); setExitError(null); }}
+                placeholder="Sua senha"
+                disabled={verifying}
+              />
+            )}
             {exitError && <p className="text-sm text-destructive">{exitError}</p>}
             <div className="flex gap-2 justify-end">
               <Button type="button" variant="ghost" onClick={closeExitDialog} disabled={verifying}>Cancelar</Button>

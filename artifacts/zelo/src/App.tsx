@@ -24,8 +24,10 @@ import AdminPage from '@/pages/AdminPage';
 import StatusPage from '@/pages/StatusPage';
 import AcceptInvitePage from '@/pages/AcceptInvitePage';
 import ElderModePage from '@/pages/ElderModePage';
+import PatientAccessActivationPage from '@/pages/PatientAccessActivationPage';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { getElderModePatientId } from '@/lib/elder-mode';
+import { getPatientAccessToken } from '@/lib/patient-access';
 import { usePendingDoseActions } from '@/hooks/use-pending-dose-actions';
 import {
   Route,
@@ -71,6 +73,25 @@ function Router() {
     return (
       <RoutedErrorBoundary>
         <AcceptInvitePage />
+      </RoutedErrorBoundary>
+    );
+  }
+
+  // ZELO-58: as duas telas do PACIENTE ficam fora do gate de autenticação
+  // de cuidador — e é o ponto central da história: o aparelho do paciente
+  // nunca tem sessão de cuidador, então passar pelo gate abaixo o jogaria
+  // pra tela de login pra sempre. A credencial dele é o token próprio.
+  if (location.startsWith('/acesso')) {
+    return (
+      <RoutedErrorBoundary>
+        <PatientAccessActivationPage />
+      </RoutedErrorBoundary>
+    );
+  }
+  if (getPatientAccessToken()) {
+    return (
+      <RoutedErrorBoundary>
+        <ElderModePage patientId={null} />
       </RoutedErrorBoundary>
     );
   }

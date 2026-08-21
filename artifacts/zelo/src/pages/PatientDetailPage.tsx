@@ -9,6 +9,7 @@ import { TreatmentForm } from "@/components/treatment-form";
 import { DoseCard } from "@/components/dose-card";
 import { PushPermissionPrompt } from "@/components/push-permission-prompt";
 import { NotificationPreferencesCard } from "@/components/notification-preferences-card";
+import { PatientAccessCard } from "@/components/patient-access-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,7 +22,7 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
-import { ArrowLeft, Plus, Pill, Package, Trash2 } from "lucide-react";
+import { ArrowLeft, Plus, Pill, Package, Trash2, Smartphone, Tablet } from "lucide-react";
 
 interface Patient {
   id: number;
@@ -472,15 +473,42 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
               <Alert variant="destructive"><AlertDescription>{elderModeError}</AlertDescription></Alert>
             )}
             {patient?.elderModeEnabled && (
-              <>
-                <Button variant="outline" size="sm" onClick={handleActivateElderModeOnDevice}>
-                  Ativar neste dispositivo agora
-                </Button>
+              <div className="space-y-4 pt-1">
+                {/* ZELO-58: os dois caminhos, separados e rotulados. O defeito
+                    anterior não era existirem os dois — era a tela não dizer
+                    qual servia pra quê, e o cuidador ativar no próprio
+                    celular sem entender por que não adiantava nada. */}
+                <div className="rounded-lg border p-3 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Smartphone className="w-4 h-4 text-zelo-green-fg shrink-0" />
+                    <p className="text-sm font-medium">No celular de {patient.name}</p>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-zelo-green-bg text-zelo-green-fg">recomendado</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Envie um link. {patient.name} abre no próprio celular e pronto — sem criar senha, sem preencher nada.
+                    O aparelho dela não fica com o seu acesso de cuidador.
+                  </p>
+                  <PatientAccessCard patientId={Number(params.id)} patientName={patient.name} />
+                </div>
+
+                <div className="rounded-lg border p-3 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Tablet className="w-4 h-4 text-muted-foreground shrink-0" />
+                    <p className="text-sm font-medium">Neste aparelho que você está usando agora</p>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Só faz sentido num tablet ou celular que fique com {patient.name} — por exemplo, um aparelho fixo na casa.
+                    Ele vai usar a <strong>sua</strong> sessão, e sair exige a sua senha.
+                  </p>
+                  <Button variant="outline" size="sm" onClick={handleActivateElderModeOnDevice}>
+                    Travar este aparelho no modo idoso
+                  </Button>
+                </div>
+
                 <p className="text-xs text-muted-foreground">
-                  Pra sair depois, toque em "Sair" (vermelho, canto inferior direito da tela) e confirme com sua senha.
-                  Se o aparelho ficar fora de alcance, desligar este interruptor aqui também destrava ele sozinho.
+                  Desligar o interruptor acima destrava qualquer aparelho, mesmo à distância.
                 </p>
-              </>
+              </div>
             )}
           </div>
         )}
