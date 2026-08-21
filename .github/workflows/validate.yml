@@ -1,0 +1,74 @@
+name: Validate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Typecheck, test, and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: postgresql://zelo_ci:zelo_ci@localhost:5432/zelo_ci
+      ADMIN_PANEL_SECRET: ci-test-${{ github.run_id }}-${{ github.run_attempt }}
+      SESSION_SECRET: ci-test-${{ github.run_id }}-${{ github.run_attempt }}
+      NODE_ENV: test
+      CI: "true"
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: zelo_ci
+          POSTGRES_USER: zelo_ci
+          POSTGRES_PASSWORD: zelo_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U zelo_ci -d zelo_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Create test database schema
+        run: |
+          pnpm --filter @workspace/db push
+          pnpm --filter @workspace/db push:raw
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Enforce clock usage
+        run: pnpm --filter @workspace/api-server lint:clock
+
+      - name: Run integration tests
+        run: pnpm --filter @workspace/api-server test:all
+
+      - name: Build
+        run: pnpm run build
