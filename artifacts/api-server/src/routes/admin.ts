@@ -16,10 +16,11 @@ import { db } from "@workspace/db";
 import { notificationsTable, scheduledDosesTable, pushSubscriptionsTable, operationalAlertsTable } from "@workspace/db";
 import { requireAdminAuth, verifyAdminPassword, generateAdminToken } from "../lib/admin-auth.ts";
 import { Clock } from "../lib/clock.ts";
+import { adminLoginLimiter } from "../lib/rate-limit";
 
 const router = Router();
 
-router.post("/admin/login", (req, res): void => {
+router.post("/admin/login", adminLoginLimiter, (req, res): void => {
   const password = typeof req.body?.password === "string" ? req.body.password : "";
   if (!verifyAdminPassword(password)) {
     res.status(401).json({ error: "Senha incorreta" });

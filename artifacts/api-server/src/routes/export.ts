@@ -26,6 +26,7 @@ import {
 } from "@workspace/db";
 import { generateOneTimeToken, hashToken } from "../lib/tokens";
 import { requireAuth } from "../middleware/require-auth";
+import { publicTokenLimiter } from "../lib/rate-limit";
 import { audit } from "../lib/audit";
 import { safeLog } from "../lib/safe-logger";
 import { Clock } from "../lib/clock";
@@ -103,7 +104,7 @@ router.post("/export", requireAuth, async (req, res): Promise<void> => {
 
 // ── Download autenticado (uso único) ─────────────────────────────────────
 
-router.get("/export/download/:rawToken", async (req, res): Promise<void> => {
+router.get<{ rawToken: string }>("/export/download/:rawToken", publicTokenLimiter, async (req, res): Promise<void> => {
   const { rawToken } = req.params;
   const tokenHash = hashToken(rawToken);
 

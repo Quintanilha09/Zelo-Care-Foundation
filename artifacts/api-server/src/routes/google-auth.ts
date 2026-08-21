@@ -39,6 +39,7 @@ import { safeLog } from "../lib/safe-logger";
 import { audit } from "../lib/audit";
 import { Clock } from "../lib/clock";
 import { resolveActiveCaregiver } from "../lib/active-family.ts";
+import { publicTokenLimiter } from "../lib/rate-limit";
 
 const router = Router();
 
@@ -46,6 +47,10 @@ const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 
 const isConfigured = () => !!(CLIENT_ID && CLIENT_SECRET);
+
+/** Teto de espera pelo Google. Sem isso, um upstream lento segura a
+ *  requisição de login indefinidamente e consome conexão do servidor. */
+const OAUTH_TIMEOUT_MS = 10_000;
 
 // ── One-time login codes (troca segura de tokens pós-redirect) ────────────
 // O backend não pode injetar tokens no frontend via redirect (segurança).
@@ -163,6 +168,7 @@ router.get("/auth/google/callback", async (req: Request, res: Response): Promise
   try {
     const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
+      signal: AbortSignal.timeout(OAUTH_TIMEOUT_MS),
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
         code,
@@ -183,6 +189,7 @@ router.get("/auth/google/callback", async (req: Request, res: Response): Promise
 
     // 2. Buscar dados do usuário
     const userRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+      signal: AbortSignal.timeout(OAUTH_TIMEOUT_MS),
       headers: { Authorization: `Bearer ${tokenData.access_token}` },
     });
 
@@ -310,7 +317,7 @@ router.get("/auth/google/callback", async (req: Request, res: Response): Promise
 
 // ── Troca do login code por tokens reais ──────────────────────────────────
 
-router.post("/auth/google/exchange", async (req: Request, res: Response): Promise<void> => {
+router.post("/auth/google/exchange", publicTokenLimiter, async (req: Request, res: Response): Promise<void> => {
   const { code } = req.body as { code?: string };
   if (!code) { res.status(400).json({ error: "Código obrigatório" }); return; }
 

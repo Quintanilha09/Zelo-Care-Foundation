@@ -16,6 +16,7 @@ import { db } from "@workspace/db";
 import { photoExtractionsTable } from "@workspace/db";
 import { z } from "zod";
 import { requireAuth } from "../middleware/require-auth";
+import { photoExtractionLimiter } from "../lib/rate-limit";
 import { safeLog } from "../lib/safe-logger";
 import { Clock } from "../lib/clock";
 import { extractMedicationFromPhoto } from "../lib/vision.ts";
@@ -34,7 +35,7 @@ const upload = multer({
 
 // ── Enviar foto e extrair campos ────────────────────────────────────────
 
-router.post("/medication-photos/extract", requireAuth, upload.single("photo"), async (req, res): Promise<void> => {
+router.post("/medication-photos/extract", requireAuth, photoExtractionLimiter, upload.single("photo"), async (req, res): Promise<void> => {
   if (!req.file) {
     res.status(400).json({ error: "Envie uma foto em JPEG, PNG ou WebP, até 8MB." });
     return;

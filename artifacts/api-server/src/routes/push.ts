@@ -13,6 +13,7 @@ import { z } from "zod";
 import { db } from "@workspace/db";
 import { pushSubscriptionsTable, notificationsTable, pushPlatformEnum } from "@workspace/db";
 import { requireAuth } from "../middleware/require-auth";
+import { publicTokenLimiter } from "../lib/rate-limit";
 import { getVapidPublicKey, sendPushToUser, sendPushToSubscription } from "../lib/push.ts";
 import { Clock } from "../lib/clock.ts";
 
@@ -139,7 +140,7 @@ router.post("/push/test", requireAuth, async (req, res): Promise<void> => {
 // uma URL longa e opaca só conhecida por quem legitimamente a assinou;
 // pior caso de abuso é um timestamp de diagnóstico incorreto, sem
 // nenhuma leitura ou escrita de dado sensível.
-router.post("/push/ack", async (req, res): Promise<void> => {
+router.post("/push/ack", publicTokenLimiter, async (req, res): Promise<void> => {
   const parsed = AckBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "Corpo inválido" }); return; }
 

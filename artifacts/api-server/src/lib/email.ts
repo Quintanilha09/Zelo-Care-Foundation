@@ -12,10 +12,15 @@
 
 import { logger } from "./logger";
 
-const isProduction = process.env.NODE_ENV === "production";
+import { IS_PRODUCTION as isProduction } from "./environment.ts";
 const BASE_URL = process.env.APP_URL ?? "http://localhost:5173";
 
 function devLog(label: string, link: string): void {
+  // O link CARREGA o token (verificação, reset de senha, convite) — quem lê
+  // o log assume a conta. Por isso só é impresso quando o ambiente está
+  // EXPLICITAMENTE marcado como desenvolvimento: antes, um ambiente sem
+  // NODE_ENV definido (o deploy do Replit) escrevia estes links no log de
+  // produção. Ver lib/environment.ts.
   if (!isProduction) {
     logger.info({ link }, `[DEV EMAIL] ${label}`);
   }

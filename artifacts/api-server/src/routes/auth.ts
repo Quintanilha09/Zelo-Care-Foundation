@@ -50,9 +50,12 @@ import {
   loginByEmailLimiter,
   registerLimiter,
   passwordResetLimiter,
+  publicTokenLimiter,
+  refreshLimiter,
 } from "../lib/rate-limit";
 import { Clock } from "../lib/clock";
 import { resolveActiveCaregiver } from "../lib/active-family.ts";
+import { allowsDevelopmentShortcuts } from "../lib/environment.ts";
 
 const router = Router();
 
@@ -216,7 +219,7 @@ router.post("/auth/register", registerLimiter, async (req, res): Promise<void> =
     expiresAt: new Date(Clock.now().getTime() + 24 * 60 * 60 * 1000), // 24h
   });
 
-  if (process.env.NODE_ENV !== "production") {
+  if (allowsDevelopmentShortcuts()) {
     // ── DEV ONLY: auto-verificação imediata ──────────────────────────────
     // Em produção este bloco não existe — o usuário DEVE clicar no link de e-mail.
     // Em desenvolvimento não há provedor de e-mail real, então a conta é ativada
@@ -229,9 +232,13 @@ router.post("/auth/register", registerLimiter, async (req, res): Promise<void> =
         .set({ emailVerified: true, status: "active" })
         .where(eq(usersTable.id, userId));
     });
+    // O token NÃO vai pro log, nem em desenvolvimento: `safeLog` sanitiza o
+    // CONTEXTO (1º argumento) mas não a MENSAGEM (2º), então interpolar um
+    // segredo aqui contornava a proteção inteira. Quem precisar do token pra
+    // testar o fluxo manual consulta a tabela email_verifications.
     safeLog.info(
-      { action: "dev_auto_verify", userId, familyId },
-      `[DEV] Conta auto-verificada — token (caso queira testar o fluxo manual): ${verifyRaw}`,
+      { action: "dev_auto_verify", familyId },
+      "[DEV] Conta auto-verificada — token disponível em email_verifications, se precisar testar o fluxo manual",
     );
   } else {
     // ── PRODUÇÃO: envio real de e-mail ───────────────────────────────────
@@ -241,7 +248,7 @@ router.post("/auth/register", registerLimiter, async (req, res): Promise<void> =
   safeLog.info({ action: "register", userId, familyId, caregiverId }, "Novo usuário cadastrado");
   await audit({ familyId, entityType: "user", entityId: String(userId), action: "created", actorType: "system", ipAddress: ip });
 
-  const devMessage = process.env.NODE_ENV !== "production"
+  const devMessage = allowsDevelopmentShortcuts()
     ? " Conta ativada automaticamente — faça login agora."
     : " Verifique seu e-mail para ativar a conta.";
   res.status(201).json({ message: `Conta criada.${devMessage}` });
@@ -249,7 +256,7 @@ router.post("/auth/register", registerLimiter, async (req, res): Promise<void> =
 
 // ── VERIFICAÇÃO DE E-MAIL ─────────────────────────────────────────────────
 
-router.post("/auth/verify-email", async (req, res): Promise<void> => {
+router.post("/auth/verify-email", publicTokenLimiter, async (req, res): Promise<void> => {
   const token = String(req.body?.token ?? "");
   if (!token) { res.status(400).json({ error: "Token obrigatório" }); return; }
 
@@ -367,7 +374,7 @@ router.post("/auth/login", loginByIpLimiter, loginByEmailLimiter, async (req, re
 
 // ── RENOVAÇÃO DE TOKEN ────────────────────────────────────────────────────
 
-router.post("/auth/refresh", async (req, res): Promise<void> => {
+router.post("/auth/refresh", refreshLimiter, async (req, res): Promise<void> => {
   const raw = String(req.body?.refreshToken ?? "");
   if (!raw) { res.status(401).json({ error: "Token de renovação obrigatório" }); return; }
 
@@ -510,7 +517,7 @@ const ResetConfirmBody = z.object({
   newPassword: z.string().min(8).max(128),
 });
 
-router.post("/auth/password-reset/confirm", async (req, res): Promise<void> => {
+router.post("/auth/password-reset/confirm", publicTokenLimiter, async (req, res): Promise<void> => {
   const body = ResetConfirmBody.safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: "Token e nova senha são obrigatórios" }); return; }
 

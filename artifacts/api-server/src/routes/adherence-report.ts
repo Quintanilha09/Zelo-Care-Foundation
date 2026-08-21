@@ -21,6 +21,7 @@ import { z } from "zod";
 import { db } from "@workspace/db";
 import { patientsTable, adherenceReportsTable } from "@workspace/db";
 import { requireAuth } from "../middleware/require-auth";
+import { publicTokenLimiter } from "../lib/rate-limit";
 import { hasPaidAccess } from "../lib/subscription.ts";
 import { computeReportData, generateReportPdf } from "../lib/adherence-report.ts";
 import { generateOneTimeToken, hashToken } from "../lib/tokens.ts";
@@ -93,7 +94,7 @@ router.post("/patients/:patientId/adherence-report", requireAuth, async (req, re
   res.json({ reportId: report.id, downloadUrl: `/api/reports/${raw}`, expiresAt });
 });
 
-router.get("/reports/:rawToken", async (req, res): Promise<void> => {
+router.get<{ rawToken: string }>("/reports/:rawToken", publicTokenLimiter, async (req, res): Promise<void> => {
   const { rawToken } = req.params;
   const tokenHash = hashToken(rawToken);
 

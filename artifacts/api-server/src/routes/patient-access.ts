@@ -32,6 +32,7 @@ import { safeLog } from "../lib/safe-logger";
 import { audit } from "../lib/audit";
 import { boss, QUEUE_DOSE_TAKEN, ensureQueueStarted } from "../lib/queue.ts";
 import { publishPatientEvent } from "../lib/realtime.ts";
+import { publicTokenLimiter } from "../lib/rate-limit";
 
 const router = Router();
 
@@ -172,7 +173,7 @@ router.delete("/patients/:patientId/access/:accessId", requirePrimaryCaregiver, 
 
 const ActivateBody = z.object({ token: z.string().min(1) });
 
-router.post("/patient-access/activate", async (req, res): Promise<void> => {
+router.post("/patient-access/activate", publicTokenLimiter, async (req, res): Promise<void> => {
   const body = ActivateBody.safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: "Link inválido." }); return; }
 

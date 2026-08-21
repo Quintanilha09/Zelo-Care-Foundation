@@ -27,6 +27,7 @@ import realtimeRouter from "./realtime";
 import pushRouter from "./push";
 import notificationPreferencesRouter from "./notification-preferences";
 import patientAccessRouter from "./patient-access";
+import { allowsDevelopmentShortcuts } from "../lib/environment.ts";
 
 const router = Router();
 
@@ -70,8 +71,14 @@ router.use(notificationPreferencesRouter);
 // (requirePatientAccess, mecanismo próprio que nunca vira sessão de cuidador).
 router.use(patientAccessRouter);
 
-// Rotas de controle do relógio — APENAS fora de produção
-if (process.env.NODE_ENV !== "production") {
+// Rotas de controle do relógio — APENAS fora de produção.
+//
+// `allowsDevelopmentShortcuts()` em vez de `NODE_ENV !== "production"`: a
+// segunda forma monta estas rotas quando a variável simplesmente não está
+// definida, que era o caso do deploy (auditoria de 21/08/2026). Como as
+// rotas daqui não têm autenticação nenhuma, isso deixava qualquer pessoa
+// congelar ou adiantar o relógio do servidor — num app de medicação.
+if (allowsDevelopmentShortcuts()) {
   const { default: devClockRouter } = await import("./dev-clock.js");
   router.use(devClockRouter);
 }
