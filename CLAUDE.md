@@ -89,7 +89,10 @@ arquivo, e monitor de janela de contexto.
 - **Bug reportado em ambiente real que você não explica pelo código: reproduza ANTES de editar.**
   Corrigir pelo sintoma já falhou duas vezes seguidas no mesmo bug.
 - **Ao fechar uma história, informe proativamente os comandos de deploy do Replit**, mesmo sem ninguém perguntar.
-- **Responda ao fundador em português.**
+- **Responda ao fundador em português, e de forma simples.** Ele não é leigo, mas a resposta
+  precisa deixar claro **o que você fez, o que está fazendo e o que vai fazer** — sem exigir que
+  ele decifre jargão ou reconstrua o raciocínio sozinho. Frase curta, termo técnico só quando
+  não houver equivalente simples, e nunca três parágrafos onde cabem três linhas.
 - **A implementação é local, não pelo Replit Agent.** Edite aqui, rode os testes aqui, dê push.
   O Replit é onde o fundador testa o app publicado.
 - **Ao dar qualquer comando de shell, pense a cadeia inteira antes de responder:** diretório certo
