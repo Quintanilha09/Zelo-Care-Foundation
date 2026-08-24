@@ -10,6 +10,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { CampoLabel } from "@/components/campo-label";
 import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -71,7 +72,7 @@ export function PatientForm({ onCreated, onCancel, onPaywall }: PatientFormProps
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
       <div className="space-y-2">
-        <Label htmlFor="patient-name">Nome</Label>
+        <CampoLabel htmlFor="patient-name" obrigatorio>Nome</CampoLabel>
         <Input
           id="patient-name"
           value={name}
@@ -104,7 +105,7 @@ export function PatientForm({ onCreated, onCancel, onPaywall }: PatientFormProps
       </div>
 
       <div className="space-y-3 rounded-lg border p-4 bg-muted/30">
-        <Label className="text-sm font-medium">Quem está consentindo com o tratamento de dados de saúde?</Label>
+        <CampoLabel obrigatorio>Quem está consentindo com o tratamento de dados de saúde?</CampoLabel>
         <RadioGroup value={givenBy} onValueChange={(v) => setGivenBy(v as typeof givenBy)} className="space-y-2">
           <div className="flex items-start gap-3">
             <RadioGroupItem value="legal_representative" id="pf-rep" className="mt-0.5" />

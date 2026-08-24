@@ -8,6 +8,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { CampoLabel } from "@/components/campo-label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -88,7 +89,7 @@ const WEEKDAYS = [
 function TimesList({ times, onChange }: { times: string[]; onChange: (t: string[]) => void }) {
   return (
     <div className="space-y-2">
-      <Label>Horários</Label>
+      <CampoLabel obrigatorio>Horários</CampoLabel>
       {times.map((t, i) => (
         <div key={i} className="flex gap-2">
           <Input
@@ -387,14 +388,14 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="space-y-2 col-span-2">
-          <Label htmlFor="tf-med">Medicamento</Label>
+          <CampoLabel htmlFor="tf-med" obrigatorio>Medicamento</CampoLabel>
           <Input id="tf-med" value={medicationName} onChange={(e) => setMedicationName(e.target.value)} required autoFocus />
           {lowConfidenceFields.has("name") && (
             <p className="text-xs text-zelo-amber-fg flex items-center gap-1"><AlertTriangle className="w-3.5 h-3.5" /> Não deu pra ler isso na foto com confiança — confira e preencha.</p>
           )}
         </div>
         <div className="space-y-2 col-span-2">
-          <Label htmlFor="tf-dose">Dose (texto livre — "1 comprimido", "5ml"…)</Label>
+          <Label htmlFor="tf-dose">Dose (texto livre: "1 comprimido", "5ml"…)</Label>
           <Input id="tf-dose" value={dose} onChange={(e) => setDose(e.target.value)} placeholder="1 comprimido" />
           {(lowConfidenceFields.has("concentration") || lowConfidenceFields.has("form")) && (
             <p className="text-xs text-zelo-amber-fg flex items-center gap-1"><AlertTriangle className="w-3.5 h-3.5" /> Não deu pra ler isso na foto com confiança — confira e preencha.</p>
@@ -403,7 +404,7 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
       </div>
 
       <div className="space-y-2">
-        <Label>Padrão de posologia</Label>
+        <CampoLabel obrigatorio>Padrão de posologia</CampoLabel>
         {scheduleGuessApplied && (
           <p className="text-xs text-zelo-green-fg">Preenchido a partir da receita — confira antes de salvar.</p>
         )}
@@ -423,11 +424,11 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
         {scheduleType === "every_n_hours" && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>A cada quantas horas</Label>
+              <CampoLabel obrigatorio>A cada quantas horas</CampoLabel>
               <Input type="number" min={1} value={intervalHours} onChange={(e) => setIntervalHours(Number(e.target.value))} />
             </div>
             <div className="space-y-2">
-              <Label>Primeira dose às</Label>
+              <CampoLabel obrigatorio>Primeira dose às</CampoLabel>
               <Input type="time" value={everyNStartTime} onChange={(e) => setEveryNStartTime(e.target.value)} />
             </div>
           </div>
@@ -436,7 +437,7 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
         {scheduleType === "specific_weekdays" && (
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>Dias da semana</Label>
+              <CampoLabel obrigatorio>Dias da semana</CampoLabel>
               <div className="flex gap-3 flex-wrap">
                 {WEEKDAYS.map((w) => (
                   <label key={w.value} className="flex items-center gap-1.5 cursor-pointer">
@@ -461,11 +462,11 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
           <div className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Dias tomando</Label>
+                <CampoLabel obrigatorio>Dias tomando</CampoLabel>
                 <Input type="number" min={1} value={onDays} onChange={(e) => setOnDays(Number(e.target.value))} />
               </div>
               <div className="space-y-2">
-                <Label>Dias de pausa</Label>
+                <CampoLabel obrigatorio>Dias de pausa</CampoLabel>
                 <Input type="number" min={0} value={offDays} onChange={(e) => setOffDays(Number(e.target.value))} />
               </div>
             </div>
@@ -476,11 +477,11 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label htmlFor="tf-start">Início</Label>
+          <CampoLabel htmlFor="tf-start" obrigatorio>Início</CampoLabel>
           <Input id="tf-start" type="date" value={startDate} onChange={(e) => { setStartDate(e.target.value); setPreview(null); }} required />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="tf-end">Fim (opcional — contínuo se vazio)</Label>
+          <Label htmlFor="tf-end">Fim (opcional, contínuo se vazio)</Label>
           <Input id="tf-end" type="date" value={endDate} onChange={(e) => { setEndDate(e.target.value); setPreview(null); }} />
         </div>
       </div>
@@ -498,11 +499,11 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
         {trackStock && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="tf-stock-qty">Quantidade na caixa/cartela</Label>
+              <CampoLabel htmlFor="tf-stock-qty" obrigatorio>Quantidade na caixa/cartela</CampoLabel>
               <Input id="tf-stock-qty" type="number" min={0} value={stockQuantity} onChange={(e) => setStockQuantity(e.target.value)} placeholder="30" />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="tf-stock-unit">Unidade</Label>
+              <CampoLabel htmlFor="tf-stock-unit" obrigatorio>Unidade</CampoLabel>
               <Input id="tf-stock-unit" value={stockUnit} onChange={(e) => setStockUnit(e.target.value)} placeholder="comprimidos" />
             </div>
             <div className="space-y-2 col-span-2">

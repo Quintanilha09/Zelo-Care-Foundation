@@ -8,6 +8,7 @@ import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { CampoLabel } from '@/components/campo-label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -94,12 +95,12 @@ function LoginForm() {
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
         <div className="space-y-2">
-          <Label htmlFor="login-email">E-mail</Label>
+          <CampoLabel htmlFor="login-email" obrigatorio>E-mail</CampoLabel>
           <Input id="login-email" type="email" autoComplete="email" value={email}
             onChange={(e) => setEmail(e.target.value)} required />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="login-password">Senha</Label>
+          <CampoLabel htmlFor="login-password" obrigatorio>Senha</CampoLabel>
           <Input id="login-password" type="password" autoComplete="current-password"
             value={password} onChange={(e) => setPassword(e.target.value)} required />
         </div>
@@ -205,16 +206,16 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
         <div className="space-y-2">
-          <Label htmlFor="reg-name">Nome completo</Label>
+          <CampoLabel htmlFor="reg-name" obrigatorio>Nome completo</CampoLabel>
           <Input id="reg-name" value={name} onChange={(e) => setName(e.target.value)} required minLength={2} />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="reg-email">E-mail</Label>
+          <CampoLabel htmlFor="reg-email" obrigatorio>E-mail</CampoLabel>
           <Input id="reg-email" type="email" autoComplete="email" value={email}
             onChange={(e) => setEmail(e.target.value)} required />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="reg-password">Senha (mínimo 8 caracteres)</Label>
+          <CampoLabel htmlFor="reg-password" obrigatorio>Senha (mínimo 8 caracteres)</CampoLabel>
           <Input id="reg-password" type="password" autoComplete="new-password"
             value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8} />
         </div>
@@ -291,7 +292,7 @@ function ForgotPasswordForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-2">
-        <Label htmlFor="forgot-email">Seu e-mail cadastrado</Label>
+        <CampoLabel htmlFor="forgot-email" obrigatorio>Seu e-mail cadastrado</CampoLabel>
         <Input id="forgot-email" type="email" value={email}
           onChange={(e) => setEmail(e.target.value)} required />
       </div>
