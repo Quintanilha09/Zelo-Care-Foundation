@@ -184,7 +184,7 @@ export default function AdherenceCalendarPage({ params }: { params: { id: string
 
         <div>
           <h2 className="text-2xl font-semibold">Histórico</h2>
-          <p className="text-muted-foreground text-[15px]">O que aconteceu, sem boletim de notas.</p>
+          <p className="text-muted-foreground text-[17px]">O que aconteceu, sem boletim de notas.</p>
         </div>
 
         {calendar?.planLimited && (
@@ -255,7 +255,7 @@ export default function AdherenceCalendarPage({ params }: { params: { id: string
 
         {calendar && (
           <div className="rounded-lg border p-4 space-y-3">
-            <p className="text-[15px]">
+            <p className="text-[17px]">
               {calendar.summary.adherenceRate === null
                 ? "Sem doses agendadas neste período."
                 : `${Math.round(calendar.summary.adherenceRate * 100)}% de adesão no período — ${calendar.summary.totalUnregistered} dose(s) ficaram sem registro.`}
@@ -286,7 +286,7 @@ export default function AdherenceCalendarPage({ params }: { params: { id: string
         <div className="rounded-lg border p-4 space-y-3">
           <div className="flex items-center gap-2">
             <FileText className="w-4 h-4 text-muted-foreground" />
-            <p className="text-[15px] font-medium">Relatório para o médico</p>
+            <p className="text-[17px] font-medium">Relatório para o médico</p>
           </div>
           <p className="text-sm text-muted-foreground">
             PDF do período em exibição ({from} a {to}), pronto pra imprimir ou enviar por link. Nunca interpreta os dados — só mostra o que foi registrado.

@@ -229,7 +229,7 @@ export default function AppointmentsPage({ params }: { params: { id: string } })
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-semibold">Consultas e exames</h2>
-            <p className="text-muted-foreground text-[15px]">Lembretes em 1 semana, 1 dia e 2 horas antes.</p>
+            <p className="text-muted-foreground text-[17px]">Lembretes em 1 semana, 1 dia e 2 horas antes.</p>
           </div>
           <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="w-4 h-4" /> Nova</Button>
         </div>

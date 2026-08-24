@@ -335,7 +335,7 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
     <form onSubmit={handleSubmit} className="space-y-5">
       <div className="rounded-lg border border-dashed p-4 space-y-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <Label htmlFor="tf-photo" className="flex items-center gap-2 cursor-pointer text-[15px] font-medium min-w-0">
+          <Label htmlFor="tf-photo" className="flex items-center gap-2 cursor-pointer text-[17px] font-medium min-w-0">
             <Camera className="w-4 h-4 shrink-0" /> <span>Cadastrar por foto da caixa ou da receita (opcional)</span>
           </Label>
           <input
@@ -484,7 +484,7 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
       </div>
 
       <div className="rounded-lg border p-4 space-y-3">
-        <label className="flex items-center gap-2 cursor-pointer text-[15px] font-medium">
+        <label className="flex items-center gap-2 cursor-pointer text-[17px] font-medium">
           <Checkbox checked={trackStock} onCheckedChange={(c) => setTrackStock(c === true)} />
           Acompanhar estoque (opcional)
         </label>
@@ -525,7 +525,7 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
           {previewLoading ? "Calculando…" : "Ver próximas doses"}
         </Button>
         {preview && (
-          <div className="rounded-lg border bg-zelo-green-bg border-zelo-green/20 p-4 text-[15px]">
+          <div className="rounded-lg border bg-zelo-green-bg border-zelo-green/20 p-4 text-[17px]">
             <p className="font-medium mb-1">Próximas doses:</p>
             <p className="text-muted-foreground">{preview.join(", ")}</p>
           </div>

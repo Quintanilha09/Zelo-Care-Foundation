@@ -70,7 +70,7 @@ export default function TodaySummaryPage() {
       <main className="max-w-2xl mx-auto px-5 py-6 space-y-5">
         <div>
           <h2 className="text-2xl font-semibold">O dia de todos</h2>
-          <p className="text-muted-foreground text-[15px]">
+          <p className="text-muted-foreground text-[17px]">
             Quem precisa de atenção agora aparece primeiro.
           </p>
         </div>
@@ -83,7 +83,7 @@ export default function TodaySummaryPage() {
         )}
 
         {isError && (
-          <div className="rounded-xl border px-4 py-3 text-[15px]">
+          <div className="rounded-xl border px-4 py-3 text-[17px]">
             {error instanceof Error ? error.message : "Não foi possível carregar o painel do dia."}
           </div>
         )}
@@ -110,7 +110,7 @@ export default function TodaySummaryPage() {
               {precisamDeAtencao.length > 0 ? (
                 <>
                   <AlertCircle className="w-5 h-5 text-zelo-amber-fg shrink-0" />
-                  <p className="text-zelo-amber-fg font-medium text-[15px]">
+                  <p className="text-zelo-amber-fg font-medium text-[17px]">
                     {precisamDeAtencao.length === 1
                       ? "Uma pessoa precisa de atenção agora."
                       : `${precisamDeAtencao.length} pessoas precisam de atenção agora.`}
@@ -119,7 +119,7 @@ export default function TodaySummaryPage() {
               ) : (
                 <>
                   <CheckCircle2 className="w-5 h-5 text-zelo-green-fg shrink-0" />
-                  <p className="text-zelo-green-fg font-medium text-[15px]">Está tudo em dia hoje.</p>
+                  <p className="text-zelo-green-fg font-medium text-[17px]">Está tudo em dia hoje.</p>
                 </>
               )}
             </div>

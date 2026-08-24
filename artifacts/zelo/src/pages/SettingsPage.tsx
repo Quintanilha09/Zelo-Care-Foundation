@@ -38,7 +38,7 @@ export default function SettingsPage() {
       <main className="max-w-2xl mx-auto px-5 py-8 space-y-6">
         <div>
           <h2 className="text-2xl font-semibold">Ajustes</h2>
-          <p className="text-muted-foreground text-[15px]">Configurações da família.</p>
+          <p className="text-muted-foreground text-[17px]">Configurações da família.</p>
         </div>
 
         <div className="space-y-3">

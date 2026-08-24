@@ -31,7 +31,7 @@ export function DoseCard({ medicationName, dosage, time, status, takenBy, takenA
           <p className="text-muted-foreground mt-1 text-[17px]">{dosage}</p>
         </div>
         <div className={cn(
-          "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[15px] font-medium border",
+          "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[17px] font-medium border",
           isTaken ? "bg-zelo-green/10 text-zelo-green-fg border-zelo-green/20" : "bg-zelo-amber/20 text-zelo-amber-fg border-zelo-amber/20"
         )}>
           {isTaken ? <Check className="w-4 h-4" /> : <Clock className="w-4 h-4" />}

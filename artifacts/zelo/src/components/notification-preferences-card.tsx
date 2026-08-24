@@ -56,7 +56,7 @@ export function NotificationPreferencesCard({ patientId }: { patientId: number }
       <div className="space-y-2.5">
         {ORDER.map((category) => (
           <div key={category} className="flex items-center justify-between">
-            <Label htmlFor={`notif-${category}`} className="text-[15px] font-normal">
+            <Label htmlFor={`notif-${category}`} className="text-[17px] font-normal">
               {LABELS[category]}
             </Label>
             <Switch

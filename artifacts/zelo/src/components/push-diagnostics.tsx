@@ -88,7 +88,7 @@ export function PushDiagnostics() {
 
       {supported && (
         <>
-          <dl className="text-[15px] space-y-1.5">
+          <dl className="text-[17px] space-y-1.5">
             <div className="flex justify-between">
               <dt className="text-muted-foreground">Permissão</dt>
               <dd>{permissionLabel(permission)}</dd>

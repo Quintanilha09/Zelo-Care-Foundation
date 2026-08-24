@@ -203,7 +203,7 @@ export default function RoutinePage({ params }: { params: { id: string } }) {
 
         <div>
           <h2 className="text-2xl font-semibold">Rotina e aferições</h2>
-          <p className="text-muted-foreground text-[15px]">Só o que foi registrado — sem interpretação nenhuma.</p>
+          <p className="text-muted-foreground text-[17px]">Só o que foi registrado — sem interpretação nenhuma.</p>
         </div>
 
         {patient?.emergencyContactName ? (

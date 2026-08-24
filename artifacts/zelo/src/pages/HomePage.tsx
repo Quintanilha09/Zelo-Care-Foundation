@@ -384,14 +384,14 @@ export default function HomePage() {
               {bannerAmber ? (
                 <>
                   <AlertCircle className="w-5 h-5 text-zelo-amber-fg shrink-0" />
-                  <p className="text-zelo-amber-fg font-medium text-[15px]">
+                  <p className="text-zelo-amber-fg font-medium text-[17px]">
                     {home.lateDoses === 1 ? "Uma dose de hoje ficou sem registro." : `${home.lateDoses} doses de hoje ficaram sem registro.`}
                   </p>
                 </>
               ) : (
                 <>
                   <CheckCircle2 className="w-5 h-5 text-zelo-green-fg shrink-0" />
-                  <p className="text-zelo-green-fg font-medium text-[15px]">Tudo em dia hoje.</p>
+                  <p className="text-zelo-green-fg font-medium text-[17px]">Tudo em dia hoje.</p>
                 </>
               )}
             </div>
@@ -434,7 +434,7 @@ export default function HomePage() {
                 <AnimatePresence initial={false}>
                   {perdidas.map((d) => (
                     <motion.div key={d.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-2 mb-2">
-                      <div className="flex items-center justify-between px-4 py-3 rounded-lg border border-zelo-amber/20 bg-zelo-amber-bg/40 text-[15px]">
+                      <div className="flex items-center justify-between px-4 py-3 rounded-lg border border-zelo-amber/20 bg-zelo-amber-bg/40 text-[17px]">
                         <span>{d.medicationName}{d.dose ? ` — ${d.dose}` : ""}</span>
                         <span className="text-muted-foreground">{d.scheduledLocalTime}</span>
                       </div>
@@ -455,7 +455,7 @@ export default function HomePage() {
                 <h3 className="text-sm font-medium text-muted-foreground">Mais tarde</h3>
                 <AnimatePresence initial={false}>
                   {maisTarde.map((d) => (
-                    <motion.div key={d.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center justify-between px-4 py-3 rounded-lg border bg-card text-[15px] mb-2">
+                    <motion.div key={d.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center justify-between px-4 py-3 rounded-lg border bg-card text-[17px] mb-2">
                       <span>{d.medicationName}{d.dose ? ` — ${d.dose}` : ""}</span>
                       <span className="text-muted-foreground">{d.scheduledLocalTime}</span>
                     </motion.div>
@@ -476,7 +476,7 @@ export default function HomePage() {
                 </div>
                 <AnimatePresence initial={false}>
                   {jaFoi.map((d) => (
-                    <motion.div key={d.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center justify-between px-4 py-3 rounded-lg border bg-zelo-green-bg/40 text-[15px] mb-2">
+                    <motion.div key={d.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center justify-between px-4 py-3 rounded-lg border bg-zelo-green-bg/40 text-[17px] mb-2">
                       <span>✓ {d.medicationName} {d.scheduledLocalTime}</span>
                       <span className="text-muted-foreground">{d.registeredByCaregiverName ?? "—"}</span>
                     </motion.div>

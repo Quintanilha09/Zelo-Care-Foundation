@@ -100,13 +100,13 @@ export default function SettingsNotificationsPage() {
 
         <div>
           <h2 className="text-2xl font-semibold">Notificações</h2>
-          <p className="text-muted-foreground text-[15px]">O que aparece na notificação e quando ela chama todo mundo.</p>
+          <p className="text-muted-foreground text-[17px]">O que aparece na notificação e quando ela chama todo mundo.</p>
         </div>
 
         <div className="p-4 rounded-xl border bg-card space-y-3">
           <div className="flex items-center justify-between gap-4">
             <div className="space-y-1">
-              <Label htmlFor="st-show-med" className="text-[15px] font-normal">Exibir o medicamento na notificação</Label>
+              <Label htmlFor="st-show-med" className="text-[17px] font-normal">Exibir o medicamento na notificação</Label>
               <p className="text-sm text-muted-foreground">
                 Desligado por padrão: a notificação diz só "está na hora do remédio", nunca o nome — qualquer pessoa perto do celular veria um dado de saúde na tela de bloqueio.
               </p>
@@ -124,7 +124,7 @@ export default function SettingsNotificationsPage() {
         <div className="p-4 rounded-xl border bg-card space-y-4">
           <div className="flex items-center justify-between gap-4">
             <div className="space-y-1">
-              <Label htmlFor="st-quiet-hours" className="text-[15px] font-normal">Silêncio noturno</Label>
+              <Label htmlFor="st-quiet-hours" className="text-[17px] font-normal">Silêncio noturno</Label>
               <p className="text-sm text-muted-foreground">
                 Nesse período, uma dose sem registro não chama os outros cuidadores (a não ser que o tratamento esteja marcado como "crítico") — só o cuidador principal continua avisado.
               </p>

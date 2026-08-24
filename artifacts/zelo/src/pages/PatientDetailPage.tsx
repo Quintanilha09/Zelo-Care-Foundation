@@ -266,7 +266,7 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-semibold">{patient?.name ?? "…"}</h2>
-            <p className="text-muted-foreground text-[15px]">{patient?.timezone}</p>
+            <p className="text-muted-foreground text-[17px]">{patient?.timezone}</p>
           </div>
           <div className="flex items-center gap-2">
             <Link href={`/pacientes/${params.id}/rotina`}>
@@ -342,7 +342,7 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h3 className="text-[18px] font-semibold">{t.medicationName}</h3>
-                  {t.dose && <p className="text-muted-foreground text-[15px]">{t.dose}</p>}
+                  {t.dose && <p className="text-muted-foreground text-[17px]">{t.dose}</p>}
                 </div>
                 <span className="text-xs px-2.5 py-1 rounded-full bg-muted text-muted-foreground shrink-0">
                   {STATUS_LABELS[t.status] ?? t.status}
@@ -367,7 +367,7 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <h3 className="text-[18px] font-semibold text-muted-foreground">{t.medicationName}</h3>
-                      {t.dose && <p className="text-muted-foreground text-[15px]">{t.dose}</p>}
+                      {t.dose && <p className="text-muted-foreground text-[17px]">{t.dose}</p>}
                     </div>
                     <span className="text-xs px-2.5 py-1 rounded-full bg-muted text-muted-foreground shrink-0">
                       {STATUS_LABELS[t.status] ?? t.status}

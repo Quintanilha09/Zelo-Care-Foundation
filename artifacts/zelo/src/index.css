@@ -134,7 +134,21 @@
   * {
     @apply border-border;
   }
+  /*
+   * Tipografia base de 18px — REQ-F03.
+   *
+   * Faltava desde a fundação: o body não definia font-size nenhum e herdava os
+   * 16px padrão do navegador, enquanto os tamanhos eram aplicados à mão em 72
+   * classes espalhadas por 18 arquivos. A auditoria §10 (23/08/2026) encontrou
+   * que a mais frequente era text-[15px] — MENOR que o padrão do navegador, num
+   * app cujo público inclui idosos e cuidadores de 30 a 60 anos.
+   *
+   * 18px é a base declarada no design system desde o começo. Aqui ela passa a
+   * valer de fato para todo texto sem classe explícita.
+   */
   body {
     @apply font-sans antialiased bg-background text-foreground;
+    font-size: 18px;
+    line-height: 1.6;
   }
 }

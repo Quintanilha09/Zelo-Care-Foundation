@@ -65,7 +65,7 @@ export default function PatientsPage() {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-semibold">Quem você cuida</h2>
-            <p className="text-muted-foreground text-[15px]">Escolha um paciente para ver os tratamentos.</p>
+            <p className="text-muted-foreground text-[17px]">Escolha um paciente para ver os tratamentos.</p>
           </div>
           <Dialog open={open} onOpenChange={handleOpenChange}>
             <Button onClick={handleAddClick} className="gap-2">

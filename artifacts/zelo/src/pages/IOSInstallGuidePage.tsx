@@ -43,13 +43,13 @@ export default function IOSInstallGuidePage() {
 
         <div>
           <h2 className="text-2xl font-semibold">Ativar lembretes no iPhone</h2>
-          <p className="text-muted-foreground text-[15px]">
+          <p className="text-muted-foreground text-[17px]">
             No iPhone e iPad, o Safari só entrega lembretes depois que o ZELO é adicionado à Tela de Início.
           </p>
         </div>
 
         {alreadyInstalled ? (
-          <div className="p-4 rounded-xl border bg-zelo-green-bg/40 text-[15px]">
+          <div className="p-4 rounded-xl border bg-zelo-green-bg/40 text-[17px]">
             Você já está usando o ZELO como app instalado. Pode voltar para{" "}
             <Link href="/ajustes" className="underline font-medium">Ajustes</Link> e ativar os lembretes por lá.
           </div>
@@ -57,7 +57,7 @@ export default function IOSInstallGuidePage() {
           <div className="space-y-4">
             {STEPS.map((step, i) => (
               <div key={step.title} className="flex gap-4 p-4 rounded-xl border bg-card">
-                <div className="shrink-0 w-9 h-9 rounded-full bg-zelo-green-bg flex items-center justify-center text-zelo-green-fg font-semibold text-[15px]">
+                <div className="shrink-0 w-9 h-9 rounded-full bg-zelo-green-bg flex items-center justify-center text-zelo-green-fg font-semibold text-[17px]">
                   {i + 1}
                 </div>
                 <div className="space-y-1">

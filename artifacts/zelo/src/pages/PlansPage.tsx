@@ -69,7 +69,7 @@ export default function PlansPage() {
 
         <div>
           <h2 className="text-2xl font-semibold">Planos</h2>
-          <p className="text-muted-foreground text-[15px]">
+          <p className="text-muted-foreground text-[17px]">
             Seu plano atual: <span className="font-medium text-foreground">{user?.plan?.label ?? "Grátis"}</span>
           </p>
         </div>
@@ -132,7 +132,7 @@ export default function PlansPage() {
         </div>
 
         <div className="rounded-xl border bg-card p-4 space-y-2">
-          <p className="font-medium text-[15px]">Em todos os planos, inclusive no Grátis</p>
+          <p className="font-medium text-[17px]">Em todos os planos, inclusive no Grátis</p>
           <ul className="space-y-1.5">
             {ALWAYS_INCLUDED.map((item) => (
               <li key={item} className="flex items-start gap-2 text-sm text-muted-foreground">

@@ -64,3 +64,12 @@ container `zelo-test-pg`, ou definir senha para o papel `zelo_dev` na instância
 
 O que roda hoje sem banco: `pnpm run typecheck` (exit 0, 4 pacotes), `pnpm run test:libs`
 (33 casos, 33 passando) e `pnpm --filter @workspace/api-server run lint:clock`.
+
+## Descoberto durante a execução — o frontend não roda aqui
+
+`pnpm-workspace.yaml:51` exclui 79 binários de plataforma não-Linux, então o `vite` não inicia no
+Windows (falta `@rollup/rollup-win32-x64-msvc`). Backend compila e testa normalmente; frontend, não.
+
+**Isso bloqueia a fase 11.5** — não se escreve teste de UI numa máquina onde a UI não abre — e é a
+causa raiz de os quatro bugs mais caros desta história terem sido todos de frontend, descobertos
+pelo fundador em produção. Corrigir isso merece fase própria: mexe no lockfile.

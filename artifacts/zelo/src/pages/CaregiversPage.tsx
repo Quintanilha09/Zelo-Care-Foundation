@@ -248,7 +248,7 @@ export default function CaregiversPage() {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-semibold">Quem cuida com você</h2>
-            <p className="text-muted-foreground text-[15px]">Presença da família, visível para todo mundo.</p>
+            <p className="text-muted-foreground text-[17px]">Presença da família, visível para todo mundo.</p>
           </div>
           {isPrimary && (
             <InviteDialog onCreated={invalidate} plan={user?.plan} caregiverCount={caregivers?.length ?? 0} />
