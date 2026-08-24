@@ -60,7 +60,7 @@ um `code`; o usuário vê "tente de novo".
 | 12-09 | **Asterisco (`*`) nos campos obrigatórios — em todo o app**, não só em Nova consulta |
 | 12-10 | **Especialidade vira lista filtrável** (combobox): lista completa, filtra enquanto digita, seleciona da lista. Não aceita texto livre |
 | 12-11 | **Cores diferentes entre Atividades e Aferições**, para distinguir visualmente o que foi feito |
-| 12-13 | **Limpar o lixo de teste no banco de dev e impedir que volte.** A suíte de integração cria família e não remove: em 24/08/2026 havia ~90 famílias órfãs ("Família de Teste Auth", "Família A/B Isolamento", "Família ExportDel"), quase todas com 0 pacientes. Não afeta produção, mas cresce a cada rodada e atrapalha inspeção — foi por isso que a família real do fundador (id 221) ficou perdida no meio da listagem. Precisa de duas coisas: um `DELETE` pontual do que já existe, e um `after` nos testes que remova o que cada um criou |
+| 12-13 | ✅ **Limpar o lixo de teste no banco de dev e impedir que volte.** Resolvido em 24/08/2026. Diagnóstico: `families` é a raiz e tem cascade para `patients` e `caregivers`, mas **nada cascateia a partir de `users`** — os `after` apagavam o usuário e a família ficava. Dois testes vazavam de verdade (`auth`, `export-deletion`); o resto do lixo veio de execuções **interrompidas**, em que o `after` nem chegou a rodar. Correção: os dois `after` passaram a apagar a família **por padrão de nome**, não por id capturado — assim a limpeza é idempotente e recolhe também o resíduo de runs anteriores. Para o histórico já acumulado: `pnpm --filter @workspace/db run limpar-orfas` (simula por padrão; `--apagar` executa). |
 
 ### ⏸️ Precisa de decisão antes de executar
 

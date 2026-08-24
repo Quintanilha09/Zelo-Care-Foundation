@@ -13,7 +13,7 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
-import { eq, and } from "drizzle-orm";
+import { eq, and, like } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   usersTable, caregiversTable, familiesTable, patientsTable,
@@ -90,6 +90,16 @@ before(async () => {
 after(async () => {
   await closeServer();
   Clock.reset();
+  // Apaga a FAMÍLIA, não só o usuário. `families` é a raiz: patients e
+  // caregivers têm cascade a partir dela, mas nada cascateia a partir de
+  // `users` — apagar o usuário deixava a família para trás. Em 24/08/2026
+  // havia ~90 famílias órfãs acumuladas no banco de dev.
+  //
+  // Por PADRÃO DE NOME, não por id capturado: assim também recolhe o lixo de
+  // execuções anteriores que morreram antes do `after` — que é como a maior
+  // parte das órfãs apareceu. Torna a limpeza idempotente, mesma regra que
+  // este projeto já aplica aos hooks `before`.
+  await db.delete(familiesTable).where(like(familiesTable.name, "Família ExportDel %"));
 });
 
 function api(token: string, method: string, path: string, body?: unknown) {

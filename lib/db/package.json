@@ -11,7 +11,8 @@
     "push": "drizzle-kit push --config ./drizzle.config.ts",
     "push-force": "drizzle-kit push --force --config ./drizzle.config.ts",
     "push:raw": "tsx src/apply-raw-sql.ts",
-    "plano": "node scripts/definir-plano.mjs"
+    "plano": "node scripts/definir-plano.mjs",
+    "limpar-orfas": "node scripts/limpar-orfas.mjs"
   },
   "dependencies": {
     "drizzle-orm": "catalog:",
