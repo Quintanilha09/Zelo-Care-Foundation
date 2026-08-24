@@ -13,6 +13,7 @@ import { authFetch } from "@/lib/auth-client";
 import { useToast } from "@/hooks/use-toast";
 import { PlanPaywall } from "@/components/plan-paywall";
 import { CampoLabel } from "@/components/campo-label";
+import { SeletorEspecialidade } from "@/components/seletor-especialidade";
 import { useAuth } from "@/context/AuthContext";
 import { appointmentsAllowed, appointmentsBlockedMessage } from "@/lib/plan-limits-client";
 import { AppHeader } from "@/components/app-header";
@@ -122,7 +123,25 @@ export default function AppointmentsPage({ params }: { params: { id: string } })
   const detail = (appointments ?? []).find((a) => a.id === detailId) ?? null;
 
   const handleCreate = async () => {
-    if (!createForm.specialty || !createForm.date || !createForm.time) return;
+    // Nada de `return` mudo: apertar Agendar e não acontecer nada é
+    // indistinguível de app quebrado — lição que custou três rodadas no modo
+    // idoso. Diz qual campo falta.
+    const faltando = [
+      !createForm.specialty && "especialidade",
+      !createForm.date && "data",
+      !createForm.time && "hora",
+    ].filter(Boolean) as string[];
+
+    if (faltando.length > 0) {
+      toast({
+        description:
+          faltando.length === 1
+            ? `Falta preencher a ${faltando[0]}.`
+            : `Falta preencher: ${faltando.join(', ')}.`,
+        variant: "destructive",
+      });
+      return;
+    }
     setSaving(true);
     try {
       const res = await authFetch(`/api/patients/${params.id}/appointments`, {
@@ -233,7 +252,7 @@ export default function AppointmentsPage({ params }: { params: { id: string } })
       </div>
       <div>
         <CampoLabel obrigatorio>Especialidade</CampoLabel>
-        <Input value={form.specialty} onChange={(e) => setForm({ ...form, specialty: e.target.value })} placeholder="Cardiologia" required />
+        <SeletorEspecialidade value={form.specialty} onChange={(v) => setForm({ ...form, specialty: v })} />
       </div>
       <div>
         <Label>Médico(a)</Label>
