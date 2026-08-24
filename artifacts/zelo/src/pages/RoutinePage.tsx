@@ -57,7 +57,7 @@ async function fetchPatient(patientId: string): Promise<Patient> {
 }
 async function fetchMeasurements(patientId: string): Promise<Measurement[]> {
   const res = await authFetch(`/api/patients/${patientId}/health-measurements`);
-  if (!res.ok) throw new Error("Erro ao carregar aferições");
+  if (!res.ok) throw new Error("Erro ao carregar medições");
   return res.json();
 }
 async function fetchActivities(patientId: string): Promise<RoutineActivity[]> {
@@ -128,7 +128,7 @@ export default function RoutinePage({ params }: { params: { id: string } }) {
         }),
       });
       if (!res.ok) throw new Error();
-      toast({ description: "Aferição registrada" });
+      toast({ description: "Medição registrada" });
       setMeasurementDialogOpen(false);
       setMValue(""); setMNotes("");
       invalidateMeasurements();
@@ -141,7 +141,7 @@ export default function RoutinePage({ params }: { params: { id: string } }) {
 
   const handleDeleteMeasurement = async (id: number) => {
     const res = await authFetch(`/api/patients/${params.id}/health-measurements/${id}`, { method: "DELETE" });
-    if (res.ok) { toast({ description: "Aferição removida" }); invalidateMeasurements(); }
+    if (res.ok) { toast({ description: "Medição removida" }); invalidateMeasurements(); }
   };
 
   const handleSaveActivity = async () => {
@@ -202,8 +202,8 @@ export default function RoutinePage({ params }: { params: { id: string } }) {
         </Link>
 
         <div>
-          <h2 className="text-2xl font-semibold">Rotina e aferições</h2>
-          <p className="text-muted-foreground text-[17px]">Só o que foi registrado — sem interpretação nenhuma.</p>
+          <h2 className="text-2xl font-semibold">Rotina e medições</h2>
+
         </div>
 
         {patient?.emergencyContactName ? (
@@ -221,10 +221,10 @@ export default function RoutinePage({ params }: { params: { id: string } }) {
           </button>
         )}
 
-        {/* ── Aferições ──────────────────────────────────────────────── */}
+        {/* ── Medições ──────────────────────────────────────────────── */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="font-medium">Aferições</h3>
+            <h3 className="font-medium">Medições</h3>
             <Button size="sm" onClick={() => setMeasurementDialogOpen(true)} className="gap-2"><Plus className="w-4 h-4" /> Registrar</Button>
           </div>
 
@@ -252,16 +252,16 @@ export default function RoutinePage({ params }: { params: { id: string } }) {
             </div>
           ) : (
             <p className="text-sm text-muted-foreground py-4 text-center border rounded-lg border-dashed">
-              Registre pelo menos 2 aferições de {MEASUREMENT_LABELS[chartType].toLowerCase()} pra ver o gráfico.
+              Registre pelo menos 2 medições de {MEASUREMENT_LABELS[chartType].toLowerCase()} pra ver o gráfico.
             </p>
           )}
 
           <div className="space-y-1.5">
             {(measurements ?? []).map((m) => (
-              <div key={m.id} className="flex items-center justify-between text-sm border-b pb-1.5 last:border-0">
+              <div key={m.id} className="flex items-center justify-between text-sm border-b pb-1.5 last:border-0 border-l-4 border-l-zelo-measure pl-3 bg-zelo-measure-bg/40 rounded-r">
                 <div>
                   <span className="font-medium">{MEASUREMENT_LABELS[m.type]}</span>
-                  {" — "}{m.value}{m.unit ? ` ${m.unit}` : ""}
+                  {": "}{m.value}{m.unit ? ` ${m.unit}` : ""}
                   <span className="text-muted-foreground"> · {formatDateTime(m.measuredAt)}</span>
                   {m.notes && <p className="text-muted-foreground text-xs mt-0.5">{m.notes}</p>}
                 </div>
@@ -270,7 +270,7 @@ export default function RoutinePage({ params }: { params: { id: string } }) {
                 </button>
               </div>
             ))}
-            {measurements?.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma aferição registrada ainda.</p>}
+            {measurements?.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma medição registrada ainda.</p>}
           </div>
         </div>
 
@@ -284,10 +284,10 @@ export default function RoutinePage({ params }: { params: { id: string } }) {
           </div>
           <div className="space-y-1.5">
             {(activities ?? []).map((a) => (
-              <div key={a.id} className="flex items-center justify-between text-sm border-b pb-1.5 last:border-0">
+              <div key={a.id} className="flex items-center justify-between text-sm border-b pb-1.5 last:border-0 border-l-4 border-l-zelo-green pl-3 bg-zelo-green-bg/40 rounded-r">
                 <div>
                   <span className="font-medium">{ACTIVITY_LABELS[a.type]}</span>
-                  {" — "}{a.done ? "feito" : "não feito"}
+                  {": "}{a.done ? "feito" : "não feito"}
                   <span className="text-muted-foreground"> · {formatDateTime(a.occurredAt)}</span>
                   {a.notes && <p className="text-muted-foreground text-xs mt-0.5">{a.notes}</p>}
                 </div>
@@ -303,7 +303,7 @@ export default function RoutinePage({ params }: { params: { id: string } }) {
 
       <Dialog open={measurementDialogOpen} onOpenChange={setMeasurementDialogOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Registrar aferição</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Registrar medição</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div>
               <Label>Tipo</Label>

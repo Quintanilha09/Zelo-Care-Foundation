@@ -280,7 +280,14 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
         method: "POST",
         body: JSON.stringify({ name: medicationName.trim() }),
       });
-      if (!medRes.ok) throw new Error("Erro ao registrar medicamento");
+      if (!medRes.ok) {
+        // A mensagem fixa que estava aqui descartava a resposta do servidor.
+        // Quem batia no limite de 3 medicamentos do plano gratuito via
+        // "Erro ao registrar medicamento" — sem saber que era limite de plano,
+        // e sem nada a fazer a respeito.
+        const erro = (await medRes.json().catch(() => ({}))) as { error?: string; code?: string };
+        throw new Error(erro.error ?? "Não foi possível registrar o medicamento.");
+      }
       const medication = (await medRes.json()) as { id: number };
 
       const res = await authFetch(`/api/patients/${patientId}/treatments`, {
@@ -378,7 +385,7 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="space-y-2 col-span-2">
           <Label htmlFor="tf-med">Medicamento</Label>
           <Input id="tf-med" value={medicationName} onChange={(e) => setMedicationName(e.target.value)} required autoFocus />
@@ -414,7 +421,7 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
         {scheduleType === "times_per_day" && <TimesList times={times} onChange={setTimes} />}
 
         {scheduleType === "every_n_hours" && (
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>A cada quantas horas</Label>
               <Input type="number" min={1} value={intervalHours} onChange={(e) => setIntervalHours(Number(e.target.value))} />
@@ -452,7 +459,7 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
 
         {scheduleType === "cycle_with_pause" && (
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Dias tomando</Label>
                 <Input type="number" min={1} value={onDays} onChange={(e) => setOnDays(Number(e.target.value))} />
@@ -467,7 +474,7 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor="tf-start">Início</Label>
           <Input id="tf-start" type="date" value={startDate} onChange={(e) => { setStartDate(e.target.value); setPreview(null); }} required />
@@ -489,7 +496,7 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
           Acompanhar estoque (opcional)
         </label>
         {trackStock && (
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="tf-stock-qty">Quantidade na caixa/cartela</Label>
               <Input id="tf-stock-qty" type="number" min={0} value={stockQuantity} onChange={(e) => setStockQuantity(e.target.value)} placeholder="30" />

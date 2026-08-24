@@ -11,6 +11,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { authFetch } from "@/lib/auth-client";
 import { useToast } from "@/hooks/use-toast";
+import { PlanPaywall } from "@/components/plan-paywall";
+import { CampoLabel } from "@/components/campo-label";
 import { AppHeader } from "@/components/app-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -80,6 +82,9 @@ export default function AppointmentsPage({ params }: { params: { id: string } })
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState<FormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
+  // Limite de plano não é erro: é convite. Guardado à parte do toast de falha
+  // justamente para não virar 'tente de novo' de algo que não muda tentando.
+  const [paywallMessage, setPaywallMessage] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<FormState | null>(null);
   const [newQuestion, setNewQuestion] = useState("");
@@ -108,13 +113,27 @@ export default function AppointmentsPage({ params }: { params: { id: string } })
           notes: createForm.notes || null, preparationNotes: createForm.preparationNotes || null,
         }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        // O `catch {}` vazio que existia aqui descartava a resposta do servidor
+        // sem ler. Quem estava no plano gratuito via 'tente de novo' para algo
+        // que nunca funcionaria tentando de novo: a agenda de consultas é
+        // bloqueada por inteiro no gratuito (appointments: false).
+        const erro = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
+        if (erro.code === "PLAN_LIMIT" || erro.code === "PLAN_READ_ONLY") {
+          setPaywallMessage(erro.error ?? "Este recurso é do plano Família.");
+          return;
+        }
+        throw new Error(erro.error ?? "Não foi possível agendar.");
+      }
       toast({ description: "Consulta agendada" });
       setCreateOpen(false);
       setCreateForm(EMPTY_FORM);
       invalidate();
-    } catch {
-      toast({ description: "Não deu pra agendar agora. Tente de novo.", variant: "destructive" });
+    } catch (err) {
+      toast({
+        description: err instanceof Error ? err.message : "Não foi possível agendar.",
+        variant: "destructive",
+      });
     } finally {
       setSaving(false);
     }
@@ -172,6 +191,14 @@ export default function AppointmentsPage({ params }: { params: { id: string } })
     invalidate();
   };
 
+  // Data de hoje no fuso de quem está olhando, no formato que o input espera.
+  // `toISOString()` daria o dia UTC, que de madrugada no Brasil é o dia seguinte.
+  const hojeISO = () => {
+    const agora = new Date();
+    const local = new Date(agora.getTime() - agora.getTimezoneOffset() * 60_000);
+    return local.toISOString().slice(0, 10);
+  };
+
   const renderForm = (form: FormState, setForm: (f: FormState) => void) => (
     <div className="space-y-3">
       <div>
@@ -184,7 +211,7 @@ export default function AppointmentsPage({ params }: { params: { id: string } })
         </Select>
       </div>
       <div>
-        <Label>Especialidade</Label>
+        <CampoLabel obrigatorio>Especialidade</CampoLabel>
         <Input value={form.specialty} onChange={(e) => setForm({ ...form, specialty: e.target.value })} placeholder="Cardiologia" required />
       </div>
       <div>
@@ -197,11 +224,13 @@ export default function AppointmentsPage({ params }: { params: { id: string } })
       </div>
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <Label>Data</Label>
-          <Input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} required />
+          <CampoLabel obrigatorio>Data</CampoLabel>
+          {/* min = hoje: não existe consulta no passado. O servidor recusa também
+              (appointments.ts) — isto aqui só evita a viagem inútil. */}
+          <Input type="date" min={hojeISO()} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} required />
         </div>
         <div>
-          <Label>Hora</Label>
+          <CampoLabel obrigatorio>Hora</CampoLabel>
           <Input type="time" value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} required />
         </div>
       </div>
@@ -210,7 +239,7 @@ export default function AppointmentsPage({ params }: { params: { id: string } })
         <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={2} />
       </div>
       <div>
-        <Label>Preparo (o que o médico disse — jejum, suspender remédio etc.)</Label>
+        <Label>Preparo (o que o médico disse: jejum, suspender remédio etc.)</Label>
         <Textarea value={form.preparationNotes} onChange={(e) => setForm({ ...form, preparationNotes: e.target.value })} rows={2} placeholder="Ex: jejum de 8h, suspender anticoagulante 2 dias antes" />
       </div>
     </div>
@@ -255,14 +284,35 @@ export default function AppointmentsPage({ params }: { params: { id: string } })
         )}
       </main>
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Nova consulta</DialogTitle></DialogHeader>
-          {renderForm(createForm, setCreateForm)}
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setCreateOpen(false)}>Cancelar</Button>
-            <Button onClick={() => void handleCreate()} disabled={saving}>{saving ? "Salvando…" : "Agendar"}</Button>
-          </DialogFooter>
+      <Dialog
+        open={createOpen}
+        onOpenChange={(aberto) => {
+          setCreateOpen(aberto);
+          if (!aberto) setPaywallMessage(null);
+        }}
+      >
+        {/* max-h + overflow: o formulário é mais alto que a tela em celular, e sem
+            isto o diálogo cortava os últimos campos sem deixar rolar. */}
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
+          {paywallMessage ? (
+            <PlanPaywall
+              title="Consultas e exames no mesmo lugar"
+              message={paywallMessage}
+              onDismiss={() => {
+                setPaywallMessage(null);
+                setCreateOpen(false);
+              }}
+            />
+          ) : (
+            <>
+              <DialogHeader><DialogTitle>Nova consulta</DialogTitle></DialogHeader>
+              {renderForm(createForm, setCreateForm)}
+              <DialogFooter>
+                <Button variant="ghost" onClick={() => setCreateOpen(false)}>Cancelar</Button>
+                <Button onClick={() => void handleCreate()} disabled={saving}>{saving ? "Salvando…" : "Agendar"}</Button>
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
 

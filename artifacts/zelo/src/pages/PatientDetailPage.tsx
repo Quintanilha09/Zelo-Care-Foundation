@@ -282,10 +282,10 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
               <Button onClick={() => setOpen(true)} className="gap-2">
                 <Plus className="w-4 h-4" /> Tratamento
               </Button>
-            <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+            <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Novo tratamento</DialogTitle>
-                <DialogDescription>O que o médico prescreveu — o app registra, não opina.</DialogDescription>
+                <DialogDescription>O que o médico prescreveu.</DialogDescription>
               </DialogHeader>
               <TreatmentForm patientId={Number(params.id)} onCreated={handleCreated} onCancel={() => setOpen(false)} />
             </DialogContent>

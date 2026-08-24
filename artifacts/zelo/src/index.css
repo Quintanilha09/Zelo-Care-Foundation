@@ -53,6 +53,12 @@
   --color-zelo-green-bg: hsl(140 21% 95%);
   --color-zelo-amber: hsl(38 82% 55%);
   --color-zelo-amber-fg: hsl(38 82% 35%);
+
+  /* Azul calmo, exclusivo das MEDIÇÕES na tela de rotina. Verde e âmbar já
+     significam estado de dose (invariante 5 do FOUNDATION.md); reusá-los aqui
+     misturaria dois assuntos. Uma medição é um número anotado, não um estado. */
+  --color-zelo-measure: hsl(205 30% 52%);
+  --color-zelo-measure-bg: hsl(205 40% 96%);
   --color-zelo-amber-bg: hsl(38 82% 95%);
 }
 

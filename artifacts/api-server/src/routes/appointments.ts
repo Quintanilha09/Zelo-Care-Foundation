@@ -131,6 +131,18 @@ router.post("/patients/:patientId/appointments", requireAuth, requireCapability(
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
 
   const scheduledAt = localToUtc(body.data.scheduledDate, body.data.scheduledTime, patient.timezone);
+
+  // Não existe consulta no passado. O formulário também impede, mas o cliente
+  // não é fronteira: quem chamar a API direto tem que receber o mesmo não.
+  // A comparação usa o fuso DO PACIENTE, que é o que define o dia civil dele.
+  if (scheduledAt.getTime() <= Clock.now().getTime()) {
+    res.status(400).json({
+      error: "Essa data já passou. Escolha uma data a partir de hoje.",
+      code: "APPOINTMENT_IN_THE_PAST",
+    });
+    return;
+  }
+
   const [appointment] = await db.insert(appointmentsTable).values({
     patientId, type: body.data.type ?? "consultation", specialty: body.data.specialty,
     doctorName: body.data.doctorName, location: body.data.location,
