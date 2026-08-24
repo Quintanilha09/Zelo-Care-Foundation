@@ -16,6 +16,7 @@
  */
 import { eq, and, gte, lte } from "drizzle-orm";
 import { db } from "@workspace/db";
+import { Clock } from "./clock.ts";
 import {
   patientsTable, treatmentsTable, medicationsTable, scheduledDosesTable,
   doseRecordsTable, healthMeasurementsTable,
@@ -185,7 +186,7 @@ export async function computeReportData(
   return {
     patientName: patient.name,
     periodStart, periodEnd,
-    generatedAt: new Date(),
+    generatedAt: Clock.now(),
     medications,
     measurements: measurementRows,
   };

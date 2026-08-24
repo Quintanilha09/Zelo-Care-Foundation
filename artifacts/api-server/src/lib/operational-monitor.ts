@@ -67,7 +67,7 @@ async function checkQueueStuck(): Promise<CheckResult> {
   // escrito com o relógio REAL do Postgres (pg-boss não conhece Clock.ts,
   // mesma ressalva documentada em dose-reminders.test.ts) — comparar contra
   // um corte "adiantado" via Clock.travelTo daria resultado errado em teste.
-  const cutoff = new Date(Date.now() - QUEUE_STUCK_GRACE_MINUTES * 60_000);
+  const cutoff = new Date(Date.now() - QUEUE_STUCK_GRACE_MINUTES * 60_000); // clock-lint-ok: pgboss.job.start_after usa o relogio real do Postgres, nao o Clock
   const result = await db.execute<{ count: number }>(sql`
     SELECT count(*)::int as count
     FROM pgboss.job

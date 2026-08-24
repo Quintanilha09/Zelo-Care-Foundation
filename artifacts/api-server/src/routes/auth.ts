@@ -162,7 +162,7 @@ router.post("/auth/register", registerLimiter, async (req, res): Promise<void> =
       const slug = familyName
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "-")
-        .slice(0, 50) + `-${Date.now()}`;
+        .slice(0, 50) + `-${Date.now()}`; // clock-lint-ok: sufixo de unicidade do slug, nao e tempo de dominio
       const [newFamily] = await tx
         .insert(familiesTable)
         .values({ name: familyName, slug })

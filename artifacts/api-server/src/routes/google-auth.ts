@@ -268,7 +268,7 @@ router.get("/auth/google/callback", async (req: Request, res: Response): Promise
 
       const familyName = `Família de ${googleName}`;
       const slug = familyName.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 50)
-        + `-${Date.now()}`;
+        + `-${Date.now()}`; // clock-lint-ok: sufixo de unicidade do slug, nao e tempo de dominio
 
       const [newFamily] = await tx.insert(familiesTable)
         .values({ name: familyName, slug })
