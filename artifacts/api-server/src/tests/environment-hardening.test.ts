@@ -213,3 +213,97 @@ describe("Endpoints caros e sensíveis têm rate limit", () => {
     });
   }
 });
+
+/**
+ * Consistência das suítes FORA do api-server — achado da auditoria §10 (23/08/2026).
+ *
+ * O guardrail acima trava a suíte do api-server, e SÓ ela. Enquanto isso,
+ * `lib/scheduling` tinha 33 testes cobrindo o motor de recorrência — o núcleo
+ * que decide quando cada dose acontece — que passavam e nunca rodavam no CI:
+ * o workflow chama typecheck, lint:clock, test:all e build, jamais `test:libs`.
+ *
+ * É a mesma classe do incidente de 21/08 (teste que existe e não roda), um
+ * diretório ao lado, e escapou justamente porque a varredura parava em
+ * `artifacts/api-server/src/tests/`. Este bloco fecha o buraco de forma.
+ */
+describe("Consistência das suítes fora do api-server", () => {
+  // raiz = artifacts/api-server/src/ → três níveis acima é a raiz do repositório
+  const raizRepo = `${raiz}../../../`;
+  const dirLib = `${raizRepo}lib`;
+
+  const pacotesLib = existsSync(dirLib)
+    ? readdirSync(dirLib, { withFileTypes: true })
+        .filter((e) => e.isDirectory() && existsSync(`${dirLib}/${e.name}/package.json`))
+        .map((e) => e.name)
+    : [];
+
+  it("todo .test.ts de lib/ está no script de teste do próprio pacote, e vice-versa", () => {
+    const problemas: string[] = [];
+
+    for (const nome of pacotesLib) {
+      const base = `${dirLib}/${nome}`;
+      const src = `${base}/src`;
+      if (!existsSync(src)) continue;
+
+      const noDisco = readdirSync(src).filter((f) => f.endsWith(".test.ts"));
+      if (noDisco.length === 0) continue;
+
+      const pkg = JSON.parse(readFileSync(`${base}/package.json`, "utf8")) as {
+        scripts?: Record<string, string>;
+      };
+      const script = pkg.scripts?.test ?? "";
+
+      if (script.length === 0) {
+        problemas.push(
+          `lib/${nome}: tem ${noDisco.length} arquivo(s) de teste e NENHUM script "test" — nunca rodam`
+        );
+        continue;
+      }
+
+      // arquivo existe mas ficou fora do script → falha silenciosa
+      for (const arquivo of noDisco) {
+        if (!script.includes(arquivo)) {
+          problemas.push(`lib/${nome}: ${arquivo} existe mas está fora do script "test"`);
+        }
+      }
+
+      // script aponta para arquivo inexistente → quebra a suíte do pacote
+      const referenciados: string[] = script.match(/src\/[a-z0-9.-]+\.test\.ts/g) ?? [];
+      for (const ref of referenciados) {
+        if (!existsSync(`${base}/${ref}`)) {
+          problemas.push(`lib/${nome}: script "test" aponta para ${ref}, que não existe`);
+        }
+      }
+    }
+
+    assert.deepEqual(problemas, [] as string[], `\n${problemas.join("\n")}`);
+  });
+
+  it("a raiz tem test:libs e ele varre lib/ de forma recursiva", () => {
+    const raizPkg = JSON.parse(readFileSync(`${raizRepo}package.json`, "utf8")) as {
+      scripts?: Record<string, string>;
+    };
+    const script = raizPkg.scripts?.["test:libs"] ?? "";
+    assert.ok(script.length > 0, "a raiz precisa de um script test:libs");
+    assert.match(
+      script,
+      /--filter/,
+      "test:libs precisa usar --filter recursivo para alcançar todo pacote de lib"
+    );
+  });
+
+  it("o CI executa test:libs — senão os testes de lib existem, passam e não são exercidos", () => {
+    const workflow = `${raizRepo}.github/workflows/validate.yml`;
+    if (!existsSync(workflow)) {
+      // O workflow ainda pode viver só numa branch. Quando chegar ao main, este
+      // teste passa a exigir que ele rode os testes de lib.
+      return;
+    }
+    const conteudo = readFileSync(workflow, "utf8");
+    assert.match(
+      conteudo,
+      /test:libs/,
+      "validate.yml não chama `pnpm run test:libs` — foi exatamente assim que 33 testes do motor de recorrência ficaram fora do CI"
+    );
+  });
+});

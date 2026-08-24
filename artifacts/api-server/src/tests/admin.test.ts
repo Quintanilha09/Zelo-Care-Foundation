@@ -20,6 +20,7 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
+import crypto from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
@@ -34,6 +35,25 @@ import { sendDoseReminder } from "../lib/dose-reminders.ts";
 import { boss, QUEUE_DOSE_REMINDER, ensureQueueStarted } from "../lib/queue.ts";
 import { Clock } from "../lib/clock.ts";
 import app from "../app.ts";
+
+/**
+ * Segredo efêmero da suíte — correção da auditoria §10 (23/08/2026).
+ *
+ * Este arquivo dependia de ADMIN_PANEL_SECRET vir do ambiente e falhava
+ * sozinho quando ele não estava definido: 382 de 383 passando, e a única
+ * falha não era do código. Um teste que depende de configuração externa não
+ * é um teste — é uma armadilha para quem clonar o repositório e para o CI.
+ *
+ * Se a variável já existir (Replit, produção), é respeitada. Senão, gera uma
+ * aleatória válida só para esta execução. NUNCA um literal no arquivo: um
+ * segredo fixo em código versionado é exatamente o que a auditoria proíbe.
+ *
+ * Precisa vir ANTES de generateAdminToken() abaixo, que roda na carga do
+ * módulo e lê a variável na hora.
+ */
+if (!process.env.ADMIN_PANEL_SECRET) {
+  process.env.ADMIN_PANEL_SECRET = crypto.randomBytes(32).toString("hex");
+}
 
 let testPort: number;
 let closeServer: () => Promise<void>;
