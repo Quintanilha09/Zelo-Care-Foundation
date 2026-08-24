@@ -78,7 +78,7 @@ Checar tudo de uma vez no Replit:
 2. `pnpm install` na raiz
 3. `pnpm --filter @workspace/db run push` — schema acumulado de ZELO-26 em diante
 4. `pnpm --filter @workspace/db run push:raw` — trigger de imutabilidade (idempotente)
-5. Secrets faltando: **`ADMIN_PANEL_SECRET`** (valor próprio, forte, gerado lá — não o do
+5. **`ADMIN_PANEL_SECRET` — confirmado ausente em 23/08/2026** na lista real de Secrets. Sem ele o painel operacional nao abre, e REQ-027 (taxa de entrega, metrica de sucesso no 1) fica sem como ser medido. Demais secrets faltando: (valor próprio, forte, gerado lá — não o do
    `.env.local`), e `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` se ainda não foram
 6. **Google OAuth:** adicionar `https://zelo-care-foundation.replit.app/api/auth/google/callback`
    como redirect URI autorizado
