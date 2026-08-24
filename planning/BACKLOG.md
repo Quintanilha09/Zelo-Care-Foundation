@@ -60,7 +60,23 @@ local, sem markup internacional.
 **PSP de pagamento (ZELO-39):** nenhum avaliado ainda. Candidatos citados: Stripe, Mercado Pago,
 Pagar.me. Exige conta própria, KYC e credenciais — provisionamento é do fundador.
 
-**Decisão em vigor:** todos os fornecedores externos pagos (SMS, ligação automática do Épico 9,
+## SMS e ligação automática saíram do v1 — 24/08/2026
+
+**ZELO-31 e ZELO-41 deixaram de estar "adiadas por falta de fornecedor" e passaram a estar
+deliberadamente FORA DO ESCOPO do v1.** A diferença importa: não é indecisão, é escopo.
+
+O motivo é estratégico — o objetivo do projeto é a **venda para uma empresa compradora**
+(ver [decisoes/PLATFORM_DECISIONS.md](decisoes/PLATFORM_DECISIONS.md) §12). Um comprador com
+escala negocia SMS em condições que um projeto sem usuários não consegue, e a análise de custo
+([decisoes/CUSTOS-APIS.md](decisoes/CUSTOS-APIS.md)) mostra que a escolha errada de fornecedor
+consome perto de metade da receita bruta.
+
+A métrica de sucesso nº 1 foi ajustada junto, para não prometer 99% sem mecanismo — ver
+"alerta efetivo" em [REQUIREMENTS.md](REQUIREMENTS.md).
+
+---
+
+**Decisão anterior, ainda válida para o PSP:** os fornecedores externos pagos restantes (PSP,
 PSP) ficam para **decisão em lote no fim do projeto**. Ao chegar numa história bloqueada por isso,
 **pule sem perguntar de novo** — a confirmação já foi dada duas vezes (18 e 19/08/2026).
 Uma pergunta pontual é aceitável só na primeira vez que um tipo **novo** de dependência aparecer.

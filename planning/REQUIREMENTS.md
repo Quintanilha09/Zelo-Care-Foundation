@@ -34,7 +34,7 @@
 | REQ-023 | Registro em um toque pela notificação, sem abrir o app | 06 | ZELO-28 |
 | REQ-024 | Rastreamento de entrega distinto de envio | 06 | ZELO-29 |
 | REQ-025 | Cascata de escalonamento T+15 / T+30 / T+60 | 06 | ZELO-30 |
-| REQ-026 | Fallback por SMS quando o push não confirma | 06 | ZELO-31 |
+| REQ-026 | ~~Fallback por SMS quando o push não confirma~~ — **fora do v1** (24/08/2026) | 06 | ZELO-31 |
 | REQ-027 | Painel interno de taxa de entrega com alerta operacional | 06 | ZELO-32 |
 | REQ-028 | Histórico e calendário de adesão em tom não punitivo | 07 | ZELO-33 |
 | REQ-029 | Controle de estoque com alerta de reposição em ≤ 5 dias | 07 | ZELO-34 |
@@ -44,7 +44,7 @@
 | REQ-033 | Planos e limites aplicados no servidor, paywall no 2º cuidador | 09 | ZELO-38 |
 | REQ-034 | Assinatura pela web, fora da comissão das lojas | 09 | ZELO-39 |
 | REQ-035 | Modo idoso | 10 | ZELO-40 |
-| REQ-036 | Lembrete ao paciente por SMS e ligação automática | 10 | ZELO-41 |
+| REQ-036 | ~~Lembrete ao paciente por SMS e ligação automática~~ — **fora do v1** (24/08/2026) | 10 | ZELO-41 |
 | REQ-037 | App nativo com push FCM/APNs sobre o mesmo backend | 10 | ZELO-42 |
 
 ## Fundação (habilitadores, sem capacidade de usuário)
@@ -87,13 +87,32 @@ Estas são regra de negócio, não disclaimer. Violação de qualquer uma é **d
 
 | Métrica | Alvo | Onde é medida |
 |---|---|---|
-| **Taxa de entrega de notificação** | > 99% | Painel interno (REQ-027) |
+| **Taxa de alerta efetivo** | > 99% | Painel interno (REQ-027) |
 | Doses registradas / agendadas | > 80% | Histórico |
 | Cuidadores por conta | > 1,8 | — |
 | Retenção D30 / D90 | > 65% / > 50% | — |
 | Tempo até a primeira dose agendada | < 3 min | Onboarding |
 | Conversão para pago | > 8% | — |
 | Churn mensal | < 3% | — |
+
+### O que é "alerta efetivo" — revisto em 24/08/2026
+
+A métrica media **entrega de push por dispositivo**. Isso mede um elo, não a promessa do
+produto — e dependia do fallback por SMS (REQ-026) para chegar a 99%, que saiu do escopo do v1.
+
+**Alerta efetivo = a dose sem registro no prazo em que ao menos UM cuidador foi alcançado.**
+A cascata de escalonamento (REQ-025, T+15/30/60) já é o fallback: se o push do primeiro cuidador
+não entrega, o alerta segue para os outros. Se o do segundo entrega, o sistema cumpriu a função.
+
+Mede o que o produto de fato promete — *a dose não passa despercebida* — usando dados que a
+tabela `notifications` já registra (`sent` / `delivered` / `acted` por destinatário). Não depende
+de fornecedor externo e continua honesta se o SMS for adicionado depois: ele vira mais um elo da
+mesma corrente, não uma métrica nova.
+
+A entrega de push por dispositivo **continua sendo medida**, como diagnóstico — é ela que diz se
+o canal está degradando, e é o número que justifica (ou não) ligar o SMS um dia.
+
+---
 
 ## Fora de escopo no v1
 

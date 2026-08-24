@@ -1,6 +1,9 @@
 # Custo mensal das APIs pagas
 
 > Levantado em **24/08/2026**, a pedido do fundador, antes de contratar qualquer fornecedor.
+> **Serve a dois leitores:** o fundador, para decidir; e o eventual comprador, para entender que a
+> análise foi feita com número e que o adiamento do SMS foi escolha consciente — ver
+> [PLATFORM_DECISIONS.md](PLATFORM_DECISIONS.md) §12.
 > Preços buscados nas páginas oficiais na data, não de memória. O que não pôde ser verificado
 > está rotulado.
 
@@ -114,7 +117,8 @@ O Pix custa **um terço** do cartão. Vale priorizá-lo na tela de assinatura �
 
 ## Recomendação
 
-1. **Escolher a Zenvia, não a Twilio**, quando o SMS for retomado — a diferença de ~4× é o que
+1. **A escolha de SMS passou a ser do comprador** (decisão de 24/08/2026: ZELO-31 e ZELO-41 saíram
+   do v1). Quando for retomada, **a Zenvia é a recomendação, não a Twilio** — a diferença de ~4× é o que
    separa margem de prejuízo. Confirmar o preço antes: a pesquisa é de 18/08.
 2. **Reduzir a taxa de SMS por desenho**, não só por preço. Cada ponto percentual a menos vale
    mais que qualquer negociação. Vale **medir a entrega real de push antes de ligar o SMS** — e o

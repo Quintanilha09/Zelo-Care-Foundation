@@ -278,6 +278,58 @@ existir, e provisionar `RESEND_API_KEY` como Secret. Nada disso eu faço sozinho
 
 ---
 
+## 12. O objetivo do projeto é a venda — 24/08/2026
+
+**Decisão do fundador:** o ZELO é construído para ser **vendido a uma empresa compradora**. Não é
+um produto a ser operado indefinidamente pelo criador.
+
+**Consequência imediata:** SMS (ZELO-31) e ligação automática (ZELO-41) saem do escopo do v1 e
+passam a ser trabalho do comprador.
+
+### Por que isso é coerente, e não apenas conveniente
+
+A [análise de custo](CUSTOS-APIS.md) mostrou que o SMS é o **único** item que ameaça a margem:
+com 200 pacientes e 15% de fallback, a Twilio consome perto de metade da receita bruta; a Zenvia,
+~11%. A diferença entre fornecedores é de ~4× no custo unitário.
+
+Quem compra um produto de saúde com escala **negocia SMS em condições que um projeto sem usuários
+não alcança** — e provavelmente já tem contrato. Adiar a integração não é dívida escondida: é
+deixar a decisão para quem tem poder de barganha e dados de volume real.
+
+### O que isso muda na prioridade do trabalho
+
+O que um comprador avalia em *due diligence* técnica passa a ser **requisito de produto**, não zelo
+opcional:
+
+| Passa a valer mais | Passa a valer menos |
+|---|---|
+| Suíte de teste que roda e é confiável | Funcionalidade nova sem verificação |
+| Segurança auditada, com achados registrados | Velocidade de entrega |
+| Contexto e decisões documentados no repositório | Conhecimento que só existe na cabeça de alguém |
+| Gaps **declarados** | Gaps descobertos pelo comprador |
+
+Isto valida, retroativamente, o trabalho das fases 11 e 12: a auditoria §10, o CI que passou a
+rodar de verdade, a consolidação do contexto e os guardrails são exatamente o que sustenta preço
+numa negociação. **Um gap declarado com número ao lado vale mais que um gap ausente da documentação
+e encontrado por terceiro.**
+
+### A regra que passa a valer
+
+**Nenhum gap conhecido pode ficar sem registro.** Se algo não foi feito, o repositório precisa
+dizer o que é, por que não foi feito, e quanto custaria fazer. É o oposto de esconder — e é o que
+transforma uma limitação em decisão defensável.
+
+O [documento de custos](CUSTOS-APIS.md) é o primeiro artefato escrito já sob essa regra: ele existe
+tanto para orientar o fundador quanto para responder ao comprador antes de a pergunta ser feita.
+
+### O que NÃO muda
+
+As invariantes do produto (ver [FOUNDATION.md](FOUNDATION.md)) e as restrições CON-001 a CON-015
+continuam valendo integralmente. Vender não é motivo para afrouxar fronteira clínica, LGPD ou
+isolamento entre famílias — pelo contrário: é o que um comprador examina primeiro num app de saúde.
+
+---
+
 ## Relação com a especificação original
 
 A [especificação completa](../referencia/ESPECIFICACAO.md) foi escrita **antes** destas decisões.

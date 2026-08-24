@@ -121,7 +121,9 @@ Nada disto foi aberto num navegador real ainda — só typecheck e teste automat
 1. **Preço** dos planos Família e Profissional — os limites já estão em vigor, falta o valor
 2. **Provedor de e-mail: decidido — Resend** (23/08/2026, a pedido do fundador). Falta criar a conta,
    verificar o domínio e provisionar `RESEND_API_KEY`. **Bloqueado pela decisão de domínio abaixo.**
-3. **Fornecedores, em lote:** SMS (ZELO-31), ligação automática (Épico 9), PSP de pagamento
+3. **PSP de pagamento** (ZELO-39) — único fornecedor externo ainda em aberto. **SMS e ligação
+   automática saíram do escopo do v1** em 24/08/2026 e viraram trabalho do comprador
+   (ver [decisoes/PLATFORM_DECISIONS.md](decisoes/PLATFORM_DECISIONS.md) §12). Contexto original:
    (ZELO-39). Decisão adiada de propósito para o fim do projeto — **não perguntar história a história**
 4. Persona de entrada (recomendação: cuidador de idoso)
 5. **Nome definitivo (INPI e domínio)** — deixou de ser só identidade: **todo provedor de e-mail exige
