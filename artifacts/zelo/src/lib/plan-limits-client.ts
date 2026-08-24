@@ -45,6 +45,20 @@ export function caregiverLimitReached(plan: PlanView | null | undefined, caregiv
   return reached(caregivers, plan.limits.maxCaregivers);
 }
 
+/**
+ * A agenda de consultas é recurso do plano Família por inteiro — não é um
+ * limite de quantidade, é liga/desliga. Quem está no gratuito não pode criar
+ * nenhuma, então a tela não deve nem abrir o formulário.
+ */
+export function appointmentsAllowed(plan: PlanView | null | undefined): boolean {
+  if (!plan) return true; // sem plano carregado, nunca bloquear por conta própria
+  return plan.limits.appointments;
+}
+
+export function appointmentsBlockedMessage(): string {
+  return "Agenda de consultas e exames é um recurso do plano Família.";
+}
+
 const NEXT_TIER: Record<PlanTier, PlanTier | null> = {
   free: "family",
   family: "professional",

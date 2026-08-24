@@ -13,6 +13,8 @@ import { authFetch } from "@/lib/auth-client";
 import { useToast } from "@/hooks/use-toast";
 import { PlanPaywall } from "@/components/plan-paywall";
 import { CampoLabel } from "@/components/campo-label";
+import { useAuth } from "@/context/AuthContext";
+import { appointmentsAllowed, appointmentsBlockedMessage } from "@/lib/plan-limits-client";
 import { AppHeader } from "@/components/app-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -85,6 +87,25 @@ export default function AppointmentsPage({ params }: { params: { id: string } })
   // Limite de plano não é erro: é convite. Guardado à parte do toast de falha
   // justamente para não virar 'tente de novo' de algo que não muda tentando.
   const [paywallMessage, setPaywallMessage] = useState<string | null>(null);
+  const { user } = useAuth();
+
+  /**
+   * Decide ANTES de abrir o formulário.
+   *
+   * Deixar a pessoa preencher tipo, especialidade, médico, local, data, hora,
+   * observações e preparo — para só no botão final dizer que o plano não
+   * permite — é desrespeito com o tempo dela. O paywall abre no clique, e o
+   * formulário nem chega a aparecer.
+   *
+   * O 403 do servidor continua tratado no handleCreate: ele é a autoridade, e
+   * se cliente e servidor divergirem, vale a resposta dele.
+   */
+  const handleNovaClick = () => {
+    if (!appointmentsAllowed(user?.plan)) {
+      setPaywallMessage(appointmentsBlockedMessage());
+    }
+    setCreateOpen(true);
+  };
   const [detailId, setDetailId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<FormState | null>(null);
   const [newQuestion, setNewQuestion] = useState("");
@@ -260,7 +281,7 @@ export default function AppointmentsPage({ params }: { params: { id: string } })
             <h2 className="text-2xl font-semibold">Consultas e exames</h2>
             <p className="text-muted-foreground text-[17px]">Lembretes em 1 semana, 1 dia e 2 horas antes.</p>
           </div>
-          <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="w-4 h-4" /> Nova</Button>
+          <Button onClick={handleNovaClick} className="gap-2"><Plus className="w-4 h-4" /> Nova</Button>
         </div>
 
         {isLoading && <p className="text-sm text-muted-foreground">Carregando…</p>}
