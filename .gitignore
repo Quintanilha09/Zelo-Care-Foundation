@@ -52,3 +52,11 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+
+# GSD Core -- ferramenta, nao codigo do projeto.
+# 716 arquivos / 13MB instalados por `npx @opengsd/gsd-core@latest --claude --local`.
+# O proprio projeto avisa: nao copiar arquivos de agents/ ou commands/ direto --
+# o instalador e necessario para compatibilidade entre runtimes. Ele tambem se
+# auto-atualiza, entao versionar geraria ruido de merge a cada update.
+# settings.local.json e, por convencao, configuracao de maquina.
+.claude/
