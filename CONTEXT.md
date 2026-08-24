@@ -16,7 +16,7 @@ PWA de cuidado compartilhado para famílias com idosos: vários cuidadores coord
 medicamentos, consultas e aferições de um paciente — sem duplicidade, sem culpa.
 
 - **Repositório:** [Quintanilha09/Zelo-Care-Foundation](https://github.com/Quintanilha09/Zelo-Care-Foundation) — **público**
-- **Clone local:** `C:\Projetos\Zelo-Care-Foundation`
+- **Clone local:** `C:\Projetos\Zelo\Zelo-Care-Foundation`
 - **Branch padrão:** `main`
 - **Monorepo pnpm:** `artifacts/api-server`, `artifacts/zelo`, `artifacts/mockup-sandbox`, `lib/*`, `scripts`
 
