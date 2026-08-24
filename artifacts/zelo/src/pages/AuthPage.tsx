@@ -88,6 +88,7 @@ function LoginForm() {
     }
   };
 
+
   return (
     <div className="space-y-4">
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -122,6 +123,18 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [mensagemSucesso, setMensagemSucesso] = useState('');
+  // Existe provedor de e-mail? Mesmo contrato do /auth/google/status.
+  // Sem ele, o cadastro por e-mail e senha cria uma conta que nunca poderá
+  // ser verificada — então o formulário não é oferecido.
+  const [emailConfigurado, setEmailConfigurado] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    fetch(`${BASE}/api/auth/email/status`)
+      .then((r) => r.json())
+      .then((d: { configured: boolean }) => setEmailConfigurado(d.configured))
+      .catch(() => setEmailConfigurado(false));
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -146,6 +159,11 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
       });
       const data = await res.json() as { error?: string; message?: string };
       if (!res.ok) throw new Error(data.error ?? 'Erro ao criar conta');
+      // A mensagem vem do servidor: ele é quem sabe se a conta já ficou ativa
+      // (desenvolvimento) ou se falta confirmar o e-mail. O texto fixo que
+      // estava aqui dizia 'em desenvolvimento a conta já está ativa' para
+      // qualquer pessoa, inclusive em produção.
+      setMensagemSucesso(data.message ?? 'Conta criada.');
       setSuccess(true);
       setTimeout(() => onSuccess(), 3000);
     } catch (err) {
@@ -158,13 +176,30 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
   if (success) {
     return (
       <Alert>
-        <AlertDescription>
-          Conta criada! Em desenvolvimento a conta já está ativa — faça login agora.
-        </AlertDescription>
+        <AlertDescription>{mensagemSucesso}</AlertDescription>
       </Alert>
     );
   }
 
+  if (emailConfigurado === null) return null; // aguardando
+
+  if (!emailConfigurado) {
+    return (
+      <div className="space-y-4">
+        <Alert>
+          <AlertDescription>
+            <p className="font-medium">Por enquanto, a entrada é pelo Google.</p>
+            <p className="mt-1">
+              Criar conta com e-mail e senha exige um e-mail de confirmação, e ele ainda
+              não está disponível. Entrar com o Google é um toque, e a conta já vem
+              confirmada.
+            </p>
+          </AlertDescription>
+        </Alert>
+        <GoogleButton />
+      </div>
+    );
+  }
   return (
     <div className="space-y-4">
       <form onSubmit={handleSubmit} className="space-y-4">

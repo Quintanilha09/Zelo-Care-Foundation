@@ -380,3 +380,77 @@ describe("Painel operacional e sessão de cuidador não compartilham segredo", (
     );
   });
 });
+
+/**
+ * Cadastro não pode criar conta que nunca poderá ser verificada — fase 11.1a.
+ *
+ * A auditoria §10 encontrou que nenhum e-mail é enviado em produção, o login
+ * exige `emailVerified`, e a auto-verificação só roda em desenvolvimento.
+ * Resultado: quem se cadastrava por e-mail e senha em produção ficava preso
+ * para sempre, sem sinal para ninguém.
+ *
+ * NOTA SOBRE O QUE NÃO DÁ PARA TESTAR AQUI: `environment.ts` calcula
+ * IS_PRODUCTION na CARGA do módulo, de propósito — é o que garante que ninguém
+ * troque o ambiente em tempo de execução. Por isso não é possível exercitar a
+ * guarda de produção mexendo em env depois do import. O que se testa é
+ * `hasEmailProvider()` de verdade, e a presença da guarda por varredura do
+ * código — mesma técnica já usada acima para o padrão inseguro de NODE_ENV.
+ */
+describe("Cadastro sem provedor de e-mail", () => {
+  it("hasEmailProvider() reflete a presença de RESEND_API_KEY", async () => {
+    const original = process.env.RESEND_API_KEY;
+    try {
+      delete process.env.RESEND_API_KEY;
+      const semChave = await import(`../lib/email.ts?v=${Math.random()}`);
+      assert.equal(semChave.hasEmailProvider(), false, "sem RESEND_API_KEY não há provedor");
+
+      process.env.RESEND_API_KEY = "re_valor_de_teste";
+      const comChave = await import(`../lib/email.ts?v=${Math.random()}`);
+      assert.equal(comChave.hasEmailProvider(), true, "com a chave presente há provedor");
+
+      process.env.RESEND_API_KEY = "";
+      const vazia = await import(`../lib/email.ts?v=${Math.random()}`);
+      assert.equal(vazia.hasEmailProvider(), false, "chave vazia não conta como provedor");
+    } finally {
+      if (original === undefined) delete process.env.RESEND_API_KEY;
+      else process.env.RESEND_API_KEY = original;
+    }
+  });
+
+  it("o cadastro recusa ANTES de escrever no banco quando não há provedor", () => {
+    const auth = ler("routes/auth.ts");
+    const inicio = auth.indexOf('router.post("/auth/register"');
+    assert.ok(inicio > -1, "a rota de cadastro precisa existir");
+
+    const guarda = auth.indexOf("hasEmailProvider()", inicio);
+    const primeiraEscrita = auth.indexOf("db.transaction", inicio);
+    const parseDoBody = auth.indexOf("RegisterBody.safeParse", inicio);
+
+    assert.ok(guarda > -1, "o cadastro precisa checar hasEmailProvider()");
+    assert.ok(
+      guarda < primeiraEscrita,
+      "a guarda precisa vir ANTES de qualquer escrita no banco — recusar depois deixa usuário órfão e e-mail queimado"
+    );
+    assert.ok(
+      guarda < parseDoBody,
+      "a guarda é uma precondição de ambiente: vem antes até da validação do corpo"
+    );
+  });
+
+  it("a recuperação de senha também recusa em vez de prometer um e-mail que não sai", () => {
+    const auth = ler("routes/auth.ts");
+    const inicio = auth.indexOf('router.post("/auth/password-reset/request"');
+    assert.ok(inicio > -1, "a rota de recuperação precisa existir");
+    const trecho = auth.slice(inicio, inicio + 900);
+    assert.ok(trecho.includes("hasEmailProvider()"), "a recuperação de senha precisa checar o provedor");
+  });
+
+  it("existe /auth/email/status, o mesmo contrato do Google", () => {
+    const auth = ler("routes/auth.ts");
+    assert.ok(
+      auth.includes('router.get("/auth/email/status"'),
+      "a tela precisa poder perguntar se há provedor"
+    );
+    assert.ok(auth.includes("configured:"), "o contrato devolve { configured }");
+  });
+});

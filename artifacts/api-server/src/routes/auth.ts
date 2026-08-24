@@ -41,7 +41,7 @@ import {
   revokeAccessToken,
   revokeAllAccessTokensForUser,
 } from "../lib/tokens";
-import { sendVerificationEmail, sendPasswordResetEmail } from "../lib/email";
+import { sendVerificationEmail, sendPasswordResetEmail, hasEmailProvider } from "../lib/email";
 import { safeLog } from "../lib/safe-logger";
 import { audit } from "../lib/audit";
 import { requireAuth } from "../middleware/require-auth";
@@ -76,7 +76,31 @@ const RegisterBody = z.object({
   inviteToken: z.string().min(1).optional(),
 });
 
+/**
+ * Existe provedor de e-mail? Mesmo contrato de /auth/google/status.
+ * A tela de cadastro usa isto para não oferecer um caminho que não conclui.
+ */
+router.get("/auth/email/status", (_req, res): void => {
+  res.json({ configured: allowsDevelopmentShortcuts() || hasEmailProvider() });
+});
+
 router.post("/auth/register", registerLimiter, async (req, res): Promise<void> => {
+  // Sem provedor de e-mail, cadastrar por e-mail e senha cria uma conta que
+  // NUNCA poderá ser verificada: o login exige `emailVerified`, a
+  // auto-verificação só roda em desenvolvimento, e o link nunca chega.
+  // A pessoa ficava presa para sempre, sem sinal para ninguém.
+  //
+  // A recusa vem ANTES de qualquer escrita no banco — criar a conta e só
+  // depois avisar deixaria um usuário órfão e um e-mail queimado, porque a
+  // checagem de unicidade recusaria a segunda tentativa.
+  if (!allowsDevelopmentShortcuts() && !hasEmailProvider()) {
+    res.status(503).json({
+      error: "O cadastro por e-mail e senha está indisponível no momento, porque não é possível enviar o e-mail de confirmação. Entre com o Google — é um toque, e a conta já vem confirmada.",
+      code: "EMAIL_PROVIDER_UNAVAILABLE",
+    });
+    return;
+  }
+
   const body = RegisterBody.safeParse(req.body);
   if (!body.success) {
     res.status(400).json({ error: body.error.message });
@@ -487,6 +511,16 @@ router.post("/auth/logout-all", requireAuth, async (req, res): Promise<void> => 
 // ── RECUPERAÇÃO DE SENHA — SOLICITAÇÃO ──────────────────────────────────
 
 router.post("/auth/password-reset/request", passwordResetLimiter, async (req, res): Promise<void> => {
+  // Mesmo motivo do cadastro: sem provedor, o link nunca chega, e a resposta
+  // genérica de sempre ("se existir conta, enviamos") viraria mentira.
+  if (!allowsDevelopmentShortcuts() && !hasEmailProvider()) {
+    res.status(503).json({
+      error: "Não é possível enviar o e-mail de recuperação no momento. Se você criou a conta com o Google, entre por lá — não há senha para recuperar.",
+      code: "EMAIL_PROVIDER_UNAVAILABLE",
+    });
+    return;
+  }
+
   const email = String(req.body?.email ?? "").toLowerCase();
 
   // Sempre retorna 200 — nunca confirma se o e-mail existe (antiEnumeração)

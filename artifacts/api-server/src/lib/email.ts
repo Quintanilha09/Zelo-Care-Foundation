@@ -15,6 +15,29 @@ import { logger } from "./logger";
 import { IS_PRODUCTION as isProduction } from "./environment.ts";
 const BASE_URL = process.env.APP_URL ?? "http://localhost:5173";
 
+/**
+ * Existe provedor de e-mail configurado?
+ *
+ * Mesmo padrão do `isConfigured()` do Google (ver routes/google-auth.ts): uma
+ * capacidade que pode faltar, declarada em vez de suposta.
+ *
+ * **Por que isto existe.** A auditoria §10 (23/08/2026) encontrou que nenhum
+ * e-mail é enviado em produção — as funções abaixo só registram um aviso. Como
+ * o login exige `emailVerified` e a auto-verificação só roda em
+ * desenvolvimento, quem se cadastrava por e-mail e senha ficava preso para
+ * sempre, sem nenhum sinal para ninguém.
+ *
+ * Com esta função, o servidor para de criar contas que jamais poderão ser
+ * verificadas: ele diz, antes de criar, que o caminho é o Google.
+ *
+ * O provedor escolhido é o Resend (ver planning/decisoes/PLATFORM_DECISIONS.md
+ * §11). Enquanto `RESEND_API_KEY` não existir, não há provedor.
+ */
+export function hasEmailProvider(): boolean {
+  const chave = process.env.RESEND_API_KEY;
+  return typeof chave === "string" && chave.length > 0;
+}
+
 function devLog(label: string, link: string): void {
   // O link CARREGA o token (verificação, reset de senha, convite) — quem lê
   // o log assume a conta. Por isso só é impresso quando o ambiente está
