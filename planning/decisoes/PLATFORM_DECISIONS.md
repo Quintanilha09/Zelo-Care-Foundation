@@ -235,6 +235,49 @@ arquitetura, não correção de bug. **Deve ser avaliada antes de haver usuário
 
 ---
 
+## 11. Provedor de e-mail: Resend — 23/08/2026
+
+**Decisão:** **Resend**, para os quatro e-mails transacionais do produto (verificação de conta,
+recuperação de senha, notificação de exclusão de dados e convite de cuidador).
+
+**Alternativa descartada:** SendGrid.
+
+**Contexto:** a auditoria §10 encontrou que **nenhum e-mail é enviado em produção** — `lib/email.ts`
+só escreve `logger.warn`, e o login exige e-mail verificado. Resultado: quem se cadastra por
+e-mail e senha nunca consegue entrar. Não é recurso novo; é o cadastro quebrado.
+
+**Motivo:**
+
+- **Plano gratuito verificado em 23/08/2026:** 3.000 e-mails/mês, 100/dia, 3 domínios, envio e
+  recebimento, permanente. O volume do ZELO é transacional puro — verificação, reset, convite —
+  com dezenas de famílias. 100/dia é folgado. O primeiro pago é US$ 20/mês para 50 mil.
+- **`NÃO VERIFICADO` — não consegui ler os termos do SendGrid.** A página de preços entra em loop
+  de redirecionamento entre `sendgrid.com` e `twilio.com`. Historicamente o plano gratuito deles
+  deixou de ser permanente e virou período de teste, mas **não afirmo** sem ter lido. A própria
+  impossibilidade de conferir os termos pesa contra: entre dois fornecedores, prefiro aquele cujas
+  condições eu consegui verificar.
+- **A integração aqui são quatro funções num arquivo.** Um SDK mínimo vale mais que uma plataforma
+  de marketing com recursos que este produto não usa. O SendGrid é uma suíte de e-mail marketing;
+  o ZELO manda e-mail transacional e nada mais.
+- **SendGrid hoje é Twilio** — que também é candidata na decisão de SMS ainda adiada. Isso pode ser
+  conveniência (um fornecedor só) ou concentração indesejada. Como a decisão de SMS segue em
+  aberto, não faz sentido deixá-la determinar esta.
+
+**Dependência que ninguém tinha conectado:** `RISCO POTENCIAL`.
+
+Qualquer provedor exige um **domínio de envio verificado** por DNS (SPF/DKIM). O ZELO **ainda não
+tem domínio definitivo** — é a decisão pendente nº 4 do [`STATE.md`](../STATE.md), junto do nome no
+INPI. O `onboarding@resend.dev` do Resend serve só para teste, não para produção.
+
+Ou seja: **a fase 11.1b está bloqueada pela decisão de domínio, não só pela de provedor.**
+Enquanto isso, a fase 11.1a (mitigação sem fornecedor) resolve o problema imediato — a tela passa a
+dizer que a entrada é pelo Google, em vez de mandar a pessoa esperar um e-mail que nunca chega.
+
+**O que fica pendente do fundador:** criar a conta no Resend, verificar o domínio quando ele
+existir, e provisionar `RESEND_API_KEY` como Secret. Nada disso eu faço sozinho.
+
+---
+
 ## Relação com a especificação original
 
 A [especificação completa](../referencia/ESPECIFICACAO.md) foi escrita **antes** destas decisões.

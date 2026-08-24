@@ -119,13 +119,16 @@ Nada disto foi aberto num navegador real ainda — só typecheck e teste automat
 ## Decisões pendentes do fundador
 
 1. **Preço** dos planos Família e Profissional — os limites já estão em vigor, falta o valor
-2. **Fornecedores, em lote:** SMS (ZELO-31), ligação automática (Épico 9), PSP de pagamento
+2. **Provedor de e-mail: decidido — Resend** (23/08/2026, a pedido do fundador). Falta criar a conta,
+   verificar o domínio e provisionar `RESEND_API_KEY`. **Bloqueado pela decisão de domínio abaixo.**
+3. **Fornecedores, em lote:** SMS (ZELO-31), ligação automática (Épico 9), PSP de pagamento
    (ZELO-39). Decisão adiada de propósito para o fim do projeto — **não perguntar história a história**
-3. Persona de entrada (recomendação: cuidador de idoso)
-4. Nome definitivo (INPI e domínio)
-5. Encarregado de dados (DPO)
-6. O repositório GitHub está **público** — decidir se troca para privado
-7. Aumentar o limite de gasto do Replit para destravar o banco de produção
+4. Persona de entrada (recomendação: cuidador de idoso)
+5. **Nome definitivo (INPI e domínio)** — deixou de ser só identidade: **todo provedor de e-mail exige
+   domínio verificado por DNS**, então esta decisão bloqueia o conserto do cadastro (fase 11.1b)
+6. Encarregado de dados (DPO)
+7. O repositório GitHub está **público** — decidir se troca para privado
+8. Aumentar o limite de gasto do Replit para destravar o banco de produção
 
 ---
 
