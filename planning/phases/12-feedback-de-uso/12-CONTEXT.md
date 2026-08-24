@@ -35,7 +35,7 @@ um `code`; o usuário vê "tente de novo".
 | # | Item |
 |---|---|
 | 12-01 | **Consultas e Tratamento passam a mostrar o paywall**, como Pacientes e Cuidadores já fazem. Nenhum `catch` vazio: erro de plano vira convite, erro real vira mensagem do servidor |
-| 12-02 | **Conta de teste com acesso completo.** O fundador precisa exercitar o sistema inteiro; hoje o próprio plano o impede. Duas contas: uma `free` (para ver o que o usuário vê) e uma com plano pago |
+| 12-02 | ✅ **Conta de teste com acesso completo.** Resolvido em 24/08/2026 pelo DADO, não por código: `lib/db/scripts/definir-plano.mjs` dá a uma família uma assinatura ativa, igual à de uma família pagante. Dar superpoder a uma conta seria uma fronteira de autorização nova, escrita às pressas, num app de saúde — e faria você testar um desvio em vez do caminho real |
 
 ### 🟠 Correção funcional
 

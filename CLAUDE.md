@@ -107,6 +107,8 @@ pnpm run typecheck                                 # todos os pacotes
 pnpm run build                                     # typecheck + build
 pnpm --filter @workspace/db run push               # schema (dev)
 pnpm --filter @workspace/db run push:raw           # trigger de imutabilidade do audit_log
+pnpm --filter @workspace/db run plano -- --listar  # planos por família
+pnpm --filter @workspace/db run plano -- --familia 3 --plano professional
 ```
 
 `DATABASE_URL` obrigatório. Segredos locais em `artifacts/api-server/.env.local` (fora do git).
