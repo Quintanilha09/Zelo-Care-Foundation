@@ -49,6 +49,12 @@ para escrever agora** — e nenhuma depende de mim:
 **Consequência prática:** o trabalho disponível hoje é manutenção, correção, segurança e
 qualidade — não história nova. Não force uma história bloqueada só para ter o que fazer.
 
+**E esse trabalho agora tem nome.** A auditoria §10 do GSD
+([auditorias/2026-08-23-gsd-secao-10.md](auditorias/2026-08-23-gsd-secao-10.md)) produziu um plano de
+correção, e a execução é a **fase 11** ([phases/11-correcao-pos-auditoria/](phases/11-correcao-pos-auditoria/)).
+O item mais grave: **o cadastro por e-mail e senha não funciona em produção** — nenhum e-mail é
+enviado e o login exige e-mail verificado. Só o Google entra.
+
 ---
 
 ## Ambiente
@@ -102,7 +108,10 @@ Nada disto foi aberto num navegador real ainda — só typecheck e teste automat
 |---|---|
 | **Papel é por família, não por paciente.** A spec pede "cuidador do pai, observador da mãe, mesma conta". Exigiria tabela de junção e mudar o modelo de autorização do JWT | Cabeçalho de `artifacts/api-server/src/lib/capabilities.ts` |
 | **Refresh token em `localStorage`.** `RISCO POTENCIAL` aceito; a alternativa é cookie `httpOnly`, que muda o fluxo de autenticação inteiro. **Avaliar antes de haver usuário real** | [decisoes/PLATFORM_DECISIONS.md](decisoes/PLATFORM_DECISIONS.md) §9 |
-| **Artefatos de fase param na 04** enquanto o projeto está na 10. Nenhum `NN-VERIFICATION.md` foi criado, apesar de o `config.json` exigir | [phases/](phases/) e [config.json](config.json) |
+| **Artefatos de fase param na 04** enquanto o projeto está na 10. Nenhum `NN-VERIFICATION.md` foi criado, apesar de o `config.json` exigir. A fase 11 nasce já sob o padrão | [phases/](phases/) e [config.json](config.json) |
+| **REQ-F03 — não existe tipografia base.** O `body` não define `font-size` e herda 16px do navegador; os tamanhos são 72 classes à mão em 18 arquivos, a mais comum sendo `text-[15px]`, num app para idosos | [auditorias/2026-08-23-gsd-secao-10.md](auditorias/2026-08-23-gsd-secao-10.md) |
+| **Os 33 testes do motor de recorrência não rodam no CI.** Existem, passam, e nunca são exercidos — o workflow nunca chama `test:libs` | idem |
+| **Frontend sem nenhum teste.** Os quatro bugs que mais custaram nesta história foram todos de frontend | idem |
 | **`admin.test.ts` depende de variável de ambiente externa** — falha sozinho sem `ADMIN_PANEL_SECRET`. Apontado pelo Codex; merece mudança separada e testada | `artifacts/api-server/src/tests/admin.test.ts` |
 
 ---
