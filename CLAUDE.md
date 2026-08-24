@@ -129,6 +129,7 @@ ele foi migrado para cá justamente porque duas fontes divergiram e dois agentes
 | Requisitos e roadmap | [planning/REQUIREMENTS.md](planning/REQUIREMENTS.md), [planning/ROADMAP.md](planning/ROADMAP.md) |
 | Regras de fase e violações bloqueantes | [planning/config.json](planning/config.json) |
 | Spec original do produto | [planning/referencia/ESPECIFICACAO.md](planning/referencia/ESPECIFICACAO.md) |
+| Auditoria §10 do GSD (em andamento) | [planning/auditorias/2026-08-23-gsd-secao-10.md](planning/auditorias/2026-08-23-gsd-secao-10.md) |
 | Última auditoria de segurança | [planning/auditorias/2026-08-21-seguranca.md](planning/auditorias/2026-08-21-seguranca.md) |
 | Montar o banco de produção | [planning/runbooks/banco-de-producao.md](planning/runbooks/banco-de-producao.md) |
 | LGPD | [docs/lgpd.md](docs/lgpd.md) |
