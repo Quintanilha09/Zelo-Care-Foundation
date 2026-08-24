@@ -1,0 +1,64 @@
+{
+  "project": "ZELO",
+  "language": "pt-BR",
+  "updated": "2026-08-16",
+  "planning_dir": "planning",
+  "planning_dir_note": "Sem ponto inicial: o Obsidian ignora pastas ocultas e a documentacao ficaria invisivel no vault. Nomes de arquivo seguem o padrao GSD.",
+  "execution": {
+    "agent": "Claude Code, direto no repositorio clonado localmente",
+    "agent_changed_2026_08_16": "Ate a Fase 03 a implementacao passava pelo Replit Agent (fases 01 e 02 completas assim). O orcamento mensal do Replit Core ($20) se esgotou no meio da Fase 03. A partir dai, o repositorio foi conectado ao GitHub, clonado em C:/Projetos/Zelo-Care-Foundation, e a implementacao passou a ser direta: Claude le/edita/testa localmente e da push. Replit vira hospedagem, raramente mais que isso.",
+    "code_location": "C:/Projetos/Zelo-Care-Foundation (fora do vault do Obsidian de proposito) + github.com/Quintanilha09/Zelo-Care-Foundation",
+    "local_environment": "Node 24 + pnpm + Postgres standalone em localhost:5433 (nao e o servico do Windows) + .env.local nao versionado",
+    "replit_role": "Hospedagem do app publicado. So volta a receber prompt do Replit Agent para algo especifico do ambiente dele -- e nesse caso o prompt deve ser MINIMO (ver agente story-para-replit), porque o trabalho pesado, incluindo seguranca e testes, e sempre feito direto por Claude, sem custo de credito do Replit.",
+    "one_story_per_session": false,
+    "one_story_per_session_note": "Isso valia para poupar credito do Replit. Localmente o gargalo e esforco/tempo de sessao, nao credito por checkpoint -- entao stories relacionadas de uma mesma fase podem ser feitas juntas quando fizer sentido.",
+    "plan_before_code": true,
+    "dominant_constraint": "esforco e tempo de sessao (nao mais credito do Replit)",
+    "verification": "Testes locais reais (pnpm run test:all) substituem a verificacao via ask_question do conector Replit. Sempre rodar a suite completa antes de marcar uma fase como concluida."
+  },
+  "stack": {
+    "client": "React + Vite + TypeScript + Tailwind (PWA)",
+    "server": "Node.js + TypeScript (Express), monolito modular",
+    "database": "PostgreSQL + Drizzle, migrations versionadas",
+    "queue": "pg-boss",
+    "push": "Web Push (VAPID)",
+    "realtime": "SSE",
+    "vision": "Claude Vision API",
+    "billing": "PSP na web"
+  },
+  "backlog": {
+    "tool": "Plane",
+    "project_id": "864270aa-59b4-4775-9bda-50fbc3bb8565",
+    "identifier": "ZELO",
+    "epics_as": "modules",
+    "epics_as_note": "Plano free do Plane nao tem Epics nem Work Item Types"
+  },
+  "agents": {
+    "story-para-replit": "Uso raro agora -- so quando uma tarefa pontual precisa mesmo do ambiente do Replit. Gera prompt MINIMO, nao mais o prompt exaustivo original.",
+    "auditor-de-entrega": "Ainda relevante -- audita implementacao (agora local) contra criterios de aceite e invariantes, rodando teste de verdade em vez de perguntar ao Replit.",
+    "guardiao-do-produto": "LGPD, fronteira clinica e tom -- papel inalterado."
+  },
+  "phase_gates": {
+    "verify_before_ship": true,
+    "blocking_violations": [
+      "CON-001", "CON-002", "CON-003", "CON-004", "CON-005", "CON-006",
+      "CON-007", "CON-008", "CON-009", "CON-010", "CON-011", "CON-012",
+      "CON-013", "CON-014", "CON-015"
+    ],
+    "blocking_note": "Violacao de qualquer CON e devolucao automatica, independente dos criterios de aceite."
+  },
+  "documentation_protocol": {
+    "mandatory": true,
+    "rule": "Ao finalizar qualquer implementacao, atualizar STATE.md e o SUMMARY da tarefa antes de encerrar a sessao.",
+    "on_phase_complete": ["NN-VERIFICATION.md", "STATE.md", "ROADMAP.md se o escopo mudou"]
+  },
+  "git_protocol": {
+    "mandatory": true,
+    "added_2026_08_16": "Regra explicita do fundador, apos observar que os commits da Fase 03 vieram agrupados por fase em vez de por historia.",
+    "rule": "Commit e git push SEMPRE ao finalizar uma historia -- nunca acumular varias historias num commit so. Sem exceção, mesmo que a proxima historia comece na mesma sessao.",
+    "why": "Se algo travar no meio (sessao cai, credito acaba, o que for), nada fica implementado mas nao salvo. Granularidade por historia tambem torna o historico do git navegavel -- cada commit e uma unidade de trabalho completa e testada.",
+    "before_commit": "Suite de testes completa (pnpm run test:all) precisa passar antes do commit -- nunca commitar codigo quebrado.",
+    "replit_sync_note": "Push para o GitHub NAO sincroniza sozinho com o Repl hospedado no Replit -- e um pull manual la dentro (painel de Git). Nenhum auto-deploy foi configurado.",
+    "schema_sync_warning": "CRITICO -- aprendido em 17/08/2026 depois de um bug real: `drizzle-kit push` rodado localmente so atualiza o Postgres LOCAL (localhost:5433). O Postgres do Replit e um banco SEPARADO e nao recebe a mudanca sozinho, nem com git pull. Toda vez que um commit alterar algo em lib/db/src/schema/*, o aviso ao fundador precisa incluir explicitamente: rodar `cd lib/db && pnpm run push && pnpm run push:raw` DENTRO do Shell do Replit antes de testar. Esquecer isso causa erro 500 (coluna inexistente) que vaza como HTML pro cliente -- ver tambem app.ts, que agora tem handler de erro em JSON para pelo menos tornar esse tipo de falha diagnosticavel em vez de um JSON.parse quebrado."
+  }
+}
