@@ -18,7 +18,7 @@
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const raiz = fileURLToPath(new URL("../", import.meta.url));
@@ -158,6 +158,41 @@ describe("Cabeçalhos de segurança e CORS", () => {
   it("o corpo da requisição tem limite explícito", () => {
     const app = ler("app.ts");
     assert.match(app, /express\.json\(\s*\{[^}]*limit/, "express.json() precisa de limite explícito");
+  });
+});
+
+/**
+ * Consistência da própria suíte — guardrail adicionado em 21/08/2026.
+ *
+ * O commit `270b9de` deixou no `test:all` uma referência a
+ * `patient-role-matrix.test.ts`, arquivo que nunca existiu em nenhuma
+ * branch (resíduo de uma resolução de conflito que preservou a referência
+ * sem o arquivo). Resultado: `tsx --test` saía com código 1 e a suíte
+ * inteira ficou quebrada no main, sem ninguém perceber — e o CI que estava
+ * sendo montado teria falhado por isso.
+ *
+ * Este teste fecha os DOIS lados do problema:
+ *   - referência a arquivo que não existe (quebra a suíte);
+ *   - arquivo de teste que existe mas ficou fora da suíte (roda no
+ *     desenvolvimento, nunca no CI — pior, porque falha em silêncio).
+ */
+describe("Consistência da suíte de testes", () => {
+  const pkg = JSON.parse(ler("../package.json")) as { scripts: Record<string, string> };
+  // O fallback precisa ser tipado: com `?? []` puro, o TypeScript infere
+  // `never[]` e o `.includes(string)` abaixo vira erro de tipo.
+  const referenciados: string[] = pkg.scripts["test:all"].match(/src\/tests\/[a-z0-9-]+\.test\.ts/g) ?? [];
+
+  it("todo teste referenciado no test:all existe no disco", () => {
+    const faltando = referenciados.filter((caminho) => !existsSync(`${raiz}${caminho.replace("src/", "")}`));
+    assert.deepEqual(faltando, [] as string[], `test:all aponta pra arquivo inexistente — a suíte inteira falha: ${faltando.join(", ")}`);
+  });
+
+  it("todo arquivo .test.ts está registrado no test:all", () => {
+    const noDisco = readdirSync(`${raiz}tests`)
+      .filter((f) => f.endsWith(".test.ts"))
+      .map((f) => `src/tests/${f}`);
+    const foraDaSuite = noDisco.filter((caminho) => !referenciados.includes(caminho));
+    assert.deepEqual(foraDaSuite, [] as string[], `teste existe mas não roda no test:all (falha silenciosa): ${foraDaSuite.join(", ")}`);
   });
 });
 
