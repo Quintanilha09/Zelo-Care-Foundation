@@ -22,9 +22,37 @@ import { Clock } from "./clock.ts";
 
 const ADMIN_TOKEN_TTL_SECONDS = 8 * 60 * 60; // 8h — uma sessão de trabalho, não precisa de refresh token próprio
 
+/**
+ * Segredo do painel operacional.
+ *
+ * FALHA FECHADA se ele for IGUAL ao SESSION_SECRET. Os dois assinam mundos
+ * diferentes: um abre o painel operacional, o outro abre a sessão de um
+ * cuidador. A separação entre eles não é uma checagem que alguém possa
+ * esquecer — é a própria criptografia, e só vale enquanto as chaves diferem.
+ *
+ * Se forem iguais, um token de admin passa por verifyAccessToken como se fosse
+ * sessão de cuidador. O payload de admin não tem userId, então a requisição
+ * segue com `userId: undefined` — e o que o chamador vê é um 404 confuso, não
+ * o 401 que deveria acontecer.
+ *
+ * Encontrado em 23/08/2026: o workflow de CI definia as duas variáveis com o
+ * MESMO valor, e o teste que protege essa fronteira falhou com 404 em vez de
+ * 401 — exatamente o sintoma de o token ter sido aceito.
+ */
 function getAdminSecret(): string | null {
   const secret = process.env.ADMIN_PANEL_SECRET;
-  return secret && secret.length > 0 ? secret : null;
+  if (!secret || secret.length === 0) return null;
+
+  if (secret === process.env.SESSION_SECRET) {
+    console.error(
+      "[SEGURANCA] ADMIN_PANEL_SECRET e igual ao SESSION_SECRET. " +
+        "Isso funde o painel operacional e a sessao de cuidador num unico dominio de confianca. " +
+        "O painel fica DESABILITADO ate que os dois valores sejam diferentes."
+    );
+    return null;
+  }
+
+  return secret;
 }
 
 /** Comparação em tempo constante — a senha do painel não pode vazar por timing attack. */

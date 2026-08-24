@@ -20,8 +20,12 @@ jobs:
     timeout-minutes: 20
     env:
       DATABASE_URL: postgresql://zelo_ci:zelo_ci@localhost:5432/zelo_ci
-      ADMIN_PANEL_SECRET: ci-test-${{ github.run_id }}-${{ github.run_attempt }}
-      SESSION_SECRET: ci-test-${{ github.run_id }}-${{ github.run_attempt }}
+      # Os dois PRECISAM ser diferentes. Eram identicos ate 23/08/2026, e isso
+      # fundia o painel operacional e a sessao de cuidador num unico dominio de
+      # confianca: um token de admin passava por verifyAccessToken como se fosse
+      # sessao. O teste que protege essa fronteira falhou com 404 em vez de 401.
+      ADMIN_PANEL_SECRET: ci-admin-${{ github.run_id }}-${{ github.run_attempt }}
+      SESSION_SECRET: ci-session-${{ github.run_id }}-${{ github.run_attempt }}
       NODE_ENV: test
       CI: "true"
     services:

@@ -307,3 +307,76 @@ describe("Consistência das suítes fora do api-server", () => {
     );
   });
 });
+
+/**
+ * Separação entre painel operacional e sessão de cuidador — achado de 23/08/2026.
+ *
+ * Os dois mundos são separados pela ASSINATURA: `ADMIN_PANEL_SECRET` assina o
+ * token do painel, `SESSION_SECRET` assina a sessão do cuidador. Não é uma
+ * checagem que alguém possa esquecer — é criptografia. Mas ela só vale enquanto
+ * as duas chaves forem diferentes.
+ *
+ * O workflow de CI definia as duas com o MESMO valor. Resultado: um token de
+ * admin passava por `verifyAccessToken` como se fosse sessão de cuidador, seguia
+ * com `userId: undefined`, e o teste de fronteira falhava com 404 em vez de 401 —
+ * o sintoma exato de o token ter sido aceito.
+ *
+ * `getAdminSecret()` agora falha FECHADO nesse caso: desabilita o painel em vez
+ * de operar com a fronteira desfeita.
+ */
+describe("Painel operacional e sessão de cuidador não compartilham segredo", () => {
+  type ModuloAdmin = typeof import("../lib/admin-auth.ts");
+  async function comSegredos(
+    admin: string,
+    session: string,
+    fn: (mod: ModuloAdmin) => void
+  ): Promise<void> {
+    const oa = process.env.ADMIN_PANEL_SECRET;
+    const os = process.env.SESSION_SECRET;
+    try {
+      process.env.ADMIN_PANEL_SECRET = admin;
+      process.env.SESSION_SECRET = session;
+      fn(await import(`../lib/admin-auth.ts?v=${Math.random()}`));
+    } finally {
+      if (oa === undefined) delete process.env.ADMIN_PANEL_SECRET; else process.env.ADMIN_PANEL_SECRET = oa;
+      if (os === undefined) delete process.env.SESSION_SECRET; else process.env.SESSION_SECRET = os;
+    }
+  }
+
+  it("segredos IGUAIS desabilitam o painel — falha fechada, não aberta", async () => {
+    await comSegredos("mesmo-valor-nos-dois", "mesmo-valor-nos-dois", (mod: ModuloAdmin) => {
+      assert.equal(
+        mod.verifyAdminPassword("mesmo-valor-nos-dois"),
+        false,
+        "com os segredos iguais a fronteira não existe — o painel PRECISA recusar"
+      );
+      assert.throws(
+        () => mod.generateAdminToken(),
+        /não configurado/,
+        "gerar token de admin com segredo colidido tem que falhar, não emitir um token que abre sessão de cuidador"
+      );
+    });
+  });
+
+  it("segredos DIFERENTES fazem o painel funcionar normalmente", async () => {
+    await comSegredos("segredo-do-painel", "segredo-da-sessao", (mod: ModuloAdmin) => {
+      assert.equal(mod.verifyAdminPassword("segredo-do-painel"), true);
+      assert.equal(mod.verifyAdminPassword("segredo-da-sessao"), false);
+      assert.ok(mod.generateAdminToken().length > 0);
+    });
+  });
+
+  it("o workflow de CI não define os dois com o mesmo valor", () => {
+    const workflow = `${raiz}../../../.github/workflows/validate.yml`;
+    if (!existsSync(workflow)) return;
+    const conteudo = readFileSync(workflow, "utf8");
+    const admin = conteudo.match(/ADMIN_PANEL_SECRET:s*(.+)/)?.[1]?.trim();
+    const session = conteudo.match(/SESSION_SECRET:s*(.+)/)?.[1]?.trim();
+    assert.ok(admin && session, "o workflow precisa definir os dois segredos");
+    assert.notEqual(
+      admin,
+      session,
+      "validate.yml define ADMIN_PANEL_SECRET e SESSION_SECRET com o mesmo valor — isso desfaz a separação entre painel e sessão"
+    );
+  });
+});

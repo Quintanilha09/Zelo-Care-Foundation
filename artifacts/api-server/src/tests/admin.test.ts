@@ -55,6 +55,18 @@ if (!process.env.ADMIN_PANEL_SECRET) {
   process.env.ADMIN_PANEL_SECRET = crypto.randomBytes(32).toString("hex");
 }
 
+// Segredos iguais fundem os dois mundos que este arquivo existe para separar:
+// o token de admin passaria por verifyAccessToken como sessao de cuidador, e o
+// teste de fronteira falharia com 404 em vez de 401. Aconteceu no CI em
+// 23/08/2026. Aqui a colisao vira erro imediato, com a causa dita por extenso.
+if (process.env.ADMIN_PANEL_SECRET === process.env.SESSION_SECRET) {
+  throw new Error(
+    "ADMIN_PANEL_SECRET e SESSION_SECRET estao com o MESMO valor. " +
+      "A separacao entre painel operacional e sessao de cuidador e garantida pela " +
+      "assinatura, e ela deixa de existir quando as chaves sao iguais."
+  );
+}
+
 let testPort: number;
 let closeServer: () => Promise<void>;
 let familyId: number;
