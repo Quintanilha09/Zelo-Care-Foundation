@@ -333,7 +333,7 @@ export default function AppointmentsPage({ params }: { params: { id: string } })
       >
         {/* max-h + overflow: o formulário é mais alto que a tela em celular, e sem
             isto o diálogo cortava os últimos campos sem deixar rolar. */}
-        <DialogContent className="max-h-[85vh] overflow-y-auto">
+        <DialogContent>
           {paywallMessage ? (
             <PlanPaywall
               title="Consultas e exames no mesmo lugar"
@@ -357,7 +357,7 @@ export default function AppointmentsPage({ params }: { params: { id: string } })
       </Dialog>
 
       <Dialog open={!!detail} onOpenChange={(open) => !open && closeDetail()}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto">
+        <DialogContent>
           <DialogHeader><DialogTitle>{detail && TYPE_LABELS[detail.type]} — {detail?.specialty}</DialogTitle></DialogHeader>
           {detail && editForm && (
             <div className="space-y-4">

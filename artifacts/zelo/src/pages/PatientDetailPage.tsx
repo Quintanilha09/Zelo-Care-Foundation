@@ -282,7 +282,7 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
               <Button onClick={() => setOpen(true)} className="gap-2">
                 <Plus className="w-4 h-4" /> Tratamento
               </Button>
-            <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-xl max-h-[90vh] overflow-y-auto">
+            <DialogContent className="sm:max-w-xl">
               <DialogHeader>
                 <DialogTitle>Novo tratamento</DialogTitle>
                 <DialogDescription>O que o médico prescreveu.</DialogDescription>
