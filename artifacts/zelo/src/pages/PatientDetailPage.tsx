@@ -6,6 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { activateElderModeOnThisDevice } from "@/lib/elder-mode";
 import { AppHeader } from "@/components/app-header";
 import { TreatmentForm } from "@/components/treatment-form";
+import { CampoNumero } from "@/components/campo-numero";
 import { DoseCard } from "@/components/dose-card";
 import { PushPermissionPrompt } from "@/components/push-permission-prompt";
 import { NotificationPreferencesCard } from "@/components/notification-preferences-card";
@@ -440,7 +441,7 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
                           <SelectItem value="set">Corrigir para</SelectItem>
                         </SelectContent>
                       </Select>
-                      <Input type="number" value={adjustAmount} onChange={(e) => setAdjustAmount(e.target.value)} placeholder={s.unit} className="flex-1" />
+                      <CampoNumero value={adjustAmount} onChange={setAdjustAmount} min={0} placeholder={s.unit} className="flex-1" />
                     </div>
                     <Input value={adjustReason} onChange={(e) => setAdjustReason(e.target.value)} placeholder="Motivo (opcional)" />
                     <div className="flex gap-2">

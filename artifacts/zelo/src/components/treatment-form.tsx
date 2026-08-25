@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CampoLabel } from "@/components/campo-label";
+import { CampoNumero } from "@/components/campo-numero";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -425,7 +426,7 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <CampoLabel obrigatorio>A cada quantas horas</CampoLabel>
-              <Input type="number" min={1} value={intervalHours} onChange={(e) => setIntervalHours(Number(e.target.value))} />
+              <CampoNumero value={String(intervalHours)} onChange={(v) => setIntervalHours(v === "" ? 1 : Number(v))} min={1} max={24} sufixo="horas" />
             </div>
             <div className="space-y-2">
               <CampoLabel obrigatorio>Primeira dose às</CampoLabel>
@@ -463,11 +464,11 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <CampoLabel obrigatorio>Dias tomando</CampoLabel>
-                <Input type="number" min={1} value={onDays} onChange={(e) => setOnDays(Number(e.target.value))} />
+                <CampoNumero value={String(onDays)} onChange={(v) => setOnDays(v === "" ? 1 : Number(v))} min={1} sufixo="dias" />
               </div>
               <div className="space-y-2">
                 <CampoLabel obrigatorio>Dias de pausa</CampoLabel>
-                <Input type="number" min={0} value={offDays} onChange={(e) => setOffDays(Number(e.target.value))} />
+                <CampoNumero value={String(offDays)} onChange={(v) => setOffDays(v === "" ? 0 : Number(v))} min={0} sufixo="dias" />
               </div>
             </div>
             <TimesList times={times} onChange={setTimes} />
@@ -500,7 +501,7 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <CampoLabel htmlFor="tf-stock-qty" obrigatorio>Quantidade na caixa/cartela</CampoLabel>
-              <Input id="tf-stock-qty" type="number" min={0} value={stockQuantity} onChange={(e) => setStockQuantity(e.target.value)} placeholder="30" />
+              <CampoNumero id="tf-stock-qty" value={stockQuantity} onChange={setStockQuantity} min={0} placeholder="30" />
             </div>
             <div className="space-y-2">
               <CampoLabel htmlFor="tf-stock-unit" obrigatorio>Unidade</CampoLabel>

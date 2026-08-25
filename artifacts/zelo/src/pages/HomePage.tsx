@@ -15,6 +15,7 @@ import { authFetch } from "@/lib/auth-client";
 import { subscribeToPatientEvents } from "@/lib/realtime-client";
 import { useAuth } from "@/context/AuthContext";
 import { AppHeader } from "@/components/app-header";
+import { CampoNumero } from "@/components/campo-numero";
 import { DoseCard } from "@/components/dose-card";
 import { Button } from "@/components/ui/button";
 import {
@@ -507,12 +508,12 @@ export default function HomePage() {
                     </div>
                     {restockingMedicationId === item.medicationId && (
                       <div className="flex items-center gap-2">
-                        <Input
-                          type="number" min="1" inputMode="numeric" autoFocus
-                          placeholder={`Quantos ${item.unit}?`}
+                        <CampoNumero
                           value={restockAmount}
-                          onChange={(e) => setRestockAmount(e.target.value)}
-                          className="h-8 bg-background"
+                          onChange={setRestockAmount}
+                          min={1}
+                          placeholder={`Quantos ${item.unit}?`}
+                          className="flex-1"
                         />
                         <Button size="sm" onClick={() => void handleRestock(item.medicationId)}>Registrar</Button>
                         <Button size="sm" variant="ghost" onClick={() => setRestockingMedicationId(null)}>Cancelar</Button>
