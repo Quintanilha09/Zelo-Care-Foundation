@@ -29,6 +29,16 @@ async function buildAll() {
     // - use path traversal to read files (e.g. @google-cloud/secret-manager loads sibling .proto files)
     external: [
       "*.node",
+
+      // pdfkit lê as métricas de fonte do disco em tempo de execução:
+      //   fs.readFileSync(__dirname + '/data/Helvetica.afm')
+      // Empacotado, __dirname vira dist/ e dist/data/ não existe — a geração
+      // do PDF estoura ENOENT e a rota devolve 500. Os testes não pegavam
+      // porque rodam com tsx sobre o node_modules real, onde data/ está lá.
+      //
+      // É exatamente o caso de path traversal descrito no comentário acima.
+      // Confirmado em 24/08/2026 inspecionando o bundle: dist/data/ ausente.
+      "pdfkit",
       "sharp",
       "better-sqlite3",
       "sqlite3",
