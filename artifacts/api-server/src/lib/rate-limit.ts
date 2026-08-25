@@ -173,3 +173,43 @@ export const refreshLimiter = rateLimit({
   keyGenerator: (req) => `refresh:${clientIp(req)}`,
   message: { error: "Muitas renovações de sessão. Aguarde alguns instantes." },
 });
+
+/**
+ * Envio de mídia (QUI-5): 30 arquivos por hora, por usuário.
+ *
+ * A chave é o userId, não o IP — mesmo raciocínio do photoExtractionLimiter:
+ * o custo é por arquivo guardado, e uma família atrás do mesmo IP não deve
+ * dividir cota. 30/hora é folgado para quem está publicando o dia do
+ * paciente e apertado para quem quer usar o bucket como hospedagem.
+ */
+export const mediaUploadLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 30 * M,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const auth = (req as { user?: { userId?: number } }).user;
+    return `media-upload:${auth?.userId ?? clientIp(req)}`;
+  },
+  message: { error: "Muitos envios seguidos. Aguarde alguns minutos e tente de novo." },
+});
+
+/**
+ * Leitura de mídia pelo link assinado: 300 por 15 min por IP.
+ *
+ * Bem mais generoso que o publicTokenLimiter (30/15min) de propósito: um
+ * mural com 20 fotos são 20 leituras de uma vez, e várias pessoas da mesma
+ * família costumam estar atrás do mesmo IP. Com 30 o app quebraria abrindo
+ * a tela duas vezes.
+ *
+ * Continua existindo porque a rota não tem sessão — quem tem o link entra —
+ * e sem teto ela viraria amplificador de banda contra o bucket.
+ */
+export const mediaContentLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 300 * M,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req) => `media-content:${clientIp(req)}`,
+  message: { error: "Muitas leituras seguidas. Aguarde alguns instantes." },
+});

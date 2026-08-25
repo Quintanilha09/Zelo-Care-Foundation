@@ -31,3 +31,4 @@ export * from "./deletion-requests";
 export * from "./adherence-reports";
 export * from "./activities";
 export * from "./patient-access-tokens";
+export * from "./media-assets";

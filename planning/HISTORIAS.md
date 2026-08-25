@@ -311,6 +311,55 @@ UI: `PatientDetailPage` agora traduz status (Ativo/Pausado/Concluído/Cancelado)
 
 **UI não verificada em navegador real, por um motivo diferente do de sempre:** a separação frontend/backend deste app só existe de fato atrás do roteamento do Replit (dois serviços, uma origem pública) — não há proxy local equivalente, então testar de ponta a ponta localmente exigiria montar essa infraestrutura só pra isto, fora do escopo da história. Fica pro roteiro de teste do fundador no Replit, junto do resto do lote pendente.
 
+## QUI-5 — Fundação de mídia: guardar arquivo fora do banco (25/08/2026)
+
+Primeira história do projeto **ZELO — Momentos**. **Sem tela nenhuma**, de propósito: é a base para
+as outras seis, e sozinha não entrega nada ao usuário.
+
+- **Tabela `media_assets`** guarda só o CATÁLOGO — família, paciente, quem enviou, tipo, MIME,
+  tamanho e a chave no bucket. **Nunca o binário.** É a diferença deliberada em relação a
+  `photo_extractions.photo_data` e `appointments.attachment_data`, que guardam base64 dentro do
+  Postgres. Os dois legados ficaram onde estão: migrar junto misturaria dois riscos.
+- **Sem coluna `deletedAt`.** Apagar apaga o objeto no bucket e a linha. Marcar como excluída
+  convidaria a "recuperar" depois um arquivo que o consentimento já não cobre.
+- **`lib/media-storage.ts` — armazenamento atrás de uma interface**, com duas implementações:
+  Object Storage do Replit e memória. Não é abstração por elegância: sem a de memória, nenhum teste
+  de mídia rodaria (o CI não tem bucket), e o `dev` local também não.
+- **Falha fechada em produção:** sem `DEFAULT_OBJECT_STORAGE_BUCKET_ID`, produção **não** cai para
+  memória — a rota responde **503** dizendo o que falta. Cair para memória aceitaria o upload,
+  responderia 201 e perderia o arquivo no restart: perda de dado disfarçada de sucesso. Mesma regra
+  do `getAdminSecret()`.
+- **`lib/media-links.ts` — link curto e assinado, sem estado.** A sessão é `Bearer` em memória e
+  `<img src>` não manda header, então rota atrás de `requireAuth` simplesmente não renderiza. O
+  token é `id.exp.assinatura`, válido por **10 minutos**, e nada é gravado — um mural de 20 fotos
+  gravaria 20 linhas por rolagem se seguisse o padrão de `export_tokens`.
+- **A chave do HMAC é derivada do `SESSION_SECRET` com separação de domínio**, e isso NÃO repete o
+  erro de 23/08 (`ADMIN_PANEL_SECRET === SESSION_SECRET`): lá o problema eram chave igual **e**
+  formato igual, então um token passava pelo verificador do outro. Aqui a chave é outra (derivação
+  de mão única) e o formato é outro (não é JWT). Testado **nos dois sentidos**.
+- **O tipo vem do MIME, nunca do cliente.** Se o cliente mandasse `kind`, mandaria um vídeo de 8 MB
+  declarando "image" e escaparia do teto de 2 MB. Tetos: imagem 2 MB, áudio 1 MB, vídeo 8 MB.
+  **SVG está fora do allowlist** — é documento executável e viraria XSS ao ser servido de volta.
+- **Ordem das operações é explícita nos dois sentidos.** No envio: objeto primeiro, linha depois, e
+  o objeto é removido se a linha falhar. Na exclusão: objeto primeiro, e se falhar a linha
+  **continua lá** para poder tentar de novo — apagar a linha antes deixaria um arquivo pessoal
+  órfão no bucket, que é o oposto do que alguém pediu ao mandar apagar.
+- Isolamento por família como toda rota: mídia de outra família responde **404, nunca 403**.
+
+**25 testes novos** (`media.test.ts`), incluindo: o link expira de verdade com o relógio andando;
+token adulterado morre; apagar remove o objeto do bucket (conferido no armazenamento, não só no
+banco); SVG recusado com 415; imagem acima do teto recusada com 413; cuidador de outra família
+recebe 404 no link e no delete; e nenhuma coluna da tabela contém o binário.
+
+**Suíte completa depois desta história:** **432 testes, 430 passando, 2 pulados, zero falhas** —
+medido em 25/08/2026 contra o Postgres em Docker
+([runbooks/banco-de-teste-local.md](runbooks/banco-de-teste-local.md)).
+
+**Pendente de deploy:** `media_assets` ainda não está em `sql/producao-schema-completo.sql`, e o
+`pnpm --filter @workspace/db run push` precisa rodar no Replit.
+
+---
+
 ## Fases
 
 | # | Fase | Status |

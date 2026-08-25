@@ -15,8 +15,8 @@
 
 ## Posição
 
-**41 histórias entregues:** 38 das 42 do backlog original, mais ZELO-56, ZELO-57 e ZELO-58,
-criadas depois a partir de refinamento.
+**42 histórias entregues:** 38 das 42 do backlog original, mais ZELO-56, ZELO-57 e ZELO-58,
+criadas depois a partir de refinamento, mais **QUI-5** (fundação de mídia, 25/08/2026).
 
 | Fase | Situação |
 |---|---|
@@ -32,22 +32,27 @@ criadas depois a partir de refinamento.
 
 ---
 
-## O backlog codificável está esgotado
+## O backlog codificável NÃO está mais esgotado — 25/08/2026
 
-Verificado história a história em 19/08/2026 e ainda válido. **Nenhuma das restantes tem código
-para escrever agora** — e nenhuma depende de mim:
+Ficou esgotado entre 19 e 24/08/2026, e isso foi verdade enquanto o backlog era só o do Plane.
+**Deixou de ser** quando o refinamento de Momentos
+([refinamentos/momentos-fotos-e-videos.md](refinamentos/momentos-fotos-e-videos.md)) produziu
+7 histórias novas, hoje no Linear como QUI-5 a QUI-11.
+
+**QUI-5 (fundação de mídia) está entregue.** A próxima é a **QUI-6, consentimento de imagem** — e
+ela é bloqueante: nenhuma tela de foto pode existir antes dela.
+
+Das antigas, as duas que atravessaram para o Linear continuam paradas pelos mesmos motivos:
 
 | História | Por que está parada |
 |---|---|
-| ZELO-31, ZELO-41 | Provedor de SMS e de ligação automática não escolhidos |
-| ZELO-39 | PSP de pagamento não escolhido (conta, KYC e chaves são do fundador) |
-| ZELO-42 (app nativo) | **Bloqueada pelos próprios critérios de aceite**: exige gatilho medido — entrega iOS <95%, ou instalação PWA provada como barreira, ou loja virar requisito. Com zero usuário em produção, nenhum pode ter sido atingido |
-| ZELO-43 | Portão comercial — 5 conversas com ILPI, um turno presencial, carta de intenção. Trabalho de campo, marcada `sem-código` |
-| ZELO-44 | Portão jurídico — advogado de LGPD em saúde. `sem-código`, e depende da ZELO-43 fechar |
-| ZELO-45+ | Não existem ainda. O texto da ZELO-43 é explícito: nenhuma história nova até ela fechar |
+| **QUI-12** (assinatura, era ZELO-39) | PSP não escolhido. A pesquisa está feita — Mercado Pago é a recomendação, ver [decisoes/CUSTOS-APIS.md](decisoes/CUSTOS-APIS.md) — mas falta confirmar se o Pix Automático cobra sozinho, e falta conta e KYC do fundador |
+| **QUI-13** (app nativo, era ZELO-42) | **Bloqueada pelos próprios critérios de aceite**: exige gatilho medido — entrega iOS <95%, ou instalação PWA provada como barreira, ou loja virar requisito. Com zero usuário em produção, nenhum pode ter sido atingido |
+| ZELO-31, ZELO-41 (SMS e ligação) | Fora do v1 desde 24/08/2026 — viraram trabalho do comprador. Não migradas para o Linear |
+| ZELO-43 a ZELO-55 (trilha institucional) | Não migradas. Os dois portões são pré-condição de negócio, não código; as 11 de implementação estão atrás deles. Desenho preservado em [referencia/EXTENSAO-B2B.md](referencia/EXTENSAO-B2B.md) |
 
-**Consequência prática:** o trabalho disponível hoje é manutenção, correção, segurança e
-qualidade — não história nova. Não force uma história bloqueada só para ter o que fazer.
+**Consequência prática:** há história nova para escrever de novo, e a ordem é a do refinamento —
+QUI-6 antes de qualquer tela de foto. Não force uma história bloqueada só para ter o que fazer.
 
 **E esse trabalho agora tem nome.** A auditoria §10 do GSD
 ([auditorias/2026-08-23-gsd-secao-10.md](auditorias/2026-08-23-gsd-secao-10.md)) produziu um plano de
@@ -67,6 +72,9 @@ enviado e o login exige e-mail verificado. Só o Google entra.
   — schema completo já gerado e testado, trigger de imutabilidade, secrets faltando, URL do OAuth.
 - **Verificação visual só acontece no Replit.** O roteamento de `/api` para o backend é da
   infraestrutura dele (`router = "application"`), não reproduzido localmente.
+- **A suíte de integração VOLTOU a rodar localmente** em 25/08/2026: 432 testes, 430 passando,
+  2 pulados. Passo a passo em [runbooks/banco-de-teste-local.md](runbooks/banco-de-teste-local.md).
+  O bloqueio anterior era só o container `zelo-test-pg` parado.
 
 ---
 

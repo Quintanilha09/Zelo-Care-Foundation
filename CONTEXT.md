@@ -37,28 +37,33 @@ Medido nesta data, nesta máquina:
 
 | Fato | Valor | Como foi medido |
 |---|---|---|
-| Tabelas no schema | **31** | `pgTable(...)` em `lib/db/src/schema/` — bate com `CREATE TABLE` em `producao-schema-completo.sql` |
-| Arquivos de rota | **30** | `artifacts/api-server/src/routes/*.ts` |
-| Módulos em `lib/` | **27** | `artifacts/api-server/src/lib/*.ts` |
+| Tabelas no schema | **32** | `pgTable(...)` em `lib/db/src/schema/` — medido em 25/08/2026. `media_assets` (QUI-5) ainda NÃO está em `producao-schema-completo.sql` |
+| Arquivos de rota | **32** | `artifacts/api-server/src/routes/*.ts`, incluindo o `index.ts` |
+| Módulos em `lib/` | **29** | `artifacts/api-server/src/lib/*.ts` |
 | Middlewares | **2** | `require-auth.ts` e `require-patient-access.ts` |
-| Arquivos de teste | **36** | `src/tests/*.test.ts` |
-| Consistência da suíte | **limpa** | 36 referenciados no `test:all` = 36 no disco; nenhum órfão, nenhum fora |
+| Arquivos de teste | **37** | `src/tests/*.test.ts` |
+| Consistência da suíte | **limpa** | 37 referenciados no `test:all` = 37 no disco; nenhum órfão, nenhum fora |
 | Typecheck do monorepo | **exit 0** | `pnpm run typecheck` — 4 pacotes, todos limpos |
 | Modelo de visão | `claude-haiku-4-5-20251001` | `lib/vision.ts` |
 | Fila | **pg-boss** sobre o mesmo Postgres | `lib/queue.ts` |
 
-### Contagem de testes passando — `NÃO VERIFICADO em 23/08/2026`
+### Contagem de testes passando — medida em 25/08/2026
 
-Última execução verde conhecida: **395 de 397 testes, 2 pulados, zero falhas**, em **21/08/2026**,
-no Replit, com `ADMIN_PANEL_SECRET` definido.
+**432 testes, 430 passando, 2 pulados, zero falhas.** Executado localmente nesta máquina, contra o
+Postgres em Docker descrito em [runbooks/banco-de-teste-local.md](planning/runbooks/banco-de-teste-local.md),
+com `ADMIN_PANEL_SECRET` diferente do `SESSION_SECRET`. Duração: ~410 s.
 
-Não foi reexecutada em 23/08 porque **o banco de teste local não está acessível**: o
-`.env.local` aponta para `localhost:5433`, um Postgres em Docker que usava autenticação sem senha,
-e o Docker Desktop está fora do ar. O Postgres nativo na 5432 tem a base `zelo_dev`, mas exige
-senha para o papel `zelo_dev` — que a URL do `.env.local` não carrega.
+Antes disso a última execução verde conhecida era de 21/08/2026, no Replit: 395 de 397.
 
-**Para reexecutar:** subir o Docker Desktop e o container `zelo-test-pg`, ou definir senha para o
-papel `zelo_dev` na instância nativa e ajustar o `.env.local`.
+**A suíte voltou a rodar localmente.** O bloqueio de 23/08 era o container `zelo-test-pg`
+parado e o `.env.local` apontando para uma URL sem senha. Resolvido subindo o Postgres com
+`POSTGRES_HOST_AUTH_METHOD=trust`, que é o que a URL do `.env.local` espera — o runbook tem
+os comandos.
+
+> `NÃO VERIFICADO`: `pnpm run build` na raiz continua falhando no `mockup-sandbox` por falta do
+> binário nativo do rollup, consequência conhecida do `pnpm-workspace.yaml` excluir binários
+> não-Linux. Não é regressão e não afeta a API: `pnpm --filter @workspace/api-server run build`
+> termina limpo.
 
 ---
 

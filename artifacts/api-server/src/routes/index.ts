@@ -28,6 +28,7 @@ import realtimeRouter from "./realtime";
 import pushRouter from "./push";
 import notificationPreferencesRouter from "./notification-preferences";
 import patientAccessRouter from "./patient-access";
+import mediaRouter from "./media";
 import { allowsDevelopmentShortcuts } from "../lib/environment.ts";
 
 const router = Router();
@@ -72,6 +73,10 @@ router.use(notificationPreferencesRouter);
 // a credencial, como em adherence-report.ts) e as duas rotas do paciente
 // (requirePatientAccess, mecanismo próprio que nunca vira sessão de cuidador).
 router.use(patientAccessRouter);
+// QUI-5: fundacao de midia. GET /media/conteudo/:token nao passa por
+// requireAuth de proposito — o token assinado E a credencial, porque
+// <img src> nao manda header Authorization. Ver lib/media-links.ts.
+router.use(mediaRouter);
 
 // Rotas de controle do relógio — APENAS fora de produção.
 //

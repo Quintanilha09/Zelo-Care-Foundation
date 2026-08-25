@@ -81,6 +81,12 @@ async function buildAll() {
       "@azure/*",
       "@opentelemetry/*",
       "@google-cloud/*",
+
+      // @replit/object-storage embrulha o @google-cloud/storage, que ja esta
+      // externalizado logo acima. Empacotar so a casca deixaria o miolo sendo
+      // resolvido em runtime a partir de dist/ — o mesmo tipo de quebra do
+      // pdfkit. Externalizar os dois mantem o par junto no node_modules.
+      "@replit/object-storage",
       "@google/*",
       "googleapis",
       "firebase-admin",
