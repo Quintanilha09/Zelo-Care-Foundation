@@ -18,8 +18,13 @@ volume previsível deste produto. A camada gratuita cobre folgadamente o uso rea
 > **Ampliado em 25/08/2026**, a pedido do fundador: a versão original olhava só APIs. Agora inclui
 > **hospedagem no Replit, armazenamento de mídia e taxas das lojas**, com o custo em três tamanhos
 > de base — ver [Custo durante o crescimento](#custo-durante-o-crescimento).
-> O quadro não muda: **de 100 a 10 mil famílias, tudo somado fica entre ~US$ 40 e ~US$ 250 por
-> mês.** O SMS continua sendo o único item capaz de mudar isso de patamar.
+>
+> **E uma correção no meio do caminho:** a primeira versão da tabela de crescimento **esqueceu o
+> compute do banco de produção**, que é a maior linha de todas — US$ 116,80/mês, praticamente fixa,
+> porque o pg-boss mantém o Postgres acordado 24/7. Com ela, o custo real vai de **~US$ 158 (100
+> famílias) a ~US$ 397 (10 mil)**, não de US$ 40 a US$ 250.
+>
+> O SMS continua sendo o único item capaz de mudar isso de patamar.
 
 ---
 
@@ -247,39 +252,107 @@ comprar o pior cenário sem saber se ele existe.
 | Momentos armazenados | **~27 MB** | 9 MB/mês × retenção de 90 dias |
 | Momentos vistos | **~27 MB** de saída | cada foto vista ~3 vezes |
 
+### Preços de nuvem do Replit — verificados em 25/08/2026
+
+Vieram da tabela de atualização de preços de agosto de 2026, que é a que vale hoje.
+
+| Item | Preço |
+|---|---|
+| **Banco — compute** | **US$ 0,16 por hora ativa** |
+| **Banco — armazenamento** | US$ 0,35 por GiB/mês *(caiu de US$ 1,50)* |
+| **App Storage — armazenamento** | US$ 0,015 por GiB/mês *(caiu de US$ 0,03)* |
+| **App Storage — saída de dados** | US$ 0,05 por GiB *(caiu de US$ 0,10)* |
+| **App Storage — operações básicas** (leitura) | US$ 0,0004 por mil |
+| **App Storage — operações avançadas** (escrita) | US$ 0,005 por mil |
+| **Reserved VM 0,5 vCPU / 2 GiB** | US$ 0,0208/h → **US$ 15,18/mês** |
+| **Reserved VM 1 vCPU / 4 GiB** | US$ 0,0486/h → **US$ 35,48/mês** |
+| **Reserved VM dedicada 2 vCPU / 8 GiB** | US$ 0,0694/h → **US$ 50,66/mês** |
+
+Cada objeto guardado tem **período mínimo de cobrança de 7 dias** — irrelevante para a retenção de
+90 dias dos Momentos, mas registrado.
+
+### CORREÇÃO — o compute do banco é a maior linha, e eu tinha omitido
+
+`ERRO MEU, corrigido em 25/08/2026.`
+
+A primeira versão desta seção somava ~US$ 40 / US$ 64 / US$ 250 e **não incluía o compute do banco
+de produção**. Com o preço verificado, ele sozinho é **US$ 116,80 por mês** — 730 horas × US$ 0,16.
+
+**E ele não escala com o número de famílias: é praticamente fixo.** O banco só para de ser cobrado
+depois de **5 minutos sem nenhuma consulta**, e neste app isso nunca acontece: o **pg-boss é uma
+fila dentro do próprio Postgres** e consulta o banco continuamente para disparar lembrete de dose
+na hora certa. O banco fica acordado 24/7 por desenho do produto.
+
+**Isso explica um fato que já estava registrado e sem causa.** O `STATE.md` diz que o banco de
+produção "está pausado por limite de gasto (teto de US$ 1 atingido)". A US$ 0,16/h, **US$ 1 dura
+6 horas e 15 minutos** — bate com o que aconteceu. O teto não foi atingido por uso anormal; foi
+atingido porque o teto era baixo demais para um banco que fica acordado.
+
 ### O que se paga em cada tamanho
 
 | | **100 famílias** | **1.000 famílias** | **10.000 famílias** |
 |---|---|---|---|
-| Replit — plano Core | $25 | $25 | $25 |
-| Replit — publicação (Reserved VM) | $15 (0,5 vCPU) | $35 (1 vCPU) | $50 (2 vCPU) |
-| Google Maps | **$0** (dentro dos 10 mil) | **$0** (dentro dos 10 mil) | **$120** |
-| Anthropic (Haiku) | $0,35 | $3,50 | $35 |
-| Resend | **$0** (dentro dos 3 mil) | **$0** | $20 (plano Pro) |
+| **Banco — compute** (730 h) | **$116,80** | **$116,80** | **$116,80** |
+| Banco — armazenamento | $0,35 (~1 GiB) | $1,05 (~3 GiB) | $10,50 (~30 GiB) |
+| Replit — plano Core | $25,00 | $25,00 | $25,00 |
+| Replit — publicação (Reserved VM) | $15,18 (0,5 vCPU) | $35,48 (1 vCPU) | $50,66 (2 vCPU) |
+| Google Maps | **$0** (dentro dos 10 mil) | **$0** (dentro dos 10 mil) | $120,00 |
+| Anthropic (Haiku) | $0,35 | $3,50 | $35,00 |
+| Resend | **$0** (dentro dos 3 mil) | **$0** | $20,00 (Pro) |
+| App Storage (Momentos) | $0,19 | $1,91 | $19,06 |
 | Web Push | $0 | $0 | $0 |
-| Object Storage (~2,7 / 27 / 270 GB) | `?` | `?` | `?` |
-| Postgres além do incluído | $0 | `?` | `?` |
-| **Soma do que é verificável** | **~US$ 40** | **~US$ 64** | **~US$ 250** |
+| **Total** | **~US$ 158** | **~US$ 184** | **~US$ 397** |
+
+> `NÃO VERIFICADO`: há indício de que o plano Core inclua **100 horas de compute e 3 GiB** de banco
+> por mês, o que derrubaria ~US$ 16 de cada linha. Não achei essa franquia escrita em página
+> oficial, então a tabela cobra tudo — se estiver errada, é para menos.
+
+### O que a conta dos Momentos revela
+
+O App Storage é barato, mas **a maior parte não é guardar: é entregar.** Em 10 mil famílias:
+
+| | Valor |
+|---|---|
+| Guardar ~264 GiB | $3,96 |
+| **Entregar ~264 GiB** | **$13,20** — 69% do total |
+| Escritas (300 mil) | $1,50 |
+| Leituras (1 milhão) | $0,40 |
+
+Duas consequências práticas:
+
+1. **A retenção de 90 dias economiza no lugar menor.** Ela corta armazenamento, não entrega. O
+   motivo dela continua sendo a LGPD, não o custo — e agora com número para provar.
+2. **O cache curto de 10 minutos que a QUI-5 implementou custa dinheiro, e vale a pena.** Cache
+   longo cortaria parte dos US$ 13,20, mas serviria do navegador uma foto que o consentimento já
+   revogou — é exatamente o que a QUI-6 existe para impedir. **US$ 13/mês é preço baixo por isso.**
+
+**Sensibilidade a vídeo (QUI-9):** um vídeo de 30 s comprimido é ~5 MB, contra ~300 KB de uma foto —
+**16 vezes mais**. Se 10% dos momentos virarem vídeo, a saída de dados quase triplica: os US$ 13,20
+viram ~US$ 34. Continua pequeno, mas é o único item cujo custo pode disparar com uma mudança de
+comportamento do usuário. Vale medir depois que a QUI-9 entrar.
 
 **Onde o Maps começa a custar:** só a partir de ~5 mil famílias, porque cada família consome
 2 requisições de cada SKU e a franquia é de 10 mil por SKU. Em 10 mil famílias são US$ 50 de
 Place Details + US$ 70 de mapa. **Tirar o mapa da tela corta US$ 70 dos US$ 120** — o endereço em
 texto já resolve o caso de uso, e o mapa é enfeite.
 
-**Onde está o buraco desta estimativa:** `NÃO VERIFICADO` — o preço por GB do Object Storage do
-Replit não está publicado nas páginas que consegui abrir, e o mesmo vale para as tarifas por
-unidade do Postgres acima do incluído (o plano Core inclui **3 GiB de armazenamento e 100 horas de
-compute**). Em 10 mil famílias, os Momentos seriam ~**270 GB armazenados** e ~**270 GB de saída**
-por mês; a ordem de grandeza de mercado põe isso entre US$ 15 e US$ 40/mês, mas **é estimativa,
-não preço**. Confirmar antes de a QUI-7 entrar no ar.
-
 ### O que isso significa
 
 Com 10 mil famílias e **5% pagando** R$ 29,90, a receita bruta é ~R$ 14.950/mês (~US$ 2.700).
-O custo de infraestrutura de ~US$ 250 é cerca de **9% disso** — mais a taxa do PSP, que é
-proporcional à receita, não à base.
+Os ~US$ 397 de infraestrutura são cerca de **15% disso** — mais a taxa do PSP, que é proporcional
+à receita, não à base.
 
-**Infraestrutura não é o risco deste negócio.** Conversão é. E SMS seria, se fosse ligado.
+**O ponto de virada é cedo, e é o que importa saber.** Com o banco custando ~US$ 117 fixos, o
+produto precisa de aproximadamente **8 assinantes pagantes** só para cobrir infraestrutura. Isso é
+pouco — mas é diferente de "custa quase nada até mil famílias", que era o que a versão anterior
+deste documento dava a entender.
+
+**Infraestrutura ainda não é o risco deste negócio.** Conversão é. E SMS seria, se fosse ligado.
+
+**Fontes:** [Replit — atualização de preços de agosto/2026](https://docs.replit.com/billing/aug-cloud-billing-updates),
+[Replit — App Storage Billing](https://docs.replit.com/billing/object-storage-billing),
+[Replit — preços de publicação](https://docs.replit.com/billing/deployment-pricing),
+[Replit — bancos de produção](https://docs.replit.com/cloud-services/storage-and-databases/production-databases).
 
 ---
 
