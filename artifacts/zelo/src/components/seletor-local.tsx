@@ -117,8 +117,11 @@ export function SeletorLocal({
         };
 
         elemento = new places.PlaceAutocompleteElement();
-        // O elemento é um web component: não aceita className do React.
-        elemento.setAttribute("style", "width:100%");
+        // Nada de estilo inline aqui: o componente tem Shadow DOM e não aceita
+        // className do React. A aparência vive em index.css, na regra
+        // `gmp-place-autocomplete`, escrita com os tokens do tema — inclusive o
+        // `color-scheme: light`, sem o qual ele seguia o tema do SISTEMA e
+        // aparecia preto no meio de um formulário claro.
         caixaBusca.current.replaceChildren(elemento);
 
         elemento.addEventListener("gmp-select", (async (evento: Event) => {

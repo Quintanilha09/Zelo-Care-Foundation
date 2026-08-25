@@ -158,3 +158,75 @@
     line-height: 1.6;
   }
 }
+/**
+ * Campo de busca de endereço do Google (PlaceAutocompleteElement).
+ *
+ * ── Por que estas regras existem ─────────────────────────────────────────
+ *
+ * É um web component com Shadow DOM: não aceita classe do Tailwind nem
+ * herda o estilo dos outros campos. Sem isto, ele aparecia PRETO no meio de
+ * um formulário claro — porque o padrão dele é `color-scheme: light dark`,
+ * ou seja, ele seguia o tema do SISTEMA operacional, não o do app.
+ *
+ * `color-scheme: light` é a correção da causa. O resto usa `::part()`, que o
+ * próprio componente expõe, para deixá-lo idêntico ao `<Input>` do app.
+ *
+ * Tudo escrito com os tokens do tema (--input, --ring, --radius…), não com
+ * cor fixa: se a paleta mudar, este campo acompanha em vez de destoar.
+ */
+gmp-place-autocomplete {
+  /* A causa: sem isto o componente segue o tema do sistema, não o do app. */
+  color-scheme: light;
+  width: 100%;
+  font-family: inherit;
+}
+
+/* Mesma geometria do <Input>: h-9, rounded-md, border-input, px-3, shadow-sm */
+gmp-place-autocomplete::part(input) {
+  height: 2.25rem;
+  width: 100%;
+  border-radius: calc(var(--radius) - 2px);
+  border: 1px solid hsl(var(--input));
+  background-color: transparent;
+  color: hsl(var(--foreground));
+  padding: 0.25rem 0.75rem;
+  font-size: 1rem;
+  font-family: inherit;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+}
+
+gmp-place-autocomplete::part(input)::placeholder {
+  color: hsl(var(--muted-foreground));
+}
+
+/* O app usa anel de foco, não borda grossa — mesmo comportamento do Input */
+gmp-place-autocomplete::part(focus-ring) {
+  outline: none;
+  box-shadow: 0 0 0 1px hsl(var(--ring));
+  border-radius: calc(var(--radius) - 2px);
+}
+
+/* A lista de sugestões segue o Popover do app */
+gmp-place-autocomplete::part(prediction-list) {
+  background-color: hsl(var(--popover));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+  margin-top: 0.25rem;
+}
+
+gmp-place-autocomplete::part(prediction-item) {
+  color: hsl(var(--foreground));
+  font-family: inherit;
+}
+
+gmp-place-autocomplete::part(prediction-item-secondary-text) {
+  color: hsl(var(--muted-foreground));
+}
+
+/* O trecho que casa com o que foi digitado fica em destaque, não em negrito
+   berrante — o produto evita chamar atenção sem motivo. */
+gmp-place-autocomplete::part(prediction-item-match) {
+  font-weight: 600;
+  color: hsl(var(--foreground));
+}
