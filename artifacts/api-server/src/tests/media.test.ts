@@ -20,6 +20,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   usersTable, caregiversTable, familiesTable, patientsTable, mediaAssetsTable,
+  consentRecordsTable,
 } from "@workspace/db";
 import { generateAccessToken, verifyAccessToken } from "../lib/tokens.ts";
 import { hashPassword } from "../lib/password.ts";
@@ -170,6 +171,22 @@ before(async () => {
   const [outroPatient] = await db.insert(patientsTable)
     .values({ familyId: otherFamilyId, name: "Paciente de Outra Família", timezone: "America/Sao_Paulo" }).returning();
   otherPatientId = outroPatient.id;
+
+  // QUI-6: sem consentimento de imagem, POST /media recusa foto com 403.
+  //
+  // Estes testes são sobre a FUNDAÇÃO de mídia, não sobre o consentimento —
+  // o consentimento tem suíte própria em image-consent.test.ts. Aqui ele é
+  // só pré-condição, e é gravado direto no banco de propósito, para esta
+  // suíte não passar a depender da rota da outra história.
+  await db.insert(consentRecordsTable).values({
+    userId: user.id,
+    patientId,
+    givenBy: "legal_representative",
+    consentType: "image_capture",
+    consentGiven: "true",
+    version: "v1.0",
+    ipAddress: "127.0.0.1",
+  });
 });
 
 after(async () => {
@@ -296,7 +313,7 @@ describe("Ler pelo link assinado", () => {
     const caminho = enviada.url.replace(/^\/api/, "");
     // Troca o id no corpo do token mantendo a assinatura: a assinatura
     // deixa de bater e o link morre.
-    const adulterado = caminho.replace(/conteudo\/\d+/, "conteudo/999999");
+    const adulterado = caminho.replace(/content\/\d+/, "content/999999");
     const r = comoJson(await bruto("GET", adulterado, undefined, {}));
     assert.equal(r.status, 410);
   });

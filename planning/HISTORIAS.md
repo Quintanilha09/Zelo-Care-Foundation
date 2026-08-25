@@ -360,6 +360,52 @@ medido em 25/08/2026 contra o Postgres em Docker
 
 ---
 
+## QUI-6 — Consentimento de imagem, separado e revogável (25/08/2026)
+
+A história de **maior risco** do projeto Momentos, e o refinamento diz por quê: o mesmo recurso
+pode proteger o paciente (prova de bom cuidado) ou expô-lo (vigilância de alguém que não pode
+consentir de verdade). O que separa os dois é o rigor desta história.
+
+- **Tipo próprio no `consent_records`: `image_capture`**, separado de `health_data_processing`.
+  Quem aceitou compartilhar que a mãe toma Losartana **não aceitou, com isso, que ela seja
+  fotografada na cama**. São finalidades diferentes, e a LGPD trata consentimento por finalidade.
+  Reaproveitar o de saúde "para simplificar" é o atalho que uma auditoria encontra.
+- **O padrão é NÃO ter consentimento.** Ausência de registro devolve `false`, nunca "ainda não
+  perguntamos, então pode". Nada de consentimento implícito por uso.
+- **`givenBy` é obrigatório e sem valor padrão** — "quem está consentindo" (o próprio paciente ou o
+  representante legal) não é detalhe de formulário: é o que separa consentimento do titular de
+  decisão tomada por outra pessoa em nome dele.
+- **Só o cuidador principal decide; qualquer cuidador lê.** A leitura devolve `podeDecidir`, para a
+  tela da QUI-7 mostrar o botão a quem pode usá-lo — e, sem consentimento, **não renderizar a seção
+  de Momentos**, em vez de mostrá-la cinza com cadeado, que é convite a insistir.
+- **Revogar apaga as mídias que já existem**, do bucket, não só do banco. Consentimento que não
+  pode ser desfeito não é consentimento. Se apagar algum arquivo falhar, a rota devolve **500 com
+  `IMAGE_CONSENT_PURGE_INCOMPLETE`** — a revogação já valeu, mas o usuário precisa saber que a
+  parte que ele pediu não terminou.
+- **Áudio não é imagem, e isso é decisão registrada.** O consentimento cobre foto e vídeo; um
+  recado de voz gravado pelo próprio paciente (QUI-8) é ele se expressando, não ele sendo
+  retratado. Exigir consentimento de imagem para áudio bloquearia, sem motivo, o único canal que
+  funciona para quem tem dificuldade visual ou motora. Revogar imagem **não** apaga o áudio.
+- `lib/media-cleanup.ts` nasce aqui, mas é o mesmo mecanismo de que vão precisar a retenção de
+  90 dias (QUI-11) e a exclusão do titular (REQ-006). Uma falha ao apagar um objeto não aborta os
+  outros — apagar 9 de 10 é melhor que 0 de 10, e a linha do que falhou fica para nova tentativa.
+- **Renomeado `GET /media/conteudo/:token` para `/media/content/:token`.** Era uma inconsistência
+  minha da QUI-5: todo o resto da API usa caminho em inglês. Nada consumia a rota ainda.
+
+**22 testes novos** (`image-consent.test.ts`): o padrão sem consentimento em quatro ângulos;
+consentimento de saúde não libera imagem **e** o contrário; áudio permitido sem consentimento de
+imagem; revogar apaga do bucket, conferido chave a chave; consentir de novo depois de revogar
+volta a funcionar; o histórico inteiro fica no banco na ordem certa (prova para a ANPD); e a trilha
+de auditoria registra a decisão e o papel sem carregar nome de paciente.
+
+**Suíte completa depois desta história:** **454 testes, 452 passando, 2 pulados, zero falhas** —
+medido em 25/08/2026.
+
+**Pendente de deploy:** o valor `image_capture` do enum `consent_type` exige
+`pnpm --filter @workspace/db run push` no Replit, junto do `media_assets` da QUI-5.
+
+---
+
 ## Fases
 
 | # | Fase | Status |

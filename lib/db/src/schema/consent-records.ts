@@ -24,6 +24,16 @@ export const consentTypeEnum = pgEnum("consent_type", [
   "health_data_processing", // Tratamento de dados de saúde (Art. 11 LGPD)
   "marketing",              // Comunicações de marketing
   "data_sharing",           // Compartilhamento com terceiros
+  // QUI-6 — fotografar e filmar o paciente.
+  //
+  // É um tipo SEPARADO de `health_data_processing`, e a separação não é
+  // burocracia: quem aceitou compartilhar que a mãe toma Losartana NÃO
+  // aceitou, com isso, que ela seja fotografada na cama. São finalidades
+  // diferentes, e a LGPD trata consentimento por finalidade.
+  //
+  // Reaproveitar o consentimento de saúde "para simplificar" é exatamente o
+  // atalho que uma auditoria encontra. Ver routes/image-consent.ts.
+  "image_capture",
 ]);
 
 // Quem está consentindo, quando o consentimento é sobre dado de saúde de um

@@ -15,8 +15,9 @@
 
 ## Posição
 
-**42 histórias entregues:** 38 das 42 do backlog original, mais ZELO-56, ZELO-57 e ZELO-58,
-criadas depois a partir de refinamento, mais **QUI-5** (fundação de mídia, 25/08/2026).
+**43 histórias entregues:** 38 das 42 do backlog original, mais ZELO-56, ZELO-57 e ZELO-58,
+criadas depois a partir de refinamento, mais **QUI-5** (fundação de mídia) e **QUI-6**
+(consentimento de imagem), as duas em 25/08/2026.
 
 | Fase | Situação |
 |---|---|
@@ -39,8 +40,9 @@ Ficou esgotado entre 19 e 24/08/2026, e isso foi verdade enquanto o backlog era 
 ([refinamentos/momentos-fotos-e-videos.md](refinamentos/momentos-fotos-e-videos.md)) produziu
 7 histórias novas, hoje no Linear como QUI-5 a QUI-11.
 
-**QUI-5 (fundação de mídia) está entregue.** A próxima é a **QUI-6, consentimento de imagem** — e
-ela é bloqueante: nenhuma tela de foto pode existir antes dela.
+**QUI-5 (fundação de mídia) e QUI-6 (consentimento de imagem) estão entregues.** O portão que
+impedia qualquer tela de foto está fechado e testado, então a próxima é a **QUI-7 — Momentos do
+paciente**, a primeira com tela e a primeira que entrega valor visível à família.
 
 Das antigas, as duas que atravessaram para o Linear continuam paradas pelos mesmos motivos:
 
@@ -72,7 +74,7 @@ enviado e o login exige e-mail verificado. Só o Google entra.
   — schema completo já gerado e testado, trigger de imutabilidade, secrets faltando, URL do OAuth.
 - **Verificação visual só acontece no Replit.** O roteamento de `/api` para o backend é da
   infraestrutura dele (`router = "application"`), não reproduzido localmente.
-- **A suíte de integração VOLTOU a rodar localmente** em 25/08/2026: 432 testes, 430 passando,
+- **A suíte de integração VOLTOU a rodar localmente** em 25/08/2026: 454 testes, 452 passando,
   2 pulados. Passo a passo em [runbooks/banco-de-teste-local.md](runbooks/banco-de-teste-local.md).
   O bloqueio anterior era só o container `zelo-test-pg` parado.
 

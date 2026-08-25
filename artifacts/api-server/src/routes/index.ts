@@ -29,6 +29,7 @@ import pushRouter from "./push";
 import notificationPreferencesRouter from "./notification-preferences";
 import patientAccessRouter from "./patient-access";
 import mediaRouter from "./media";
+import imageConsentRouter from "./image-consent";
 import { allowsDevelopmentShortcuts } from "../lib/environment.ts";
 
 const router = Router();
@@ -77,6 +78,9 @@ router.use(patientAccessRouter);
 // requireAuth de proposito — o token assinado E a credencial, porque
 // <img src> nao manda header Authorization. Ver lib/media-links.ts.
 router.use(mediaRouter);
+// QUI-6: consentimento de imagem, separado do de saude e revogavel.
+// Montado DEPOIS do patientsRouter porque as rotas sao /patients/:id/...
+router.use(imageConsentRouter);
 
 // Rotas de controle do relógio — APENAS fora de produção.
 //

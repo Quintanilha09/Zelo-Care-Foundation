@@ -6,7 +6,7 @@
  *
  *   POST   /api/media                    envia um arquivo (autenticado)
  *   GET    /api/media/:id/link           gera um link curto de leitura
- *   GET    /api/media/conteudo/:token    devolve os bytes (o token É a autenticação)
+ *   GET    /api/media/content/:token     devolve os bytes (o token É a autenticação)
  *   DELETE /api/media/:id                apaga o objeto E a linha
  *
  * O que NÃO está aqui, de propósito:
@@ -32,6 +32,7 @@ import {
   type TipoDeMidia,
 } from "../lib/media-storage.ts";
 import { gerarTokenDeMidia, lerTokenDeMidia } from "../lib/media-links.ts";
+import { exigeConsentimentoDeImagem, temConsentimentoDeImagem } from "../lib/image-consent.ts";
 
 const router = Router();
 
@@ -167,6 +168,22 @@ router.post("/media", requireAuth, mediaUploadLimiter, receberArquivo, async (re
     return;
   }
 
+  // QUI-6 — ninguém é fotografado sem consentimento registrado.
+  //
+  // Vem DEPOIS da checagem de família (senão vazaria a existência do
+  // paciente pelo código de erro) e ANTES de qualquer byte ser gravado.
+  //
+  // Só imagem e vídeo. Áudio passa de propósito: voz não é imagem, e um
+  // recado gravado pelo próprio paciente (QUI-8) é ele se expressando, não
+  // ele sendo retratado. Ver lib/image-consent.ts.
+  if (exigeConsentimentoDeImagem(tipo) && !(await temConsentimentoDeImagem(patientId))) {
+    res.status(403).json({
+      error: "Esta família ainda não registrou o consentimento para fotografar este paciente.",
+      code: "IMAGE_CONSENT_REQUIRED",
+    });
+    return;
+  }
+
   const chave = novaChaveDeObjeto(tipo);
 
   // ORDEM IMPORTA: grava o objeto primeiro. Se o insert falhar depois,
@@ -216,7 +233,7 @@ router.post("/media", requireAuth, mediaUploadLimiter, receberArquivo, async (re
     id: asset.id,
     kind: tipo,
     sizeBytes: req.file.size,
-    url: `/api/media/conteudo/${token}`,
+    url: `/api/media/content/${token}`,
     expiraEm: expiraEm.toISOString(),
   });
 });
@@ -226,7 +243,7 @@ router.post("/media", requireAuth, mediaUploadLimiter, receberArquivo, async (re
 // Declarada ANTES de /media/:id/link. As duas têm três segmentos, e a regra
 // deste projeto (uma rota já foi engolida por outra) é: literal primeiro.
 
-router.get<{ token: string }>("/media/conteudo/:token", mediaContentLimiter, async (req, res): Promise<void> => {
+router.get<{ token: string }>("/media/content/:token", mediaContentLimiter, async (req, res): Promise<void> => {
   const assetId = lerTokenDeMidia(req.params.token);
   if (assetId === null) {
     res.status(410).json({ error: "Link expirado ou inválido" });
@@ -289,7 +306,7 @@ router.get<{ id: string }>("/media/:id/link", requireAuth, async (req, res): Pro
   res.json({
     id: asset.id,
     kind: asset.kind,
-    url: `/api/media/conteudo/${token}`,
+    url: `/api/media/content/${token}`,
     expiraEm: expiraEm.toISOString(),
   });
 });
