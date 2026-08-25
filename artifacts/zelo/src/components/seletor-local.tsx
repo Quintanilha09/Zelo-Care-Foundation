@@ -74,9 +74,29 @@ export function SeletorLocal({
   useEffect(() => {
     let ativo = true;
     void authFetch("/api/config/maps")
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("sem config"))))
-      .then((d: ConfigMaps) => { if (ativo) setConfig(d); })
-      .catch(() => { if (ativo) setConfig({ configured: false, apiKey: null }); });
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`GET /api/config/maps respondeu ${r.status}`);
+        return (await r.json()) as ConfigMaps;
+      })
+      .then((d) => {
+        if (!ativo) return;
+        setConfig(d);
+        if (!d.configured) {
+          // Cair para texto livre é o comportamento certo para quem usa o app,
+          // mas quem está configurando precisa saber POR QUE caiu. Sem isto,
+          // 'sem chave' e 'quebrado' ficam indistinguíveis — o mesmo defeito
+          // que este projeto já corrigiu em três telas.
+          console.info(
+            "[ZELO] Busca de endereço desativada: GOOGLE_MAPS_API_KEY não está definida no servidor. " +
+              "Crie o Secret e reinicie o workflow da API."
+          );
+        }
+      })
+      .catch((erro: unknown) => {
+        if (!ativo) return;
+        setConfig({ configured: false, apiKey: null });
+        console.warn("[ZELO] Não consegui perguntar ao servidor se o Maps está configurado:", erro);
+      });
     return () => { ativo = false; };
   }, []);
 
@@ -119,7 +139,14 @@ export function SeletorLocal({
           }
         }) as EventListener);
       })
-      .catch(() => { if (ativo) setFalhou(true); });
+      .catch((erro: unknown) => {
+        if (!ativo) return;
+        setFalhou(true);
+        // Chave inválida, restrição de referenciador errada ou API não
+        // ativada no Google Cloud caem todas aqui. O campo continua
+        // utilizável como texto, mas o motivo fica registrado.
+        console.error("[ZELO] O Google Maps não carregou. Verifique a chave, a restrição por referenciador e se Places API (New) e Maps JavaScript API estão ativadas:", erro);
+      });
 
     return () => {
       ativo = false;
