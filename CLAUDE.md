@@ -130,6 +130,8 @@ ele foi migrado para cá justamente porque duas fontes divergiram e dois agentes
 | Backlog: onde vive, como está estruturado, fornecedores | [planning/BACKLOG.md](planning/BACKLOG.md) |
 | Invariantes, stack, modelo de dados | [planning/decisoes/FOUNDATION.md](planning/decisoes/FOUNDATION.md) |
 | Decisões de plataforma e alternativas descartadas | [planning/decisoes/PLATFORM_DECISIONS.md](planning/decisoes/PLATFORM_DECISIONS.md) |
+| Custo de tudo, em dolar e real, por tamanho de base | [planning/decisoes/CUSTOS-APIS.md](planning/decisoes/CUSTOS-APIS.md) |
+| Em que ambiente o produto vive ate a venda | [planning/decisoes/ESTRATEGIA-ATE-A-VENDA.md](planning/decisoes/ESTRATEGIA-ATE-A-VENDA.md) |
 | Armadilhas técnicas em detalhe | [planning/decisoes/ARMADILHAS.md](planning/decisoes/ARMADILHAS.md) |
 | Planos e limites | [planning/decisoes/PLANOS.md](planning/decisoes/PLANOS.md) |
 | Requisitos e roadmap | [planning/REQUIREMENTS.md](planning/REQUIREMENTS.md), [planning/ROADMAP.md](planning/ROADMAP.md) |

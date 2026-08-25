@@ -206,26 +206,89 @@ fornecedor, não há conta, não há fatura. E é o canal principal de lembrete 
 
 ## Para que exatamente o SMS seria usado
 
-Duas coisas diferentes, que o backlog separou de propósito:
+Duas coisas diferentes, que o backlog separou de propósito.
 
-**1. Rede de segurança quando o push não confirma entrega** (ZELO-31, fase 06).
-O produto manda o lembrete por push. Se o aparelho está desligado, sem rede, ou a permissão foi
-revogada, o push **não chega e ninguém fica sabendo**. A cascata desenhada é:
-push → push repetido → **SMS** → escalonar para outro cuidador.
+### Uso 1 — a rede de segurança de um lembrete que falhou (ZELO-31)
 
-**2. Alcançar um paciente que não tem smartphone** (ZELO-41, fase 10).
-Parte do público deste app usa aparelho básico. Para essa pessoa, push simplesmente não existe —
-SMS é o único canal que chega.
+O jeito mais claro de entender é seguir uma manhã.
+
+**Dona Maria toma Losartana às 8h. Quem cuida é a filha, Ana, que mora em outra cidade.**
+
+| Hora | O que acontece hoje |
+|---|---|
+| 8:00 | O app manda um **push** para o celular da Ana: "Losartana, 8h, Dona Maria" |
+| 8:01 | Ana toca em **"Tomei"**. Dose registrada. **Custo: zero** |
+
+Esse é o caminho feliz, e é a imensa maioria das vezes.
+
+**Agora o caminho que o SMS existe para cobrir.** O celular da Ana está desligado. Ou sem sinal. Ou
+ela revogou a permissão de notificação sem lembrar. Ou o iOS silenciosamente descartou o push.
+
+**O push não chega — e ninguém fica sabendo.** Nem a Ana, nem o app, nem a Dona Maria. A dose passa
+em branco, e a única pessoa que descobre é quem for conferir depois.
+
+É esse buraco que a cascata fecha:
+
+| Hora | Nível | Canal |
+|---|---|---|
+| 8:00 | 0 | push para a Ana |
+| 8:03 | 1 | push de novo, porque o primeiro não foi confirmado |
+| 8:15 | 2 | **SMS para a Ana** ← *é aqui que o SMS entra* |
+| 8:30 | 3 | avisa outro cuidador da família |
+
+**Por que SMS e não outro push:** o SMS chega em qualquer celular, sem app instalado, sem
+permissão concedida, sem internet. Ele é o canal que funciona **exatamente quando o push falhou**.
+Trocar push por push é insistir no canal que já não está entregando.
+
+**Os níveis 0, 1 e 3 já estão construídos e funcionando** (ZELO-27 a ZELO-30). O que falta é só o
+nível 2.
+
+### Uso 2 — alcançar um paciente que não tem smartphone (ZELO-41)
+
+O modo idoso (ZELO-40) é uma tela grande com um botão "Tomei" — mas é uma tela, e exige smartphone.
+Parte do público deste produto usa aparelho básico, daqueles só de ligar e mandar mensagem.
+
+Para essa pessoa, **push não existe**. SMS é o único canal que chega até ela diretamente, sem
+depender de um cuidador intermediando.
 
 ### Por que ele foi adiado, e por que isso está certo
 
-**Ele é o único item que ameaça a margem.** Nas premissas deste documento, com **10 mil famílias**
-e 5% dos lembretes virando SMS:
+**Ele é o único item que ameaça a margem** — e o motivo é a matemática de onde ele dispara: o SMS
+não é cobrado por família, é cobrado por **falha de entrega**, e falha escala com o número de
+*doses*, não de clientes.
+
+10 mil famílias × 90 doses/mês = **900 mil doses**. Se 5% delas não confirmarem o push, são
+**45 mil SMS por mês**:
 
 | Fornecedor | SMS/mês | Custo mensal |
 |---|---|---|
-| Twilio (US$ 0,0599) | 45.000 | **US$ 2.695** |
-| Zenvia (~US$ 0,015) | 45.000 | **US$ 675** |
+| Twilio (US$ 0,0599) | 45.000 | **US$ 2.695** · **R$ 14.688** |
+| Zenvia (~US$ 0,015) | 45.000 | **US$ 675** · **R$ 3.679** |
+
+Para comparar: a receita bruta desse mesmo cenário, com 5% pagando R$ 29,90, é ~R$ 14.950.
+**Na Twilio, o SMS sozinho consumiria praticamente toda a receita.**
+
+### Dá para usar SMS num ambiente só de desenvolvimento?
+
+**Tecnicamente sim, e quase de graça** — mas a recomendação é **não construir agora**.
+
+Twilio e Zenvia dão conta de teste que só envia para **números previamente verificados**. Dá para
+demonstrar a cascata inteira mandando SMS para o próprio celular do fundador, com custo perto de
+zero. O que não dá é atender usuário real assim.
+
+**Por que ainda assim não vale construir para a demonstração:**
+
+1. **Custa trabalho de história inteira** para um recurso que o comprador provavelmente vai
+   reimplementar com o fornecedor dele.
+2. **A escolha de fornecedor é do comprador**, e ela é uma decisão de margem, não de tecnologia —
+   a diferença entre Twilio e Zenvia é de ~4×.
+3. **Sem a taxa de entrega medida (REQ-027), ninguém sabe se o nível 2 dispararia 5% ou 15% das
+   vezes** — e é essa taxa que decide se o canal é barato ou ruinoso.
+
+**O que apresentar no lugar:** a cascata funcionando até o nível 3 (que já existe), mais este
+documento mostrando que o nível 2 está desenhado, custeado e deliberadamente adiado.
+*"Sabemos exatamente quanto custa e por isso não ligamos ainda"* é uma resposta melhor que um
+recurso ligado sem conta feita.
 
 **Os "milhares de dólares" existem — só que no SMS, não no Google Maps.** É por isso que a decisão
 de 24/08/2026 tirou ZELO-31 e ZELO-41 do v1 e os deixou como trabalho do comprador: quem comprar
@@ -288,20 +351,37 @@ produção "está pausado por limite de gasto (teto de US$ 1 atingido)". A US$ 0
 6 horas e 15 minutos** — bate com o que aconteceu. O teto não foi atingido por uso anormal; foi
 atingido porque o teto era baixo demais para um banco que fica acordado.
 
+### Câmbio: como converter para real
+
+`Cotação de 25/08/2026 — envelhece rápido, reconferir antes de decidir.`
+
+O fundador paga em real, e **o câmbio spot não é o que ele paga**. Serviço internacional no cartão
+brasileiro leva IOF e spread:
+
+| | Valor |
+|---|---|
+| Câmbio spot USD/BRL | R$ 5,14 |
+| IOF sobre compra internacional no cartão | **+3,5%** |
+| Spread do banco | ~+1% a +4% (varia; confirmar no extrato) |
+| **Custo efetivo por dólar** | **≈ R$ 5,45** |
+
+Todas as conversões deste documento usam **R$ 5,45/US$**. É o número que aparece na fatura, não o
+do noticiário.
+
 ### O que se paga em cada tamanho
 
 | | **100 famílias** | **1.000 famílias** | **10.000 famílias** |
 |---|---|---|---|
-| **Banco — compute** (730 h) | **$116,80** | **$116,80** | **$116,80** |
-| Banco — armazenamento | $0,35 (~1 GiB) | $1,05 (~3 GiB) | $10,50 (~30 GiB) |
-| Replit — plano Core | $25,00 | $25,00 | $25,00 |
-| Replit — publicação (Reserved VM) | $15,18 (0,5 vCPU) | $35,48 (1 vCPU) | $50,66 (2 vCPU) |
-| Google Maps | **$0** (dentro dos 10 mil) | **$0** (dentro dos 10 mil) | $120,00 |
-| Anthropic (Haiku) | $0,35 | $3,50 | $35,00 |
-| Resend | **$0** (dentro dos 3 mil) | **$0** | $20,00 (Pro) |
-| App Storage (Momentos) | $0,19 | $1,91 | $19,06 |
+| **Banco — compute** (730 h) | **$116,80** · R$ 637 | **$116,80** · R$ 637 | **$116,80** · R$ 637 |
+| Banco — armazenamento | $0,35 · R$ 2 | $1,05 · R$ 6 | $10,50 · R$ 57 |
+| Replit — plano Core | $25,00 · R$ 136 | $25,00 · R$ 136 | $25,00 · R$ 136 |
+| Replit — publicação (Reserved VM) | $15,18 · R$ 83 | $35,48 · R$ 193 | $50,66 · R$ 276 |
+| Google Maps | **$0** | **$0** | $120,00 · R$ 654 |
+| Anthropic (Haiku) | $0,35 · R$ 2 | $3,50 · R$ 19 | $35,00 · R$ 191 |
+| Resend | **$0** | **$0** | $20,00 · R$ 109 |
+| App Storage (Momentos) | $0,19 · R$ 1 | $1,91 · R$ 10 | $19,06 · R$ 104 |
 | Web Push | $0 | $0 | $0 |
-| **Total** | **~US$ 158** | **~US$ 184** | **~US$ 397** |
+| **Total** | **~US$ 158** · **~R$ 861** | **~US$ 184** · **~R$ 1.003** | **~US$ 397** · **~R$ 2.164** |
 
 > `NÃO VERIFICADO`: há indício de que o plano Core inclua **100 horas de compute e 3 GiB** de banco
 > por mês, o que derrubaria ~US$ 16 de cada linha. Não achei essa franquia escrita em página
