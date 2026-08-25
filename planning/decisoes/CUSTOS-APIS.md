@@ -15,6 +15,12 @@ custa **menos de US$ 4 por mês até mil pacientes**. O SMS sozinho pode custar 
 E a segunda conclusão, que reabre uma decisão do backlog: **o Google Maps sairia de graça** no
 volume previsível deste produto. A camada gratuita cobre folgadamente o uso real.
 
+> **Ampliado em 25/08/2026**, a pedido do fundador: a versão original olhava só APIs. Agora inclui
+> **hospedagem no Replit, armazenamento de mídia e taxas das lojas**, com o custo em três tamanhos
+> de base — ver [Custo durante o crescimento](#custo-durante-o-crescimento).
+> O quadro não muda: **de 100 a 10 mil famílias, tudo somado fica entre ~US$ 40 e ~US$ 250 por
+> mês.** O SMS continua sendo o único item capaz de mudar isso de patamar.
+
 ---
 
 ## Preços verificados em 24/08/2026
@@ -136,6 +142,167 @@ trabalho; sem ele, é reescrever a cobrança inteira.
 [Mercado Pago — custo do Pix](https://www.mercadopago.com.br/ajuda/qual-o-custo-de-um-pix_21723),
 [Mercado Pago — quanto custa vender online](https://www.mercadopago.com.br/blog/quanto-custa-vender-on-line-com-mercado-pago),
 [Pagar.me — preços](https://www.pagar.me/precos).
+
+---
+
+## Como ler "US$ 5,00/mil" — pergunta do fundador em 25/08/2026
+
+**É por MIL requisições, não por requisição.** A barra quer dizer "por mil".
+
+> *"Depois de 10 mil places autocomplete, place details e dynamic maps eu pago de 2 a 7 mil
+> dólares para usar?"*
+
+Não. A conta real, no Place Details:
+
+| Requisições no mês | Cobradas (as 10 mil primeiras são grátis) | Custo |
+|---|---|---|
+| 10.000 | 0 | **US$ 0,00** |
+| 11.000 | 1.000 | **US$ 5,00** |
+| 20.000 | 10.000 | **US$ 50,00** |
+| 110.000 | 100.000 | **US$ 500,00** |
+
+Para chegar aos **US$ 2.830** que a leitura sugeria, seriam necessárias cerca de **576 mil**
+requisições de Place Details num mês — o que, nas premissas deste produto (2 consultas por família
+por mês), significa **~288 mil famílias**. Não é o risco deste projeto.
+
+---
+
+## Todos os recursos pagos — a lista completa
+
+Separados pelo que muda a decisão: **o que já é necessário** e **o que só existe se algo acontecer
+antes**.
+
+### Necessários hoje
+
+| # | Recurso | Para quê | Cobrança | Já contratado? |
+|---|---|---|---|---|
+| 1 | **Replit** (plano + publicação) | hospedar a API e o app | assinatura + uso | sim, o app vive lá |
+| 2 | **Postgres do Replit** | o banco inteiro | compute + armazenamento | sim (produção pausada) |
+| 3 | **Object Storage do Replit** | fotos, vídeos e áudios dos Momentos (QUI-5) | por GB | **provisionado e ocioso** — nunca usado até 25/08/2026 |
+| 4 | **Anthropic (Claude Haiku 4.5)** | ler a receita por foto e pré-preencher o cadastro | por token | sim |
+| 5 | **Google Maps** | campo "Local" da consulta: buscar endereço e mostrar o mapa | por requisição, com 10 mil grátis por SKU/mês | sim — R$ 150 de pré-pagamento já feitos |
+| 6 | **Resend** | e-mail de verificação, convite e recuperação de senha | por volume, 3 mil/mês grátis | **não** — bloqueado pela escolha de domínio |
+| 7 | **Domínio `.com.br`** | endereço do produto **e** pré-requisito do e-mail | ~R$ 40–60/ano | **não** |
+| 8 | **PSP** (Mercado Pago recomendado) | cobrar a assinatura | % sobre o que entra | **não** — QUI-12 |
+
+### Só se algo acontecer antes
+
+| # | Recurso | Depende de | Custo |
+|---|---|---|---|
+| 9 | **Google Play** | QUI-13 (app nativo) | **US$ 25, uma vez só** |
+| 10 | **Apple Developer** | QUI-13 (app nativo) | **US$ 99/ano**; conta de organização exige D-U-N-S |
+| 11 | **SMS** (Zenvia recomendada) | decisão de retomar — hoje é trabalho do comprador | por mensagem |
+| 12 | **Ligação automática** | ZELO-41, fora do v1 | por minuto, bem mais caro que SMS |
+
+**Grátis para sempre, e não é promoção:** o **Web Push (VAPID)** é padrão do navegador. Não há
+fornecedor, não há conta, não há fatura. E é o canal principal de lembrete do produto.
+
+---
+
+## Para que exatamente o SMS seria usado
+
+Duas coisas diferentes, que o backlog separou de propósito:
+
+**1. Rede de segurança quando o push não confirma entrega** (ZELO-31, fase 06).
+O produto manda o lembrete por push. Se o aparelho está desligado, sem rede, ou a permissão foi
+revogada, o push **não chega e ninguém fica sabendo**. A cascata desenhada é:
+push → push repetido → **SMS** → escalonar para outro cuidador.
+
+**2. Alcançar um paciente que não tem smartphone** (ZELO-41, fase 10).
+Parte do público deste app usa aparelho básico. Para essa pessoa, push simplesmente não existe —
+SMS é o único canal que chega.
+
+### Por que ele foi adiado, e por que isso está certo
+
+**Ele é o único item que ameaça a margem.** Nas premissas deste documento, com **10 mil famílias**
+e 5% dos lembretes virando SMS:
+
+| Fornecedor | SMS/mês | Custo mensal |
+|---|---|---|
+| Twilio (US$ 0,0599) | 45.000 | **US$ 2.695** |
+| Zenvia (~US$ 0,015) | 45.000 | **US$ 675** |
+
+**Os "milhares de dólares" existem — só que no SMS, não no Google Maps.** É por isso que a decisão
+de 24/08/2026 tirou ZELO-31 e ZELO-41 do v1 e os deixou como trabalho do comprador: quem comprar
+decide se o canal vale a margem, com dado de entrega real na mão.
+
+**Antes de ligar SMS, medir push.** O painel operacional (REQ-027) mede a taxa de entrega real. Se
+o push entrega bem, o SMS quase não dispara e o custo é irrelevante. Ligar SMS sem essa medição é
+comprar o pior cenário sem saber se ele existe.
+
+---
+
+## Custo durante o crescimento
+
+`MODELO — as premissas são minhas; os preços unitários são verificados.`
+
+**Premissas por família, por mês** (1 paciente, sem SMS):
+
+| | Quanto | Por quê |
+|---|---|---|
+| Consultas com endereço | 2 | 2 Place Details + 2 carregamentos de mapa |
+| Leitura de receita por foto | 1 | só quando muda tratamento |
+| E-mail transacional | 0,5 | cadastro e convite são quase só no início |
+| Momentos enviados | 30 fotos × ~300 KB = **9 MB** | já com a compressão no aparelho da QUI-7 |
+| Momentos armazenados | **~27 MB** | 9 MB/mês × retenção de 90 dias |
+| Momentos vistos | **~27 MB** de saída | cada foto vista ~3 vezes |
+
+### O que se paga em cada tamanho
+
+| | **100 famílias** | **1.000 famílias** | **10.000 famílias** |
+|---|---|---|---|
+| Replit — plano Core | $25 | $25 | $25 |
+| Replit — publicação (Reserved VM) | $15 (0,5 vCPU) | $35 (1 vCPU) | $50 (2 vCPU) |
+| Google Maps | **$0** (dentro dos 10 mil) | **$0** (dentro dos 10 mil) | **$120** |
+| Anthropic (Haiku) | $0,35 | $3,50 | $35 |
+| Resend | **$0** (dentro dos 3 mil) | **$0** | $20 (plano Pro) |
+| Web Push | $0 | $0 | $0 |
+| Object Storage (~2,7 / 27 / 270 GB) | `?` | `?` | `?` |
+| Postgres além do incluído | $0 | `?` | `?` |
+| **Soma do que é verificável** | **~US$ 40** | **~US$ 64** | **~US$ 250** |
+
+**Onde o Maps começa a custar:** só a partir de ~5 mil famílias, porque cada família consome
+2 requisições de cada SKU e a franquia é de 10 mil por SKU. Em 10 mil famílias são US$ 50 de
+Place Details + US$ 70 de mapa. **Tirar o mapa da tela corta US$ 70 dos US$ 120** — o endereço em
+texto já resolve o caso de uso, e o mapa é enfeite.
+
+**Onde está o buraco desta estimativa:** `NÃO VERIFICADO` — o preço por GB do Object Storage do
+Replit não está publicado nas páginas que consegui abrir, e o mesmo vale para as tarifas por
+unidade do Postgres acima do incluído (o plano Core inclui **3 GiB de armazenamento e 100 horas de
+compute**). Em 10 mil famílias, os Momentos seriam ~**270 GB armazenados** e ~**270 GB de saída**
+por mês; a ordem de grandeza de mercado põe isso entre US$ 15 e US$ 40/mês, mas **é estimativa,
+não preço**. Confirmar antes de a QUI-7 entrar no ar.
+
+### O que isso significa
+
+Com 10 mil famílias e **5% pagando** R$ 29,90, a receita bruta é ~R$ 14.950/mês (~US$ 2.700).
+O custo de infraestrutura de ~US$ 250 é cerca de **9% disso** — mais a taxa do PSP, que é
+proporcional à receita, não à base.
+
+**Infraestrutura não é o risco deste negócio.** Conversão é. E SMS seria, se fosse ligado.
+
+---
+
+## Lojas de aplicativo
+
+**Hoje o custo é zero, e isso é decisão de plataforma, não sorte.** O ZELO é PWA: instala pelo
+navegador, sem loja, sem comissão de 15 a 30%, e a assinatura acontece na web.
+
+Quando a QUI-13 (app nativo) for destravada pelo gatilho medido:
+
+| Loja | Custo | Observação |
+|---|---|---|
+| **Google Play** | **US$ 25, uma vez só** | taxa de registro, não recorrente |
+| **Apple App Store** | **US$ 99/ano** | recorrente; conta de organização exige número D-U-N-S |
+
+São valores pequenos. **O custo real de estar nas lojas não é a taxa — é a comissão sobre a
+assinatura**, e a QUI-13 diz explicitamente para manter a cobrança na web justamente por isso.
+
+**Fontes desta seção:** [Replit — preços de publicação](https://docs.replit.com/billing/deployment-pricing),
+[Replit — preços](https://replit.com/pricing),
+[Resend — preços](https://resend.com/pricing),
+[Google Play — taxa de registro](https://support.google.com/googleplay/android-developer/answer/6112435),
+[Apple Developer Program](https://developer.apple.com/support/enrollment/).
 
 ---
 
