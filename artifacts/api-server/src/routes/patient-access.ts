@@ -6,9 +6,14 @@
  *   CUIDADOR (requirePrimaryCaregiver) — gera o link, lista os aparelhos,
  *   revoga. Quem decide se o paciente tem acesso é sempre quem cuida.
  *
- *   PACIENTE (requirePatientAccess) — EXATAMENTE duas rotas: ver a dose de
- *   agora e registrar que tomou. É o escopo mínimo pra tela do modo idoso
- *   funcionar, e nada além disso existe pra esse token alcançar.
+ *   PACIENTE (requirePatientAccess) — EXATAMENTE três rotas: ver a dose de
+ *   agora, registrar que tomou, e (QUI-8) mandar um recado. É o escopo
+ *   mínimo pra tela do modo idoso funcionar, e nada além disso existe pra
+ *   esse token alcançar.
+ *
+ *   A terceira nasceu na QUI-8 e é o que justifica retroativamente este
+ *   desenho: o modo idoso deixa de ser só uma tela grande de "Tomei" e passa
+ *   a ter uma razão AFETIVA para a pessoa abrir o aplicativo.
  *
  * A rota de ativação é a única pública: ela recebe o token do link (que o
  * paciente tem em mãos) e o troca por um token de dispositivo. Mesmo padrão
@@ -25,6 +30,9 @@ import {
 } from "@workspace/db";
 import { requirePrimaryCaregiver } from "../middleware/require-auth";
 import { requirePatientAccess, getPatientAccess } from "../middleware/require-patient-access.ts";
+import { receberArquivo } from "../middleware/receber-arquivo.ts";
+import { guardarMidia } from "../lib/media-upload.ts";
+import { mediaUploadLimiter } from "../lib/rate-limit";
 import { generateOneTimeToken, hashToken } from "../lib/tokens";
 import { Clock } from "../lib/clock";
 import { localDayBoundsUtc } from "@workspace/scheduling";
@@ -355,6 +363,60 @@ router.post("/patient-access/taken", requirePatientAccess, async (req, res): Pro
   }
 
   res.status(inserted ? 201 : 200).json({ registered: true });
+});
+
+// ── Mandar um recado — QUI-8 ──────────────────────────────────────────────
+//
+// A TERCEIRA e última rota do token de paciente.
+//
+// O que a torna segura não é uma checagem: é o fato de o `patientId` vir do
+// TOKEN, nunca do corpo. Não existe campo que o aparelho possa mandar para
+// apontar para outro paciente — a rota nem lê um.
+//
+// Áudio é o formato pensado para esta pessoa: segurar um botão e falar é
+// muito mais fácil que digitar ou se filmar, e 60 segundos comprimidos são
+// ~50 KB — cem vezes menos que vídeo. Foto entra junto, mesmo fluxo, mas
+// aí o consentimento de imagem vale igual (QUI-6): guardarMidia decide.
+//
+// SEM transcrição automática, e isso é regra: processar a fala de uma pessoa
+// vulnerável não é o recurso, é outro produto.
+
+router.post("/patient-access/momento", requirePatientAccess, mediaUploadLimiter, receberArquivo, async (req, res): Promise<void> => {
+  if (!req.file) {
+    res.status(400).json({ error: "Não recebemos a gravação. Tente de novo.", code: "MEDIA_FILE_MISSING" });
+    return;
+  }
+
+  const access = getPatientAccess(req);
+
+  const resultado = await guardarMidia({
+    familyId: access.familyId,
+    patientId: access.patientId,
+    // Nulo de propósito: quem publicou foi o PACIENTE, não um cuidador. É
+    // isso que faz o mural atribuir o recado a ele.
+    caregiverId: null,
+    arquivo: { buffer: req.file.buffer, mimetype: req.file.mimetype, size: req.file.size },
+    // Sem legenda: quem está deste lado não digita. É o ponto do recurso.
+  });
+
+  if (!resultado.ok) {
+    res.status(resultado.status).json({ error: resultado.error, code: resultado.code });
+    return;
+  }
+
+  await audit({
+    familyId: access.familyId,
+    entityType: "media_asset",
+    entityId: String(resultado.id),
+    action: "created",
+    // "system" porque o vocabulário de actor_type só tem caregiver e system,
+    // e o paciente não é cuidador. O diff diz quem foi de verdade.
+    actorType: "system",
+    ipAddress: req.ip,
+    diff: JSON.stringify({ viaPatientAccess: true, kind: resultado.tipo }),
+  });
+
+  res.status(201).json({ id: resultado.id, kind: resultado.tipo, sizeBytes: resultado.sizeBytes });
 });
 
 export default router;

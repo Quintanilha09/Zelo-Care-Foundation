@@ -456,6 +456,52 @@ QUI-6.
 
 ---
 
+## QUI-8 — Recado do paciente, em áudio (25/08/2026)
+
+**O lado que nenhum concorrente faz.** A pessoa cuidada segura um botão, fala, solta — e a família
+ouve. Sem digitar, sem senha, do aparelho dela.
+
+- **A TERCEIRA e última rota do token de paciente** (ZELO-58). O que a torna segura não é uma
+  checagem: é o `patientId` vir do **token**, nunca do corpo. Não existe campo que o aparelho possa
+  mandar para apontar para outro paciente — a rota nem lê um. Há teste que tenta exatamente isso.
+- **Isso justifica retroativamente o desenho da ZELO-58**: o modo idoso deixa de ser só uma tela
+  grande de "Tomei" e passa a ter uma razão **afetiva** para a pessoa abrir o aplicativo.
+- **Áudio, não vídeo, e a escolha é de acessibilidade antes de custo.** Para um idoso, segurar um
+  botão e falar é muito mais fácil que digitar ou se filmar — e para quem tem dificuldade motora,
+  visual ou de leitura pode ser o único canal que funciona. Que 60 segundos a 24 kbps sejam ~180 KB,
+  contra ~5 MB de vídeo, é bônus.
+- **Segurar para falar, soltar para enviar** — o gesto do aplicativo de mensagem que essa geração já
+  conhece, e que evita o erro clássico do gravador de dois toques: começar e esquecer de parar.
+  `onPointerCancel` trata o dedo escorregando para fora do botão; sem ele a gravação ficaria aberta.
+- **Limite de 60 segundos em dois lugares**: o cronômetro da tela e um corte dentro do próprio
+  gravador. Se a tela errar, a gravação para sozinha.
+- **O microfone é solto sempre**, em qualquer caminho de saída. Deixar o stream aberto mantém o
+  indicador de "gravando" aceso no aparelho — inaceitável num app de pessoa vulnerável.
+- **Sem transcrição automática**, e isso é regra: processar a fala de uma pessoa vulnerável não é o
+  recurso, é outro produto.
+- **Áudio não exige consentimento de imagem; foto pelo mesmo aparelho exige.** A regra vem da QUI-6
+  e vale igual nos dois caminhos de envio, porque agora os dois passam por `lib/media-upload.ts`.
+
+**Refatoração que a história obrigou:** com duas portas de entrada de mídia (cuidador e paciente), a
+validação — allowlist de MIME, teto por tipo, portão de consentimento, gravar objeto antes da linha —
+saiu de `routes/media.ts` para **`lib/media-upload.ts`**, e o multer para
+**`middleware/receber-arquivo.ts`**. Validação de segurança duplicada é validação que um dia diverge.
+
+**22 testes novos** (`recado-paciente.test.ts`), no mesmo rigor negativo da ZELO-58: o token do
+paciente recusado em quatro rotas de cuidador; o JWT do cuidador recusado nos dois headers; mandar
+`patientId` no corpo não redireciona o recado; aparelho revogado e link não ativado dão 401; e
+revogar o consentimento de imagem apaga a foto **mas não o recado em áudio**.
+
+**Suíte completa depois desta história:** **494 testes, 492 passando, 2 pulados, zero falhas** —
+medido em 25/08/2026.
+
+**Correção junto:** foto em pé no mural ocupava a tela inteira e empurrava autor e legenda para fora
+do campo de visão — relatado pelo fundador. Resolvido com teto de altura e `object-contain`.
+
+**Nada de novo no banco.** Esta história não mexeu no schema.
+
+---
+
 ## Fases
 
 | # | Fase | Status |

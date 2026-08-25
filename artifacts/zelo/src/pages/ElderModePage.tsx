@@ -37,6 +37,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
 import { Volume2, Check, LogOut, RefreshCw } from "lucide-react";
+import { BotaoRecado } from "@/components/botao-recado";
 
 interface ElderDose {
   id: number;
@@ -320,6 +321,11 @@ export default function ElderModePage({ patientId }: { patientId: number | null 
           >
             <Volume2 className="w-8 h-8" /> Ouvir
           </button>
+
+          {/* QUI-8 — só no aparelho DO PACIENTE. No modo idoso ativado sobre a
+              sessão de um cuidador, quem está usando é o cuidador, e o recado
+              seria atribuído à pessoa errada. */}
+          {isPatientDevice && <BotaoRecado />}
         </div>
       ) : (
         <div className="space-y-3">

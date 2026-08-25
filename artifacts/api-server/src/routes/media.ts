@@ -15,126 +15,31 @@
  *   - transcodificação — nunca. A compressão é no aparelho.
  */
 
-import { Router, type RequestHandler } from "express";
-import multer from "multer";
+import { Router } from "express";
 import { eq, and } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { mediaAssetsTable } from "@workspace/db";
 import { requireAuth } from "../middleware/require-auth";
+import { receberArquivo } from "../middleware/receber-arquivo.ts";
 import { getAuth } from "../lib/auth-types.ts";
 import { verifyPatientBelongsToFamily } from "../lib/family-access";
 import { mediaUploadLimiter, mediaContentLimiter } from "../lib/rate-limit";
 import { safeLog } from "../lib/safe-logger";
 import { audit } from "../lib/audit";
-import {
-  obterArmazenamento,
-  novaChaveDeObjeto,
-  type TipoDeMidia,
-} from "../lib/media-storage.ts";
+import { obterArmazenamento } from "../lib/media-storage.ts";
+import { guardarMidia } from "../lib/media-upload.ts";
 import { gerarTokenDeMidia, lerTokenDeMidia } from "../lib/media-links.ts";
-import { exigeConsentimentoDeImagem, temConsentimentoDeImagem } from "../lib/image-consent.ts";
 
 const router = Router();
 
-/**
- * O TIPO VEM DO MIME, NUNCA DO CLIENTE.
- *
- * Se o cliente mandasse `kind`, ele poderia enviar um vídeo de 8 MB
- * declarando "image" e escapar do teto de 2 MB das imagens. Derivando o
- * tipo desta tabela, o teto certo é aplicado sempre — e um MIME fora dela
- * é recusado antes de qualquer byte ser gravado.
- *
- * SVG está fora de propósito: SVG é documento executável e vira XSS quando
- * servido de volta. Os três formatos de imagem aceitos aqui são raster.
- */
-const TIPOS_ACEITOS: Record<string, TipoDeMidia> = {
-  "image/jpeg": "image",
-  "image/png": "image",
-  "image/webp": "image",
-  "video/mp4": "video",
-  "video/webm": "video",
-  "audio/webm": "audio",
-  "audio/mp4": "audio",
-  "audio/mpeg": "audio",
-  "audio/ogg": "audio",
-};
-
-/**
- * Tetos por tipo, calibrados com a compressão no aparelho já aplicada
- * (ver planning/refinamentos/momentos-fotos-e-videos.md):
- *
- *   foto  ~300 KB depois de 1600px + JPEG 0.8   -> teto de 2 MB
- *   áudio ~300 KB em 60 segundos                -> teto de 1 MB
- *   vídeo ~5 MB em 30 segundos a 720p           -> teto de 8 MB
- *
- * O teto é várias vezes a expectativa: sobra para um aparelho que comprime
- * pior, sem virar porta aberta.
- */
-const TETO_POR_TIPO: Record<TipoDeMidia, number> = {
-  image: 2 * 1024 * 1024,
-  audio: 1 * 1024 * 1024,
-  video: 8 * 1024 * 1024,
-};
-
-const TETO_ABSOLUTO = Math.max(...Object.values(TETO_POR_TIPO));
-
-/** Tamanho máximo da legenda (QUI-7). Recado curto, não post. */
-const TETO_DA_LEGENDA = 300;
-
-const upload = multer({
-  storage: multer.memoryStorage(),
-  // O multer só conhece um teto. Ele corta o abuso grosseiro; o teto por
-  // tipo é conferido depois, quando já se sabe qual é o tipo.
-  limits: { fileSize: TETO_ABSOLUTO },
-  // SEM fileFilter de propósito. Filtrando aqui, um MIME recusado chega ao
-  // handler como "nenhum arquivo enviado" — e o app responderia "envie um
-  // arquivo" para quem enviou um arquivo. A checagem de formato acontece no
-  // handler, onde dá para responder 415 dizendo a verdade.
-});
-
-function emMegabytes(bytes: number): string {
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-/**
- * O multer LANÇA quando o arquivo passa do teto, e um throw dentro de
- * middleware vira 500 genérico do Express. Aqui ele vira 413 com mensagem
- * útil, que é a diferença entre "o app quebrou" e "esse arquivo é grande
- * demais".
- */
-const receberArquivo: RequestHandler = (req, res, next) => {
-  upload.single("arquivo")(req, res, (err: unknown) => {
-    if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
-      res.status(413).json({
-        error: `Arquivo grande demais: o limite é ${emMegabytes(TETO_ABSOLUTO)}.`,
-        code: "MEDIA_TOO_LARGE",
-      });
-      return;
-    }
-    if (err) {
-      safeLog.error({ action: "media_upload_parse_failed", err }, "Falha ao ler o envio de midia");
-      res.status(400).json({ error: "Não conseguimos ler o arquivo enviado.", code: "MEDIA_FILE_MISSING" });
-      return;
-    }
-    next();
-  });
-};
-
 // ── Enviar ────────────────────────────────────────────────────────────────
+//
+// A validação do arquivo (allowlist de MIME, teto por tipo, consentimento,
+// ordem de gravação) vive em lib/media-upload.ts, compartilhada com a rota
+// do PACIENTE (QUI-8). Aqui fica só o que é específico do cuidador: a
+// sessão dele e o vínculo do paciente com a família dele.
 
 router.post("/media", requireAuth, mediaUploadLimiter, receberArquivo, async (req, res): Promise<void> => {
-  const armazenamento = obterArmazenamento();
-  if (!armazenamento) {
-    // Capacidade ausente não é erro do usuário. Mesmo padrão de
-    // /auth/email/status e /config/maps: o que falta é dito, não escondido
-    // atrás de um 500.
-    res.status(503).json({
-      error: "O envio de fotos e vídeos ainda não está disponível neste ambiente.",
-      code: "MEDIA_STORAGE_UNAVAILABLE",
-    });
-    return;
-  }
-
   if (!req.file) {
     res.status(400).json({
       error: "Envie um arquivo em JPEG, PNG, WebP, MP4, WebM, MP3 ou OGG.",
@@ -156,78 +61,21 @@ router.post("/media", requireAuth, mediaUploadLimiter, receberArquivo, async (re
     return;
   }
 
-  const tipo = TIPOS_ACEITOS[req.file.mimetype];
-  if (!tipo) {
-    res.status(415).json({ error: "Esse formato de arquivo não é aceito.", code: "MEDIA_TYPE_REJECTED" });
+  const resultado = await guardarMidia({
+    familyId: auth.familyId,
+    patientId,
+    caregiverId: auth.caregiverId,
+    arquivo: { buffer: req.file.buffer, mimetype: req.file.mimetype, size: req.file.size },
+    caption: req.body?.caption,
+  });
+
+  if (!resultado.ok) {
+    res.status(resultado.status).json({ error: resultado.error, code: resultado.code });
     return;
   }
 
-  const teto = TETO_POR_TIPO[tipo];
-  if (req.file.size > teto) {
-    res.status(413).json({
-      error: `Arquivo grande demais: o limite é ${emMegabytes(teto)}.`,
-      code: "MEDIA_TOO_LARGE",
-    });
-    return;
-  }
-
-  // QUI-6 — ninguém é fotografado sem consentimento registrado.
-  //
-  // Vem DEPOIS da checagem de família (senão vazaria a existência do
-  // paciente pelo código de erro) e ANTES de qualquer byte ser gravado.
-  //
-  // Só imagem e vídeo. Áudio passa de propósito: voz não é imagem, e um
-  // recado gravado pelo próprio paciente (QUI-8) é ele se expressando, não
-  // ele sendo retratado. Ver lib/image-consent.ts.
-  if (exigeConsentimentoDeImagem(tipo) && !(await temConsentimentoDeImagem(patientId))) {
-    res.status(403).json({
-      error: "Esta família ainda não registrou o consentimento para fotografar este paciente.",
-      code: "IMAGE_CONSENT_REQUIRED",
-    });
-    return;
-  }
-
-  // Legenda opcional (QUI-7). Texto livre e curto. Recortar em vez de
-  // recusar é deliberado: alguém que escreveu demais não deve perder a foto
-  // que já subiu por causa disso.
-  const legendaBruta = typeof req.body?.caption === "string" ? req.body.caption.trim() : "";
-  const legenda = legendaBruta.length > 0 ? legendaBruta.slice(0, TETO_DA_LEGENDA) : null;
-
-  const chave = novaChaveDeObjeto(tipo);
-
-  // ORDEM IMPORTA: grava o objeto primeiro. Se o insert falhar depois,
-  // apagamos o objeto — não sobra nada. Fazendo ao contrário, uma falha na
-  // gravação deixaria uma linha apontando para um arquivo que não existe, e
-  // o mural quebraria ao tentar exibir.
-  try {
-    await armazenamento.guardar(chave, req.file.buffer, req.file.mimetype);
-  } catch (err) {
-    safeLog.error({ action: "media_store_failed", err }, "Falha ao gravar midia no armazenamento");
-    res.status(502).json({ error: "Não conseguimos guardar o arquivo agora. Tente de novo.", code: "MEDIA_STORE_FAILED" });
-    return;
-  }
-
-  let asset: { id: number };
-  try {
-    [asset] = await db
-      .insert(mediaAssetsTable)
-      .values({
-        familyId: auth.familyId,
-        patientId,
-        uploadedByCaregiverId: auth.caregiverId,
-        kind: tipo,
-        mimeType: req.file.mimetype,
-        sizeBytes: req.file.size,
-        objectKey: chave,
-        caption: legenda,
-      })
-      .returning({ id: mediaAssetsTable.id });
-  } catch (err) {
-    await armazenamento.apagar(chave).catch(() => undefined);
-    safeLog.error({ action: "media_catalog_failed", err }, "Falha ao catalogar midia; objeto removido");
-    res.status(500).json({ error: "Não conseguimos guardar o arquivo agora. Tente de novo." });
-    return;
-  }
+  const asset = { id: resultado.id };
+  const tipo = resultado.tipo;
 
   await audit({
     familyId: auth.familyId,

@@ -15,9 +15,10 @@
 
 ## Posição
 
-**44 histórias entregues:** 38 das 42 do backlog original, mais ZELO-56, ZELO-57 e ZELO-58,
+**45 histórias entregues:** 38 das 42 do backlog original, mais ZELO-56, ZELO-57 e ZELO-58,
 criadas depois a partir de refinamento, mais **QUI-5** (fundação de mídia), **QUI-6**
-(consentimento de imagem) e **QUI-7** (Momentos do paciente), as três em 25/08/2026.
+(consentimento de imagem), **QUI-7** (Momentos do paciente) e **QUI-8** (recado em áudio),
+as quatro em 25/08/2026.
 
 | Fase | Situação |
 |---|---|
@@ -44,8 +45,8 @@ Ficou esgotado entre 19 e 24/08/2026, e isso foi verdade enquanto o backlog era 
 ponta: o cuidador publica uma foto com legenda e a família vê no mural, com autor e horário no
 fuso do paciente.
 
-A próxima é a **QUI-8 — recado do paciente, em áudio**: o lado que nenhum concorrente faz. Ela
-reusa o token de dispositivo da ZELO-58 e é a terceira rota daquele mundo.
+A próxima é a **QUI-9 — vídeo curto, até 30 segundos**. É a mais cara do conjunto (um vídeo pesa
+16× uma foto), e por isso vem depois de o resto provar valor.
 
 `NÃO VERIFICADO`: a compressão no aparelho (5 MB → menos de 500 KB) é critério de aceite da QUI-7
 e **só pode ser medida num navegador de verdade**. O componente escreve os dois números no console
@@ -81,7 +82,7 @@ enviado e o login exige e-mail verificado. Só o Google entra.
   — schema completo já gerado e testado, trigger de imutabilidade, secrets faltando, URL do OAuth.
 - **Verificação visual só acontece no Replit.** O roteamento de `/api` para o backend é da
   infraestrutura dele (`router = "application"`), não reproduzido localmente.
-- **A suíte de integração VOLTOU a rodar localmente** em 25/08/2026: 472 testes, 470 passando,
+- **A suíte de integração VOLTOU a rodar localmente** em 25/08/2026: 494 testes, 492 passando,
   2 pulados. Passo a passo em [runbooks/banco-de-teste-local.md](runbooks/banco-de-teste-local.md).
   O bloqueio anterior era só o container `zelo-test-pg` parado.
 

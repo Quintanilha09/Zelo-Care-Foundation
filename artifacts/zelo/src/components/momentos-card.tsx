@@ -274,12 +274,26 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
         <ul className="space-y-4">
           {mural.momentos.map((momento) => (
             <li key={momento.id} className="space-y-2">
-              <img
-                src={apiUrl(momento.url)}
-                alt={momento.caption ?? `Momento de ${patientName}`}
-                loading="lazy"
-                className="w-full rounded-lg border bg-muted"
-              />
+              {momento.kind === "audio" ? (
+                // Recado do paciente (QUI-8). `preload="none"` de propósito: um
+                // mural com vários recados não pode baixar todos ao abrir.
+                <div className="rounded-lg border p-3 space-y-2">
+                  <p className="text-sm font-medium">Recado de {momento.autor ?? patientName}</p>
+                  <audio controls preload="none" src={apiUrl(momento.url)} className="w-full">
+                    Seu navegador não consegue tocar áudio.
+                  </audio>
+                </div>
+              ) : (
+                <img
+                  src={apiUrl(momento.url)}
+                  alt={momento.caption ?? `Momento de ${patientName}`}
+                  loading="lazy"
+                  // `max-h` com `object-contain`: sem teto, uma foto em pé
+                  // ocupa a tela inteira e empurra autor e legenda para fora
+                  // do campo de visão. Relatado pelo fundador em 25/08/2026.
+                  className="w-full max-h-[26rem] object-contain rounded-lg border bg-muted"
+                />
+              )}
               {momento.caption && <p className="text-sm">{momento.caption}</p>}
               <div className="flex items-center justify-between gap-2">
                 <p className="text-xs text-muted-foreground">

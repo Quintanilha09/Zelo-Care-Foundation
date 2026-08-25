@@ -40,10 +40,16 @@ export async function patientFetch(path: string, init: RequestInit = {}): Promis
   if (!token) throw new Error("Este aparelho não tem acesso configurado.");
 
   const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+  // FormData (o recado em áudio da QUI-8) precisa que o navegador defina o
+  // Content-Type sozinho, com o boundary certo — fixar "application/json"
+  // aqui quebraria o multipart. Mesmo cuidado que authFetch já tomava.
+  const isFormData = init.body instanceof FormData;
+
   return fetch(`${BASE}${path}`, {
     ...init,
     headers: {
-      "Content-Type": "application/json",
+      ...(isFormData ? {} : { "Content-Type": "application/json" }),
       "X-Patient-Access": token,
       ...(init.headers ?? {}),
     },
