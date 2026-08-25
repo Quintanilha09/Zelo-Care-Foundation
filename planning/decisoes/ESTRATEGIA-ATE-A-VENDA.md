@@ -68,6 +68,43 @@ Serve para: construir, rodar teste, e demonstrar o produto **ao vivo, com algué
    aparelho de verdade, ao longo de dias. Sem ela, três perguntas ficam sem resposta:
    se o push é confiável, se vale ligar SMS, e se o app nativo é necessário (QUI-13).
 
+#### Testar em desenvolvimento custa alguma coisa? — pergunta do fundador em 25/08/2026
+
+**Quase nada, mas não é zero, e a diferença importa saber.**
+
+| Item | Em desenvolvimento | Fonte |
+|---|---|---|
+| **Banco** | **grátis** — *"Development databases are always free and included with every Replit App"* | [docs](https://docs.replit.com/billing/about-usage-based-billing) |
+| **Publicação (deployment)** | **não existe** enquanto não se publica | — |
+| **App Storage** (fotos, vídeos, áudios) | **cobra igual** | [docs](https://docs.replit.com/billing/object-storage-billing) |
+| **Anthropic** (ler receita por foto) | **cobra por uso** | — |
+| **Google Maps** | franquia de 10 mil por SKU/mês — teste não chega perto | — |
+
+**O App Storage não tem modo de desenvolvimento.** O balde é o mesmo, e o que subir fica lá até
+alguém apagar. É a única coisa que acumula.
+
+Quanto isso dá, na prática:
+
+| Teste | Volume | Custo |
+|---|---|---|
+| 30 fotos, vistas 5× cada | 9 MB guardados, 45 MB de saída | **US$ 0,003 · R$ 0,02** |
+| 10 vídeos de 30 s, vistos 5× cada | 50 MB guardados, 250 MB de saída | **US$ 0,013 · R$ 0,07** |
+| 100 vídeos, vistos 10× cada | 500 MB guardados, 5 GB de saída | **US$ 0,25 · R$ 1,36** |
+| 20 leituras de receita por foto | — | **US$ 0,07 · R$ 0,38** |
+
+**Sete centavos para testar vídeo à vontade.** Mesmo o cenário exagerado da terceira linha não passa
+de R$ 1,36.
+
+Dois detalhes que valem conhecer:
+
+1. **Todo objeto tem cobrança mínima de 7 dias.** Subir e apagar no mesmo minuto ainda conta como
+   uma semana de armazenamento. Em megabytes isso é fração de centavo, mas o mecanismo é real.
+2. **Apagar pelo app apaga do balde de verdade** (QUI-5). O botão de lixeira no mural é a limpeza —
+   não precisa mexer em nada no Replit.
+
+**E implementar não custa nada.** O código é escrito e testado localmente; o Replit Agent não é
+usado, então não há consumo de crédito de agente.
+
 ### Modo 2 — Produção por janela (a peça que faltava)
 
 **Custo: R$ 71 por 3 dias, R$ 165 por semana.**
