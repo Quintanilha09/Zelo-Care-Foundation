@@ -6,6 +6,7 @@ import googleAuthRouter from "./google-auth";
 import consentRouter from "./consent";
 import invitesRouter from "./invites";
 import accountRouter from "./account";
+import configRouter from "./config";
 import activityRouter from "./activity";
 import exportRouter from "./export";
 import patientsRouter from "./patients";
@@ -42,6 +43,7 @@ router.use(consentRouter);
 
 // Com autenticação (requireAuth em cada rota)
 router.use(invitesRouter);
+router.use(configRouter);
 router.use(accountRouter);
 router.use(activityRouter);
 router.use(exportRouter);

@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { PlanPaywall } from "@/components/plan-paywall";
 import { CampoLabel } from "@/components/campo-label";
 import { SeletorEspecialidade } from "@/components/seletor-especialidade";
+import { SeletorLocal } from "@/components/seletor-local";
 import { useAuth } from "@/context/AuthContext";
 import { appointmentsAllowed, appointmentsBlockedMessage } from "@/lib/plan-limits-client";
 import { AppHeader } from "@/components/app-header";
@@ -260,7 +261,7 @@ export default function AppointmentsPage({ params }: { params: { id: string } })
       </div>
       <div>
         <Label>Local</Label>
-        <Input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="Endereço ou clínica" />
+        <SeletorLocal value={form.location} onChange={(v) => setForm({ ...form, location: v })} />
       </div>
       <div className="grid grid-cols-2 gap-2">
         <div>
