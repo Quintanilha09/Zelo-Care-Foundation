@@ -94,9 +94,27 @@ O Pix custa **um terço** do cartão. Vale priorizá-lo na tela de assinatura �
 
 - **Google Maps** — a camada gratuita é de **10 mil chamadas por SKU por mês**, e o Autocomplete
   *por sessão* é gratuito e ilimitado. Com 2 consultas por paciente/mês, seriam necessários
-  **~5.000 pacientes** para começar a pagar. **Isso reabre o item 12-12 do backlog**: o campo de
-  endereço com mapa custaria zero por muito tempo. O que ele exige é **conta no Google Cloud com
-  cartão cadastrado** — cobrança só existe acima da cota, mas o cartão é obrigatório.
+  **~5.000 pacientes** para começar a pagar.
+
+  ⚠️ **CORREÇÃO de 24/08/2026 — eu tinha omitido uma barreira de entrada.** A versão original
+  deste documento dizia apenas que o Google exige "cartão cadastrado". Está incompleto: no
+  Brasil, o Google Cloud exige um **pré-pagamento único de R$ 150,00** antes de ativar o
+  faturamento. O valor **não é taxa** — vira saldo na conta, é consumido pelo uso e é
+  reembolsado ao encerrar a conta de faturamento. Ainda assim é dinheiro parado e uma
+  barreira real, e eu deveria ter verificado antes de recomendar.
+
+  **Alternativa gratuita, verificada em 24/08/2026:** o **ViaCEP** (`viacep.com.br`) é o
+  serviço público de CEP do Brasil — gratuito, **sem chave, sem cadastro e sem cartão**,
+  ~1,6 milhão de CEPs, devolve rua, bairro, cidade e estado em JSON. O mapa visual pode vir do
+  **OpenStreetMap**, também sem chave. Cobre o pedido original ("digitei o CEP e o campo me
+  retorna o endereço") por R$ 0,00.
+
+  O que só o Google faz: buscar pelo **nome** do estabelecimento ("Hospital Albert Einstein")
+  e endereços fora do Brasil. Para este produto, o cuidador costuma ter o endereço em mãos.
+
+  Restrição do ViaCEP, do próprio site: proíbe uso massivo para validar bases locais, e proíbe
+  redistribuição comercial dos dados. Uma consulta por consulta agendada não se encaixa em
+  nenhuma das duas.
 - **Leitura de receita por IA** — US$ 3,50/mês com mil pacientes. Irrelevante.
 - **E-mail** — o plano gratuito do Resend (3.000/mês) cobre milhares de famílias, já que só há
   e-mail transacional: verificação, recuperação de senha e convite.
@@ -123,8 +141,16 @@ O Pix custa **um terço** do cartão. Vale priorizá-lo na tela de assinatura �
 2. **Reduzir a taxa de SMS por desenho**, não só por preço. Cada ponto percentual a menos vale
    mais que qualquer negociação. Vale **medir a entrega real de push antes de ligar o SMS** — e o
    painel que mede isso (REQ-027) está inacessível hoje por falta do `ADMIN_PANEL_SECRET`.
-3. **Reabrir o Google Maps** (item 12-12): o custo é zero na prática. A pergunta vira "quer
-   cadastrar cartão no Google Cloud?", não "quanto vai custar".
+3. **Endereço: Google Maps — decidido em 24/08/2026.** O fundador ativou o faturamento e pagou o
+   pré-pagamento de R$ 150, que virou saldo na conta (custo consumido até agora: R$ 0,00).
+   Recomendado criar alerta de orçamento de R$ 10 para não descobrir surpresa na fatura.
+   **O ViaCEP fica registrado como alternativa** para o caso de o comprador não querer herdar a
+   conta de faturamento do Google: cobre o mesmo caso de uso (CEP → endereço) por R$ 0,00,
+   perdendo só a busca por nome do estabelecimento.
+
+   ~~Preferir ViaCEP ao Google Maps.~~ O custo recorrente dos dois é zero,
+   mas o Google exige R$ 150 de pré-pagamento no Brasil e uma conta de faturamento que teria de
+   ser transferida ao comprador. O ViaCEP não exige nada.
 4. **Priorizar Pix** na assinatura: um terço do custo do cartão.
 5. **Definir o domínio** — ele bloqueia o e-mail, que bloqueia o cadastro (fase 11.1b).
 
