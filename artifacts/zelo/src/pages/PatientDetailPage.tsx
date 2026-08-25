@@ -6,6 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { activateElderModeOnThisDevice } from "@/lib/elder-mode";
 import { AppHeader } from "@/components/app-header";
 import { TreatmentForm } from "@/components/treatment-form";
+import { Pencil } from "lucide-react";
 import { CampoNumero } from "@/components/campo-numero";
 import { DoseCard } from "@/components/dose-card";
 import { PushPermissionPrompt } from "@/components/push-permission-prompt";
@@ -41,6 +42,11 @@ interface Treatment {
   status: string;
   startDate: string;
   endDate: string | null;
+  // Campos que só a EDIÇÃO usa. A API já os devolvia; este tipo é que os
+  // omitia, e por isso não dava para pré-preencher o formulário.
+  scheduleConfig: unknown;
+  instructions: string | null;
+  escalationProfile: string | null;
 }
 
 interface ScheduledDose {
@@ -105,6 +111,8 @@ async function fetchStock(id: string): Promise<StockEntry[]> {
 
 export default function PatientDetailPage({ params }: { params: { id: string } }) {
   const { user } = useAuth();
+  /** Tratamento sendo editado. `null` = ninguém. */
+  const [editandoTratamento, setEditandoTratamento] = useState<Treatment | null>(null);
   const [, setLocation] = useLocation();
   const isPrimaryCaregiver = user?.caregiver?.role === "primary_caregiver";
   const [elderModeSaving, setElderModeSaving] = useState(false);
@@ -291,6 +299,46 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
               <TreatmentForm patientId={Number(params.id)} onCreated={handleCreated} onCancel={() => setOpen(false)} />
             </DialogContent>
             </Dialog>
+
+            {/* Edição reusa o MESMO formulário, com `tratamento` preenchido.
+                Um formulário só para os dois casos evita o que sempre acontece
+                com formulários gêmeos: um ganha campo novo e o outro fica para trás. */}
+            <Dialog
+              open={editandoTratamento !== null}
+              onOpenChange={(aberto) => { if (!aberto) setEditandoTratamento(null); }}
+            >
+              <DialogContent className="sm:max-w-xl">
+                <DialogHeader>
+                  <DialogTitle>Editar tratamento</DialogTitle>
+                  <DialogDescription>
+                    Corrija a posologia, as datas ou as instruções.
+                  </DialogDescription>
+                </DialogHeader>
+                {editandoTratamento && (
+                  <TreatmentForm
+                    patientId={Number(params.id)}
+                    tratamento={{
+                      id: editandoTratamento.id,
+                      medicationName: editandoTratamento.medicationName,
+                      dose: editandoTratamento.dose,
+                      scheduleConfig: editandoTratamento.scheduleConfig,
+                      startDate: editandoTratamento.startDate,
+                      endDate: editandoTratamento.endDate,
+                      instructions: editandoTratamento.instructions,
+                      escalationProfile: editandoTratamento.escalationProfile,
+                    }}
+                    onCreated={() => {
+                      setEditandoTratamento(null);
+                      void queryClient.invalidateQueries({ queryKey: ["treatments", params.id] });
+                      // As doses futuras são regeradas quando a posologia muda,
+                      // então a tela de hoje também precisa recarregar.
+                      void queryClient.invalidateQueries({ queryKey: ["today-doses", params.id] });
+                    }}
+                    onCancel={() => setEditandoTratamento(null)}
+                  />
+                )}
+              </DialogContent>
+            </Dialog>
           </div>
         </div>
 
@@ -345,9 +393,19 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
                   <h3 className="text-[18px] font-semibold">{t.medicationName}</h3>
                   {t.dose && <p className="text-muted-foreground text-[17px]">{t.dose}</p>}
                 </div>
-                <span className="text-xs px-2.5 py-1 rounded-full bg-muted text-muted-foreground shrink-0">
-                  {STATUS_LABELS[t.status] ?? t.status}
-                </span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-xs px-2.5 py-1 rounded-full bg-muted text-muted-foreground">
+                    {STATUS_LABELS[t.status] ?? t.status}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="gap-1.5 h-8"
+                    onClick={() => setEditandoTratamento(t)}
+                  >
+                    <Pencil className="w-3.5 h-3.5" /> Editar
+                  </Button>
+                </div>
               </div>
               <p className="text-sm text-muted-foreground mt-2">
                 {SCHEDULE_LABELS[t.scheduleType] ?? t.scheduleType} · desde {new Date(t.startDate).toLocaleDateString("pt-BR")}

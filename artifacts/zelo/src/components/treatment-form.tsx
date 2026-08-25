@@ -112,20 +112,53 @@ function TimesList({ times, onChange }: { times: string[]; onChange: (t: string[
   );
 }
 
+/**
+ * Tratamento vindo de `GET /patients/:id/treatments`, para o modo de edição.
+ * Só os campos que o formulário sabe preencher — o resto da lista é ignorado.
+ */
+export interface TratamentoParaEditar {
+  id: number;
+  medicationName: string;
+  dose: string | null;
+  scheduleConfig: unknown;
+  startDate: string;
+  endDate: string | null;
+  instructions: string | null;
+  escalationProfile: string | null;
+}
+
 interface TreatmentFormProps {
   patientId: number;
   onCreated: () => void;
   onCancel: () => void;
+  /** Presente = modo edição. Ausente = criação. */
+  tratamento?: TratamentoParaEditar;
 }
 
-export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormProps) {
-  const [medicationName, setMedicationName] = useState("");
-  const [dose, setDose] = useState("");
-  const [instructions, setInstructions] = useState("");
-  const [scheduleType, setScheduleType] = useState<ScheduleType>("times_per_day");
-  const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [endDate, setEndDate] = useState("");
-  const [escalationProfile, setEscalationProfile] = useState<EscalationProfile>("standard");
+export function TreatmentForm({ patientId, onCreated, onCancel, tratamento }: TreatmentFormProps) {
+  const editando = tratamento !== undefined;
+
+  /**
+   * Lê o scheduleConfig salvo, que vem do banco como JSON solto.
+   * Cada padrão de posologia guarda campos diferentes, então o acesso é
+   * defensivo: um tratamento antigo pode não ter tudo que a versão atual usa.
+   */
+  const cfg = (tratamento?.scheduleConfig ?? {}) as {
+    scheduleType?: ScheduleType;
+    times?: string[];
+    intervalHours?: number;
+    startTime?: string;
+    weekdays?: number[];
+    onDays?: number;
+    offDays?: number;
+  };
+  const [medicationName, setMedicationName] = useState(tratamento?.medicationName ?? "");
+  const [dose, setDose] = useState(tratamento?.dose ?? "");
+  const [instructions, setInstructions] = useState(tratamento?.instructions ?? "");
+  const [scheduleType, setScheduleType] = useState<ScheduleType>(cfg.scheduleType ?? "times_per_day");
+  const [startDate, setStartDate] = useState(tratamento?.startDate ?? (() => new Date().toISOString().slice(0, 10))());
+  const [endDate, setEndDate] = useState(tratamento?.endDate ?? "");
+  const [escalationProfile, setEscalationProfile] = useState<EscalationProfile>((tratamento?.escalationProfile as EscalationProfile) ?? "standard");
 
   // ZELO-34: opcional de propósito — sem estoque informado, o app nunca
   // insiste; sem quantidade, não tenta calcular dias restantes de coisa nenhuma.
@@ -134,12 +167,12 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
   const [stockUnit, setStockUnit] = useState("comprimidos");
   const [prescriptionExpiresAt, setPrescriptionExpiresAt] = useState("");
 
-  const [times, setTimes] = useState(["08:00"]);
-  const [intervalHours, setIntervalHours] = useState(8);
-  const [everyNStartTime, setEveryNStartTime] = useState("08:00");
-  const [weekdays, setWeekdays] = useState<number[]>([1, 3, 5]);
-  const [onDays, setOnDays] = useState(21);
-  const [offDays, setOffDays] = useState(7);
+  const [times, setTimes] = useState(cfg.times ?? ["08:00"]);
+  const [intervalHours, setIntervalHours] = useState(cfg.intervalHours ?? 8);
+  const [everyNStartTime, setEveryNStartTime] = useState(cfg.startTime ?? "08:00");
+  const [weekdays, setWeekdays] = useState<number[]>(cfg.weekdays ?? [1, 3, 5]);
+  const [onDays, setOnDays] = useState(cfg.onDays ?? 21);
+  const [offDays, setOffDays] = useState(cfg.offDays ?? 7);
 
   const [preview, setPreview] = useState<string[] | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -274,10 +307,41 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!medicationName.trim()) return;
+    if (!medicationName.trim()) {
+      // Nada de `return` mudo: apertar Salvar e não acontecer nada é
+      // indistinguível de app quebrado.
+      setError("Informe o nome do medicamento.");
+      return;
+    }
     setLoading(true);
     setError("");
     try {
+      // ── EDIÇÃO ───────────────────────────────────────────────────────
+      // Só o que o cuidador pode corrigir: posologia, datas, instruções e
+      // perfil de escalonamento. O MEDICAMENTO não muda aqui — trocar o
+      // remédio de um tratamento em andamento não é edição, é outro
+      // tratamento, e as doses já geradas ficariam órfãs do que foi tomado.
+      if (editando) {
+        const res = await authFetch(`/api/treatments/${tratamento.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            dose: dose.trim() || null,
+            scheduleConfig: buildScheduleConfig(),
+            startDate,
+            endDate: endDate || null,
+            instructions: instructions.trim() || null,
+            escalationProfile,
+          }),
+        });
+        if (!res.ok) {
+          const erro = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(erro.error ?? "Não foi possível salvar as mudanças.");
+        }
+        onCreated();
+        return;
+      }
+
+      // ── CRIAÇÃO ──────────────────────────────────────────────────────
       const medRes = await authFetch("/api/medications", {
         method: "POST",
         body: JSON.stringify({ name: medicationName.trim() }),
@@ -342,6 +406,9 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
+      {/* Cadastro por foto só existe na CRIAÇÃO: reextrair a receita de um
+          tratamento em andamento sobrescreveria o que o cuidador já corrigiu. */}
+      {!editando && (
       <div className="rounded-lg border border-dashed p-4 space-y-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <Label htmlFor="tf-photo" className="flex items-center gap-2 cursor-pointer text-[17px] font-medium min-w-0">
@@ -386,11 +453,28 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
           <p className="text-sm text-zelo-amber-fg flex items-center gap-1"><AlertTriangle className="w-3.5 h-3.5" /> {photoError}</p>
         )}
       </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="space-y-2 col-span-2">
           <CampoLabel htmlFor="tf-med" obrigatorio>Medicamento</CampoLabel>
-          <Input id="tf-med" value={medicationName} onChange={(e) => setMedicationName(e.target.value)} required autoFocus />
+          {/* Ao editar, o medicamento não muda: trocar o remédio de um
+              tratamento em andamento não é edição, é outro tratamento — e as
+              doses já registradas ficariam penduradas no remédio errado. */}
+          <Input
+            id="tf-med"
+            value={medicationName}
+            onChange={(e) => setMedicationName(e.target.value)}
+            required
+            autoFocus={!editando}
+            readOnly={editando}
+            className={editando ? "bg-muted text-muted-foreground" : undefined}
+          />
+          {editando && (
+            <p className="text-xs text-muted-foreground">
+              Para trocar o medicamento, encerre este tratamento e cadastre outro.
+            </p>
+          )}
           {lowConfidenceFields.has("name") && (
             <p className="text-xs text-zelo-amber-fg flex items-center gap-1"><AlertTriangle className="w-3.5 h-3.5" /> Não deu pra ler isso na foto com confiança — confira e preencha.</p>
           )}
@@ -492,6 +576,10 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
         <Textarea id="tf-instructions" value={instructions} onChange={(e) => setInstructions(e.target.value)} rows={2} placeholder="Tomar em jejum, por exemplo" />
       </div>
 
+      {/* Estoque só na criação: depois de criado, ele tem tela própria de
+          ajuste (somar/corrigir com motivo), que registra o histórico. Reabrir
+          aqui daria dois caminhos para o mesmo número. */}
+      {!editando && (
       <div className="rounded-lg border p-4 space-y-3">
         <label className="flex items-center gap-2 cursor-pointer text-[17px] font-medium">
           <Checkbox checked={trackStock} onCheckedChange={(c) => setTrackStock(c === true)} />
@@ -515,6 +603,7 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
           </div>
         )}
       </div>
+      )}
 
       <div className="space-y-2">
         <Label>Se ninguém registrar a tempo</Label>
@@ -550,7 +639,7 @@ export function TreatmentForm({ patientId, onCreated, onCancel }: TreatmentFormP
       <div className="flex gap-3 justify-end pt-2">
         <Button type="button" variant="secondary" onClick={onCancel} disabled={loading}>Cancelar</Button>
         <Button type="submit" disabled={loading || !medicationName.trim()}>
-          {loading ? "Salvando…" : "Salvar tratamento"}
+          {loading ? "Salvando…" : editando ? "Salvar mudanças" : "Salvar tratamento"}
         </Button>
       </div>
     </form>

@@ -119,6 +119,10 @@ router.get("/patients/:patientId/treatments", requireAuth, async (req, res): Pro
       endDate: treatmentsTable.endDate,
       status: treatmentsTable.status,
       instructions: treatmentsTable.instructions,
+      // Necessário para pré-preencher o formulário de EDIÇÃO: sem isto, abrir
+      // um tratamento para editar perderia o perfil de escalonamento escolhido
+      // e o salvaria de volta como 'standard' sem ninguém pedir.
+      escalationProfile: treatmentsTable.escalationProfile,
       createdAt: treatmentsTable.createdAt,
     })
     .from(treatmentsTable)
