@@ -66,7 +66,9 @@ Projeto **ZELO — Momentos**: <https://linear.app/quintanilha/project/zelo-mome
 | QUI-10 | Aviso de momento novo, e um coração | Média |
 | QUI-11 | Retenção de 90 dias, e o que a família quer guardar | Alta |
 
-Fora do projeto Momentos, os dois itens que atravessaram do Plane:
+Projeto **ZELO — Plataforma e Receita**: <https://linear.app/quintanilha/project/zelo-plataforma-e-receita-63df35b33b62>
+Os dois itens que atravessaram do Plane. Não é sobre o cuidado — é sobre como o produto **cobra** e
+como ele **chega ao aparelho**.
 
 | Card | História | Prioridade | Vinha de |
 |---|---|---|---|
