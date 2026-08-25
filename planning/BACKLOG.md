@@ -2,7 +2,94 @@
 
 > Consolidado em 23/08/2026 a partir da memória do agente, que era o único lugar onde isto existia.
 
-## Onde vive
+## Mudança de ferramenta — 24/08/2026: Plane → Linear
+
+**O backlog sai do Plane e passa a viver no Linear.** Decisão do fundador.
+
+O histórico abaixo descreve o Plane e continua valendo como registro do que foi construído —
+as 41 histórias concluídas contam a história do produto. O que muda é onde o trabalho **novo** vive.
+
+### A migração é o filtro da auditoria
+
+Auditei os 17 itens que estavam abertos no Plane. O veredito não é "apagar": é **decidir o que
+atravessa**. Não migrar é a forma mais limpa de descartar, porque o Plane continua guardando o que
+ficou para trás.
+
+**Resultado: 2 atravessam, 15 ficam.**
+
+| Item | Veredito | Por quê |
+|---|---|---|
+| **ZELO-39** — assinatura pela web | ✅ **migrar** | Sem PSP não há receita. Segue bloqueada por decisão de fornecedor, mas é trabalho real |
+| **ZELO-42** — app nativo | ✅ **migrar** | Bem desenhada, travada pelo próprio gatilho medido. Não custa nada aberta |
+| **ZELO-43** — portão comercial | ❌ **não migrar** | Não é código: são 5 entrevistas em ILPI e um turno de medicação observado. É *condição* do B2B, e o B2B não vai ser construído |
+| **ZELO-44** — portão jurídico | ❌ **não migrar** | O próprio texto dele depende de o 43 produzir um cliente real. Portão atrás de portão fechado |
+| **ZELO-31** — fallback por SMS | ❌ **não migrar** | Fora do escopo do v1 desde 24/08. Vira trabalho do comprador |
+| **ZELO-41** — SMS e ligação ao paciente | ❌ **não migrar** | Mesma decisão |
+| **ZELO-45 a ZELO-55** — 11 histórias institucionais | ❌ **não migrar** | Ver abaixo |
+
+### Por que a trilha institucional inteira fica para trás — os 13 itens
+
+Minha primeira leitura foi migrar os dois portões (ZELO-43 e ZELO-44) e deixar só as 11 de
+implementação. **Reli os textos originais e mudei de ideia.**
+
+**O próprio backlog já dizia isso.** O texto da ZELO-43 é explícito:
+
+> *"Nenhuma story de ZELO-45 em diante existe até esta fechar."*
+
+O portão nunca foi aberto — não houve conversa com ILPI, nem turno observado, nem carta de
+intenção. E os portões **não são desenvolvimento**: o 43 é trabalho de campo de semanas, o 44 é
+consulta jurídica que só começa depois de o 43 produzir um cliente real.
+
+Backlog de desenvolvimento não é lugar de pré-condição de negócio. Um card parado ali parece
+trabalho planejado; a mesma análise escrita em documento parece decisão tomada. Manter 13 itens
+abertos atrás de um portão fechado inventaria dívida que não existe.
+
+**E o desenho não se perde.** Ele está em
+[referencia/EXTENSAO-B2B.md](referencia/EXTENSAO-B2B.md), no repositório, versionado. Para quem
+for comprar o produto, uma análise B2B escrita vale mais que 11 cards especulativos num quadro —
+cards abertos e parados parecem dívida; um documento de análise parece trabalho feito.
+
+Se o portão abrir um dia, as histórias voltam do documento em uma tarde.
+
+### Onde vive agora
+
+**Linear**, time `Quintanilha` (prefixo `QUI`).
+Projeto **ZELO — Momentos**: <https://linear.app/quintanilha/project/zelo-momentos-12115e18244a>
+
+| Card | História | Prioridade |
+|---|---|---|
+| QUI-5 | Fundação de mídia: guardar arquivo fora do banco | Alta |
+| QUI-6 | Consentimento de imagem, separado e revogável | **Urgente** |
+| QUI-7 | Momentos do paciente: o cuidador publica, a família vê | Alta |
+| QUI-8 | Recado do paciente, em áudio | Alta |
+| QUI-9 | Vídeo curto, até 30 segundos | Média |
+| QUI-10 | Aviso de momento novo, e um coração | Média |
+| QUI-11 | Retenção de 90 dias, e o que a família quer guardar | Alta |
+
+Fora do projeto Momentos, os dois itens que atravessaram do Plane:
+
+| Card | História | Prioridade | Vinha de |
+|---|---|---|---|
+| [QUI-12](https://linear.app/quintanilha/issue/QUI-12) | Assinatura pela web, fora da comissão das lojas | Alta | ZELO-39 |
+| [QUI-13](https://linear.app/quintanilha/issue/QUI-13) | App nativo com push FCM e APNs | Baixa | ZELO-42 |
+
+QUI-1 a QUI-4 são os itens de boas-vindas do próprio Linear, não trabalho do projeto.
+
+O consentimento (QUI-6) é o único **urgente**: nenhuma foto pode existir antes dele. A retenção
+(QUI-11) é alta apesar de ser a última — é a única história que fica *mais cara* quanto mais se adia.
+
+### O que passa a ser trabalho de verdade
+
+Além dos 2 itens que atravessam, entra o refinamento novo:
+[refinamentos/momentos-fotos-e-videos.md](refinamentos/momentos-fotos-e-videos.md) — 7 histórias,
+escritas e prontas para colar no Linear.
+
+E as pendências das fases 11 e 12, que nunca estiveram no Plane porque nasceram de auditoria e de
+teste ao vivo: ver [phases/](phases/).
+
+---
+
+## Onde vivia (histórico do Plane)
 
 **Plane**, projeto **ZELO**, id `864270aa-59b4-4775-9bda-50fbc3bb8565`.
 
