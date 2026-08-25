@@ -6,6 +6,7 @@ import { runTreatmentLifecycleJob } from "./lib/treatment-lifecycle";
 import { decrementStockForDoseTaken } from "./lib/stock";
 import { sendDoseReminder, checkDeliveryAndEscalate } from "./lib/dose-reminders";
 import { runOperationalChecks } from "./lib/operational-monitor";
+import { apagarMidiasVencidas } from "./lib/media-cleanup";
 import { sendAppointmentReminder } from "./lib/appointment-reminders";
 
 const rawPort = process.env["PORT"];
@@ -34,6 +35,9 @@ await startQueue({
   },
   runOperationalChecks: async () => {
     await runOperationalChecks();
+  },
+  purgeExpiredMedia: async () => {
+    await apagarMidiasVencidas();
   },
   onDoseTaken: async ({ patientId, medicationId }) => {
     await decrementStockForDoseTaken(patientId, medicationId);

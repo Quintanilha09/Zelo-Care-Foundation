@@ -34,7 +34,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Camera, Trash2, ImagePlus, Loader2 } from "lucide-react";
+import { Camera, Trash2, ImagePlus, Loader2, Bookmark } from "lucide-react";
 
 interface Momento {
   id: number;
@@ -44,12 +44,17 @@ interface Momento {
   autor: string | null;
   url: string;
   podeApagar: boolean;
+  /** QUI-11: guardado não expira. */
+  guardado: boolean;
+  /** Nulo quando guardado. */
+  expiraEm: string | null;
 }
 
 interface RespostaDoMural {
   consentido: boolean;
   podeDecidirConsentimento: boolean;
   timezone: string;
+  diasDeRetencao: number;
   momentos: Momento[];
 }
 
@@ -153,6 +158,18 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
     } finally {
       setEnviando(false);
     }
+  };
+
+  const alternarGuardado = async (momento: Momento) => {
+    const res = await authFetch(`/api/media/${momento.id}/guardar`, {
+      method: "PATCH",
+      body: JSON.stringify({ guardar: !momento.guardado }),
+    });
+    if (!res.ok) {
+      toast({ title: "Não conseguimos mudar isso agora.", variant: "destructive" });
+      return;
+    }
+    await recarregar();
   };
 
   const apagar = async (momento: Momento) => {
@@ -264,6 +281,16 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
         {erro && <Alert variant="destructive"><AlertDescription>{erro}</AlertDescription></Alert>}
       </div>
 
+      {/* QUI-11 — avisar ANTES é critério de aceite, não gentileza. O tom é
+          informativo: nada de contagem regressiva por foto, nada de âmbar,
+          nada que pareça ameaça. Só o fato, e como escapar dele. */}
+      {mural.momentos.length > 0 && (
+        <p className="text-xs text-muted-foreground">
+          Os momentos somem sozinhos depois de {mural.diasDeRetencao} dias. Toque no marcador
+          para guardar um para sempre.
+        </p>
+      )}
+
       {/* O mural */}
       {mural.momentos.length === 0 ? (
         // Convite, nunca cobrança. Nada de "faz X dias sem foto" (CON-011).
@@ -298,18 +325,33 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
               <div className="flex items-center justify-between gap-2">
                 <p className="text-xs text-muted-foreground">
                   {momento.autor ?? "Alguém da família"} · {quando(momento.criadoEm, mural.timezone)}
+                  {momento.guardado && " · guardado"}
                 </p>
-                {momento.podeApagar && (
+                <div className="flex items-center gap-1 shrink-0">
+                  {/* Guardar é de QUALQUER cuidador da família: decidir que uma
+                      foto é importante não precisa de hierarquia. */}
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="text-muted-foreground hover:text-destructive"
-                    onClick={() => setAApagar(momento)}
-                    aria-label="Apagar este momento"
+                    className={momento.guardado ? "text-zelo-green-fg" : "text-muted-foreground"}
+                    onClick={() => void alternarGuardado(momento)}
+                    aria-label={momento.guardado ? "Deixar de guardar" : "Guardar para sempre"}
+                    title={momento.guardado ? "Guardado — não expira" : "Guardar para não expirar"}
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Bookmark className="w-4 h-4" fill={momento.guardado ? "currentColor" : "none"} />
                   </Button>
-                )}
+                  {momento.podeApagar && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-muted-foreground hover:text-destructive"
+                      onClick={() => setAApagar(momento)}
+                      aria-label="Apagar este momento"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
               </div>
             </li>
           ))}

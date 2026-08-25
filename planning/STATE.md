@@ -15,10 +15,10 @@
 
 ## Posição
 
-**45 histórias entregues:** 38 das 42 do backlog original, mais ZELO-56, ZELO-57 e ZELO-58,
+**46 histórias entregues:** 38 das 42 do backlog original, mais ZELO-56, ZELO-57 e ZELO-58,
 criadas depois a partir de refinamento, mais **QUI-5** (fundação de mídia), **QUI-6**
-(consentimento de imagem), **QUI-7** (Momentos do paciente) e **QUI-8** (recado em áudio),
-as quatro em 25/08/2026.
+(consentimento de imagem), **QUI-7** (Momentos do paciente), **QUI-8** (recado em áudio) e
+**QUI-11** (retenção de 90 dias), as cinco em 25/08/2026.
 
 | Fase | Situação |
 |---|---|
@@ -45,8 +45,16 @@ Ficou esgotado entre 19 e 24/08/2026, e isso foi verdade enquanto o backlog era 
 ponta: o cuidador publica uma foto com legenda e a família vê no mural, com autor e horário no
 fuso do paciente.
 
-A próxima é a **QUI-9 — vídeo curto, até 30 segundos**. É a mais cara do conjunto (um vídeo pesa
-16× uma foto), e por isso vem depois de o resto provar valor.
+**A QUI-9 (vídeo) foi ADIADA por decisão do fundador em 25/08/2026**, e o motivo está registrado:
+é o único recurso cujo custo dispara com mudança de comportamento do usuário — um vídeo pesa 16×
+uma foto. A fundação já aceita vídeo (teto de 8 MB, MIME na allowlist); falta só a tela e a
+compressão no aparelho. Ver [decisoes/CUSTOS-APIS.md](decisoes/CUSTOS-APIS.md).
+
+A próxima do projeto Momentos é a **QUI-10 — aviso de momento novo, e um coração**, que fecha o
+ciclo: hoje a família só vê se lembrar de abrir o app.
+
+**Mas antes dela vem o bloco de padrões pedido pelo fundador em 25/08/2026** — fluxo de Issue e PR
+(já implantado), movimento de interface, observabilidade, lint e testes de ponta a ponta.
 
 `NÃO VERIFICADO`: a compressão no aparelho (5 MB → menos de 500 KB) é critério de aceite da QUI-7
 e **só pode ser medida num navegador de verdade**. O componente escreve os dois números no console
@@ -82,7 +90,7 @@ enviado e o login exige e-mail verificado. Só o Google entra.
   — schema completo já gerado e testado, trigger de imutabilidade, secrets faltando, URL do OAuth.
 - **Verificação visual só acontece no Replit.** O roteamento de `/api` para o backend é da
   infraestrutura dele (`router = "application"`), não reproduzido localmente.
-- **A suíte de integração VOLTOU a rodar localmente** em 25/08/2026: 494 testes, 492 passando,
+- **A suíte de integração VOLTOU a rodar localmente** em 25/08/2026: 513 testes, 511 passando,
   2 pulados. Passo a passo em [runbooks/banco-de-teste-local.md](runbooks/banco-de-teste-local.md).
   O bloqueio anterior era só o container `zelo-test-pg` parado.
 

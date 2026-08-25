@@ -38,6 +38,7 @@ import { requireAuth } from "../middleware/require-auth";
 import { getAuth } from "../lib/auth-types.ts";
 import { gerarTokenDeMidia } from "../lib/media-links.ts";
 import { lerEstadoDoConsentimento } from "../lib/image-consent.ts";
+import { DIAS_DE_RETENCAO } from "../lib/media-cleanup.ts";
 
 const router = Router();
 
@@ -92,6 +93,7 @@ router.get<{ patientId: string }>("/patients/:patientId/momentos", requireAuth, 
       kind: mediaAssetsTable.kind,
       caption: mediaAssetsTable.caption,
       createdAt: mediaAssetsTable.createdAt,
+      keptAt: mediaAssetsTable.keptAt,
       autorId: mediaAssetsTable.uploadedByCaregiverId,
     })
     .from(mediaAssetsTable)
@@ -117,11 +119,19 @@ router.get<{ patientId: string }>("/patients/:patientId/momentos", requireAuth, 
     // "hoje de manhã" tem que significar a manhã dela. O servidor manda o
     // instante em ISO e o fuso; quem formata é a tela.
     timezone: paciente.timezone,
+    // A tela precisa dizer, sem drama, que momentos somem depois de 90 dias.
+    diasDeRetencao: DIAS_DE_RETENCAO,
     momentos: linhas.map((linha) => ({
       id: linha.id,
       kind: linha.kind,
       caption: linha.caption,
       criadoEm: linha.createdAt.toISOString(),
+      // QUI-11: guardado nunca expira. Para os demais, a tela mostra quando
+      // some — avisar antes é critério de aceite, não gentileza.
+      guardado: linha.keptAt !== null,
+      expiraEm: linha.keptAt !== null
+        ? null
+        : new Date(linha.createdAt.getTime() + DIAS_DE_RETENCAO * 86_400_000).toISOString(),
       // Autor nulo = publicado pelo próprio paciente, do aparelho dele
       // (QUI-8). Ainda não acontece, mas a tela já trata.
       autor: linha.autorId !== null ? nomePorId.get(linha.autorId) ?? null : paciente.name,

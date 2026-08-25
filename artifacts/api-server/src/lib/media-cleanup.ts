@@ -23,11 +23,21 @@
  * da rota.
  */
 
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt, type SQL } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { mediaAssetsTable } from "@workspace/db";
 import { obterArmazenamento, type TipoDeMidia } from "./media-storage.ts";
 import { safeLog } from "./safe-logger.ts";
+import { Clock } from "./clock.ts";
+
+/**
+ * Quantos dias um momento vive sem que ninguém peça para guardar.
+ *
+ * **Isto é minimização de dado, que a LGPD exige** — guardar foto de uma
+ * pessoa vulnerável para sempre, sem motivo, é o oposto do que a lei pede.
+ * O custo cair junto é consequência, não motivo.
+ */
+export const DIAS_DE_RETENCAO = 90;
 
 export interface ResultadoDaLimpeza {
   /** Quantas mídias foram apagadas, objeto e linha. */
@@ -51,10 +61,43 @@ export async function apagarMidiasDoPaciente(
     ? inArray(mediaAssetsTable.kind, [...tipos])
     : undefined;
 
+  return apagarPorFiltro(and(eq(mediaAssetsTable.patientId, patientId), filtroDeTipo));
+}
+
+/**
+ * Apaga TODA a mídia de uma família.
+ *
+ * Existe para a exclusão de dados do titular (REQ-006). O `onDelete:
+ * "cascade"` da tabela derruba as linhas quando a família some — mas
+ * **não toca no bucket**. Sem esta função, apagar a conta deixaria as fotos
+ * da pessoa no armazenamento para sempre, sem nada apontando para elas.
+ *
+ * Chamar ANTES do delete da família: depois, não há mais linha para saber
+ * quais objetos apagar.
+ */
+export async function apagarMidiasDaFamilia(familyId: number): Promise<ResultadoDaLimpeza> {
+  return apagarPorFiltro(eq(mediaAssetsTable.familyId, familyId));
+}
+
+/**
+ * Expurgo por idade — QUI-11.
+ *
+ * Apaga o que passou de `DIAS_DE_RETENCAO` **e não foi marcado para
+ * guardar**. Idempotente por construção: rodar duas vezes na sequência não
+ * acha nada na segunda, porque a primeira já apagou as linhas.
+ */
+export async function apagarMidiasVencidas(): Promise<ResultadoDaLimpeza> {
+  const corte = new Date(Clock.now().getTime() - DIAS_DE_RETENCAO * 86_400_000);
+  return apagarPorFiltro(
+    and(lt(mediaAssetsTable.createdAt, corte), isNull(mediaAssetsTable.keptAt))
+  );
+}
+
+async function apagarPorFiltro(filtro: SQL | undefined): Promise<ResultadoDaLimpeza> {
   const alvos = await db
     .select({ id: mediaAssetsTable.id, objectKey: mediaAssetsTable.objectKey })
     .from(mediaAssetsTable)
-    .where(and(eq(mediaAssetsTable.patientId, patientId), filtroDeTipo));
+    .where(filtro);
 
   if (alvos.length === 0) return { apagadas: 0, falhas: 0 };
 

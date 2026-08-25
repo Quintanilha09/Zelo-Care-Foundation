@@ -502,6 +502,44 @@ do campo de visão — relatado pelo fundador. Resolvido com teto de altura e `o
 
 ---
 
+## QUI-11 — Retenção de 90 dias, e o que a família quer guardar (25/08/2026)
+
+**Isto é minimização de dado, que a LGPD exige.** Guardar foto de uma pessoa vulnerável para
+sempre, sem motivo, é o oposto do que a lei pede. O custo cair junto é consequência, não motivo.
+
+Feita **fora da ordem numérica**, na frente da QUI-9 e da QUI-10, por decisão do fundador: é a única
+história do conjunto que fica **mais cara quanto mais se adia**.
+
+- **Coluna `keptAt`**, timestamp e não booleano — "quando alguém decidiu guardar" é o que uma
+  auditoria pergunta; um booleano responderia só "sim".
+- **Job diário no `pg-boss`** às 03:20 UTC. A retenção é de 90 dias: algumas horas de folga não
+  mudam nada, e a madrugada é quando ninguém está olhando o mural.
+- **`PATCH /media/:id/guardar`** — e **qualquer cuidador da família pode guardar**, não só o
+  principal: decidir que uma foto é importante é da família inteira, e exigir hierarquia faria
+  alguém perder uma memória esperando aprovação. **Sem limite de quantos**, de propósito.
+- **O mural avisa antes.** A resposta carrega `diasDeRetencao` e, por item, `guardado` e `expiraEm`.
+  O texto na tela é informativo, sem contagem regressiva por foto e sem âmbar — o tom é "os momentos
+  somem depois de 90 dias", não uma ameaça.
+- **REQ-006 passa a incluir mídia, e essa era uma lacuna real.** O `onDelete: "cascade"` derrubava as
+  linhas de `media_assets` quando a família ou o paciente sumia — **mas não tocava no balde**.
+  Exclusão do titular que deixa a foto no armazenamento não é exclusão. Agora tanto
+  `DELETE /patients/:id` quanto a exclusão de conta chamam o expurgo **antes** do delete, porque
+  depois não haveria mais linha dizendo quais objetos apagar.
+- O expurgo de família roda **fora da transação** de propósito: apagar objeto é I/O de rede, e uma
+  falha lá não pode segurar a transação aberta nem impedir o titular de sumir do sistema.
+
+**19 testes novos** (`retencao-midia.test.ts`): 91 dias some e **o objeto some do balde**, 89 dias
+fica; o relógio andando 91 dias vence o momento de hoje sem ninguém mexer no banco; guardado
+sobrevive e desmarcar devolve à contagem; o job é idempotente e não atravessa família; e os três
+caminhos da REQ-006 — família, paciente e balde.
+
+**Suíte completa depois desta história:** **513 testes, 511 passando, 2 pulados, zero falhas** —
+medido em 25/08/2026.
+
+**Pendente de deploy:** coluna `kept_at` em `media_assets` — mais um `pnpm --filter @workspace/db run push`.
+
+---
+
 ## Fases
 
 | # | Fase | Status |

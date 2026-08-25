@@ -78,6 +78,17 @@ export const mediaAssetsTable = pgTable(
      */
     caption: text("caption"),
 
+    /**
+     * Marcado como "guardar" pela família (QUI-11).
+     *
+     * Nulo = expira em 90 dias, como todo o resto. Preenchido = fica.
+     *
+     * É um timestamp, não um booleano, porque "quando alguém decidiu
+     * guardar" é a informação que uma auditoria pergunta — e um booleano
+     * responderia só "sim".
+     */
+    keptAt: timestamp("kept_at", { withTimezone: true }),
+
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
