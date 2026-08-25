@@ -78,6 +78,9 @@ const TETO_POR_TIPO: Record<TipoDeMidia, number> = {
 
 const TETO_ABSOLUTO = Math.max(...Object.values(TETO_POR_TIPO));
 
+/** Tamanho máximo da legenda (QUI-7). Recado curto, não post. */
+const TETO_DA_LEGENDA = 300;
+
 const upload = multer({
   storage: multer.memoryStorage(),
   // O multer só conhece um teto. Ele corta o abuso grosseiro; o teto por
@@ -184,6 +187,12 @@ router.post("/media", requireAuth, mediaUploadLimiter, receberArquivo, async (re
     return;
   }
 
+  // Legenda opcional (QUI-7). Texto livre e curto. Recortar em vez de
+  // recusar é deliberado: alguém que escreveu demais não deve perder a foto
+  // que já subiu por causa disso.
+  const legendaBruta = typeof req.body?.caption === "string" ? req.body.caption.trim() : "";
+  const legenda = legendaBruta.length > 0 ? legendaBruta.slice(0, TETO_DA_LEGENDA) : null;
+
   const chave = novaChaveDeObjeto(tipo);
 
   // ORDEM IMPORTA: grava o objeto primeiro. Se o insert falhar depois,
@@ -210,6 +219,7 @@ router.post("/media", requireAuth, mediaUploadLimiter, receberArquivo, async (re
         mimeType: req.file.mimetype,
         sizeBytes: req.file.size,
         objectKey: chave,
+        caption: legenda,
       })
       .returning({ id: mediaAssetsTable.id });
   } catch (err) {
@@ -329,6 +339,23 @@ router.delete<{ id: string }>("/media/:id", requireAuth, async (req, res): Promi
 
   if (!asset) {
     res.status(404).json({ error: "Recurso não encontrado" });
+    return;
+  }
+
+  // QUI-7 — quem publicou apaga o seu; o cuidador principal apaga qualquer um.
+  //
+  // A lista do mural já devolve `podeApagar` por item, mas isso é conforto de
+  // tela, não segurança: o frontend não é fronteira. A regra vale aqui.
+  //
+  // 403, não 404, e de propósito: quem chegou até aqui já provou que a mídia
+  // é da família dele. Esconder a existência de algo que ele acabou de ver na
+  // própria tela não protegeria nada e só confundiria.
+  const ehDono = asset.uploadedByCaregiverId === auth.caregiverId;
+  if (!ehDono && auth.role !== "primary_caregiver") {
+    res.status(403).json({
+      error: "Só quem publicou, ou o cuidador principal, pode apagar este momento.",
+      code: "MEDIA_DELETE_DENIED",
+    });
     return;
   }
 

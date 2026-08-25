@@ -15,9 +15,9 @@
 
 ## Posição
 
-**43 histórias entregues:** 38 das 42 do backlog original, mais ZELO-56, ZELO-57 e ZELO-58,
-criadas depois a partir de refinamento, mais **QUI-5** (fundação de mídia) e **QUI-6**
-(consentimento de imagem), as duas em 25/08/2026.
+**44 histórias entregues:** 38 das 42 do backlog original, mais ZELO-56, ZELO-57 e ZELO-58,
+criadas depois a partir de refinamento, mais **QUI-5** (fundação de mídia), **QUI-6**
+(consentimento de imagem) e **QUI-7** (Momentos do paciente), as três em 25/08/2026.
 
 | Fase | Situação |
 |---|---|
@@ -40,9 +40,16 @@ Ficou esgotado entre 19 e 24/08/2026, e isso foi verdade enquanto o backlog era 
 ([refinamentos/momentos-fotos-e-videos.md](refinamentos/momentos-fotos-e-videos.md)) produziu
 7 histórias novas, hoje no Linear como QUI-5 a QUI-11.
 
-**QUI-5 (fundação de mídia) e QUI-6 (consentimento de imagem) estão entregues.** O portão que
-impedia qualquer tela de foto está fechado e testado, então a próxima é a **QUI-7 — Momentos do
-paciente**, a primeira com tela e a primeira que entrega valor visível à família.
+**QUI-5, QUI-6 e QUI-7 estão entregues** — o recurso mínimo de Momentos já funciona ponta a
+ponta: o cuidador publica uma foto com legenda e a família vê no mural, com autor e horário no
+fuso do paciente.
+
+A próxima é a **QUI-8 — recado do paciente, em áudio**: o lado que nenhum concorrente faz. Ela
+reusa o token de dispositivo da ZELO-58 e é a terceira rota daquele mundo.
+
+`NÃO VERIFICADO`: a compressão no aparelho (5 MB → menos de 500 KB) é critério de aceite da QUI-7
+e **só pode ser medida num navegador de verdade**. O componente escreve os dois números no console
+a cada foto escolhida; falta o fundador abrir o console no Replit e ler.
 
 Das antigas, as duas que atravessaram para o Linear continuam paradas pelos mesmos motivos:
 
@@ -74,7 +81,7 @@ enviado e o login exige e-mail verificado. Só o Google entra.
   — schema completo já gerado e testado, trigger de imutabilidade, secrets faltando, URL do OAuth.
 - **Verificação visual só acontece no Replit.** O roteamento de `/api` para o backend é da
   infraestrutura dele (`router = "application"`), não reproduzido localmente.
-- **A suíte de integração VOLTOU a rodar localmente** em 25/08/2026: 454 testes, 452 passando,
+- **A suíte de integração VOLTOU a rodar localmente** em 25/08/2026: 472 testes, 470 passando,
   2 pulados. Passo a passo em [runbooks/banco-de-teste-local.md](runbooks/banco-de-teste-local.md).
   O bloqueio anterior era só o container `zelo-test-pg` parado.
 

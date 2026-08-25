@@ -38,20 +38,20 @@ Medido nesta data, nesta máquina:
 | Fato | Valor | Como foi medido |
 |---|---|---|
 | Tabelas no schema | **32** | `pgTable(...)` em `lib/db/src/schema/` — medido em 25/08/2026. `media_assets` (QUI-5) ainda NÃO está em `producao-schema-completo.sql` |
-| Arquivos de rota | **33** | `artifacts/api-server/src/routes/*.ts`, incluindo o `index.ts` |
+| Arquivos de rota | **34** | `artifacts/api-server/src/routes/*.ts`, incluindo o `index.ts` |
 | Módulos em `lib/` | **31** | `artifacts/api-server/src/lib/*.ts` |
 | Middlewares | **2** | `require-auth.ts` e `require-patient-access.ts` |
-| Arquivos de teste | **38** | `src/tests/*.test.ts` |
-| Consistência da suíte | **limpa** | 38 referenciados no `test:all` = 38 no disco; nenhum órfão, nenhum fora |
+| Arquivos de teste | **39** | `src/tests/*.test.ts` |
+| Consistência da suíte | **limpa** | 39 referenciados no `test:all` = 39 no disco; nenhum órfão, nenhum fora |
 | Typecheck do monorepo | **exit 0** | `pnpm run typecheck` — 4 pacotes, todos limpos |
 | Modelo de visão | `claude-haiku-4-5-20251001` | `lib/vision.ts` |
 | Fila | **pg-boss** sobre o mesmo Postgres | `lib/queue.ts` |
 
 ### Contagem de testes passando — medida em 25/08/2026
 
-**454 testes, 452 passando, 2 pulados, zero falhas.** Executado localmente nesta máquina, contra o
+**472 testes, 470 passando, 2 pulados, zero falhas.** Executado localmente nesta máquina, contra o
 Postgres em Docker descrito em [runbooks/banco-de-teste-local.md](planning/runbooks/banco-de-teste-local.md),
-com `ADMIN_PANEL_SECRET` diferente do `SESSION_SECRET`. Duração: ~424 s.
+com `ADMIN_PANEL_SECRET` diferente do `SESSION_SECRET`. Duração: ~437 s.
 
 Antes disso a última execução verde conhecida era de 21/08/2026, no Replit: 395 de 397.
 

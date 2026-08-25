@@ -30,6 +30,7 @@ import notificationPreferencesRouter from "./notification-preferences";
 import patientAccessRouter from "./patient-access";
 import mediaRouter from "./media";
 import imageConsentRouter from "./image-consent";
+import momentosRouter from "./momentos";
 import { allowsDevelopmentShortcuts } from "../lib/environment.ts";
 
 const router = Router();
@@ -81,6 +82,8 @@ router.use(mediaRouter);
 // QUI-6: consentimento de imagem, separado do de saude e revogavel.
 // Montado DEPOIS do patientsRouter porque as rotas sao /patients/:id/...
 router.use(imageConsentRouter);
+// QUI-7: o mural. Leitura apenas — publicar e apagar continuam em /media.
+router.use(momentosRouter);
 
 // Rotas de controle do relógio — APENAS fora de produção.
 //

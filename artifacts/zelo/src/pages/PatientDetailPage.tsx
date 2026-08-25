@@ -12,6 +12,7 @@ import { DoseCard } from "@/components/dose-card";
 import { PushPermissionPrompt } from "@/components/push-permission-prompt";
 import { NotificationPreferencesCard } from "@/components/notification-preferences-card";
 import { PatientAccessCard } from "@/components/patient-access-card";
+import { MomentosCard } from "@/components/momentos-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -571,6 +572,11 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
             )}
           </div>
         )}
+
+        {/* QUI-7: seção própria do paciente, ao lado de Rotina, Consultas e
+            Histórico. Não cabe dentro de nenhuma delas — não é sobre um
+            remédio nem sobre uma consulta, é sobre a pessoa. */}
+        {patient && <MomentosCard patientId={Number(params.id)} patientName={patient.name} />}
 
         <NotificationPreferencesCard patientId={Number(params.id)} />
 

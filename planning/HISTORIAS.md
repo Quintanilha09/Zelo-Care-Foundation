@@ -406,6 +406,56 @@ medido em 25/08/2026.
 
 ---
 
+## QUI-7 — Momentos do paciente: o cuidador publica, a família vê (25/08/2026)
+
+**A primeira tela do projeto Momentos, e o primeiro pedaço do ZELO que não é sobre remédio.**
+Todo o resto do produto responde *"a dose foi tomada?"*. Esta seção responde outra pergunta:
+**"como ela está?"**
+
+- **Seção própria na ficha do paciente**, ao lado de Rotina, Consultas e Histórico. Não cabe dentro
+  de nenhuma delas: não é sobre um remédio nem sobre uma consulta, é sobre a pessoa.
+- **`GET /patients/:id/momentos`** devolve o mural em ordem cronológica inversa, com autor, legenda,
+  link assinado e `podeApagar` por item. Nomes de autor vêm numa consulta só — um mural de 100 fotos
+  seriam 100 consultas sem isso.
+- **Horário no fuso DO PACIENTE**, não no de quem olha. Um filho em Portugal vendo "14:00" quando a
+  mãe tomou café às 9h em São Paulo é o tipo de detalhe que faz a tela mentir. O servidor manda o
+  instante em ISO e o fuso; a tela formata.
+- **Compressão no aparelho** (`lib/comprimir-imagem.ts`): 1600px no lado maior, JPEG 0.8. Trata a
+  orientação por EXIF antes de redimensionar — sem isso, foto tirada em pé sairia deitada, já que
+  reencodar descarta o EXIF. **E é justamente descartar o EXIF que tira as coordenadas de GPS de
+  dentro da foto**: sem isso, uma foto da Dona Maria carregaria a localização exata da casa dela
+  para o nosso armazenamento. Nunca devolve arquivo maior que o original.
+- **Quem publicou apaga o seu; o cuidador principal apaga qualquer um.** A lista devolve `podeApagar`
+  por conforto de tela, mas a regra é conferida no servidor — frontend não é fronteira de segurança,
+  e há teste chamando o DELETE direto por cima do aviso.
+- **Legenda opcional**, recortada em 300 caracteres em vez de recusada: quem escreveu demais não
+  pode perder a foto que já subiu por causa disso.
+- **A memória é da família, não de quem apertou o botão.** Remover um cuidador não apaga o que ele
+  publicou (`onDelete: "set null"`), e o mural passa a atribuir ao próprio paciente.
+- **Sem consentimento, a seção não existe** — e para quem não é cuidador principal ela some de vez,
+  em vez de aparecer cinza com cadeado, que é convite a insistir.
+- **Nada que possa virar placar:** sem total, sem contagem, sem sequência, sem "faz X dias sem foto".
+  Há teste varrendo a resposta atrás desses campos (CON-011, CON-012). Mural vazio tem texto de
+  convite, não de dívida.
+
+**18 testes novos** (`momentos.test.ts`): o portão de consentimento; ordem cronológica inversa;
+fuso do paciente; legenda opcional e recortada; isolamento entre famílias (404); as três regras de
+exclusão, incluindo a tentativa de burlar o `podeApagar`; apagar tira o objeto do bucket; e o
+momento sobrevive à remoção do autor.
+
+**Suíte completa depois desta história:** **472 testes, 470 passando, 2 pulados, zero falhas** —
+medido em 25/08/2026.
+
+`NÃO VERIFICADO`: **o critério de aceite "foto de 5 MB chega com menos de 500 KB" não pôde ser
+medido aqui.** A compressão roda no navegador, e o frontend não sobe nesta máquina
+(`pnpm-workspace.yaml` exclui binários não-Linux). O componente escreve o antes e o depois no
+console a cada foto escolhida — a medição existe, falta alguém abrir o console no Replit e ler.
+
+**Pendente de deploy:** coluna `caption` em `media_assets`, mais o `push` já pendente da QUI-5 e da
+QUI-6.
+
+---
+
 ## Fases
 
 | # | Fase | Status |

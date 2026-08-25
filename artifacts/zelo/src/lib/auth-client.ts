@@ -48,6 +48,18 @@ export function isAccessTokenValid(): boolean {
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
+/**
+ * Caminho da API pronto para ir num atributo do HTML.
+ *
+ * `authFetch` já prefixa a base sozinho, mas `<img src>` não passa por ele —
+ * e não passaria mesmo se quisesse, porque tag de imagem não manda header
+ * Authorization. É o caso do link assinado de mídia (QUI-5): a credencial
+ * viaja na própria URL, e a URL precisa da base na frente.
+ */
+export function apiUrl(path: string): string {
+  return `${BASE}${path}`;
+}
+
 /** Tenta renovar o access token usando o refresh token em localStorage. */
 export async function refreshSession(): Promise<boolean> {
   const refreshToken = getStoredRefreshToken();

@@ -69,6 +69,15 @@ export const mediaAssetsTable = pgTable(
     /** Chave aleatória no bucket. Única — duas linhas nunca apontam pro mesmo objeto. */
     objectKey: text("object_key").notNull().unique(),
 
+    /**
+     * Legenda opcional escrita por quem publicou (QUI-7).
+     *
+     * É texto livre e curto — "tomou o café todinho hoje". Nunca é campo
+     * clínico: o produto não interpreta nem estrutura o que está escrito
+     * aqui, e nada no app lê esta coluna para decidir coisa alguma.
+     */
+    caption: text("caption"),
+
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
