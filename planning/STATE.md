@@ -78,8 +78,14 @@ Checar tudo de uma vez no Replit:
 2. `pnpm install` na raiz
 3. `pnpm --filter @workspace/db run push` — schema acumulado de ZELO-26 em diante
 4. `pnpm --filter @workspace/db run push:raw` — trigger de imutabilidade (idempotente)
-5. **`ADMIN_PANEL_SECRET` — confirmado ausente em 23/08/2026** na lista real de Secrets. Sem ele o painel operacional nao abre, e REQ-027 (taxa de entrega, metrica de sucesso no 1) fica sem como ser medido. Demais secrets faltando: (valor próprio, forte, gerado lá — não o do
-   `.env.local`), e `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` se ainda não foram
+5. **`ADMIN_PANEL_SECRET` — o fundador informou em 25/08/2026 que já está configurado** no Replit.
+   `NÃO VERIFICADO`: falta abrir `/admin` e confirmar que a senha entra. Estava **confirmado ausente
+   em 23/08/2026** na lista real de Secrets, então a confirmação importa. Se o painel recusar,
+   as duas causas prováveis são o workflow não ter sido reiniciado depois de criar o Secret
+   (Secret só é lido quando o processo sobe) ou o valor ser **igual ao `SESSION_SECRET`** — nesse
+   caso o painel se desabilita sozinho e escreve `[SEGURANCA] ...` no log.
+   Com o painel aberto, REQ-027 (taxa de entrega) passa a ter como ser medida.
+   Demais secrets: `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` se ainda não foram
 6. **Google OAuth:** adicionar `https://zelo-care-foundation.replit.app/api/auth/google/callback`
    como redirect URI autorizado
 7. Reiniciar o workflow "API Server" — não só o Preview

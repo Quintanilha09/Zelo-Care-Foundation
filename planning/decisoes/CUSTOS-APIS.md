@@ -77,16 +77,65 @@ Com 5% de SMS na Zenvia, ~4%.
 **A escolha de fornecedor de SMS é uma decisão de modelo de negócio, não de tecnologia.**
 A diferença entre Twilio e Zenvia é de ~4× no custo unitário, e é ela que define se a margem existe.
 
-### Custo do PSP por assinatura de R$ 29,90
+### Custo do PSP por assinatura de R$ 29,90 — comparação de 25/08/2026
 
-| Meio | Taxa efetiva | Custo | Líquido |
-|---|---|---|---|
-| Cartão (3,99% + R$ 0,39 + 0,7%) | 6,0% | R$ 1,79 | R$ 28,11 |
-| Pix (1,19% + 0,7%) | 1,9% | R$ 0,57 | R$ 29,33 |
+Os três fornecedores, sobre o mesmo ticket:
 
-O Pix custa **um terço** do cartão. Vale priorizá-lo na tela de assinatura — mas o Pix da Stripe é
-**por convite**, o que pode empurrar a decisão para Mercado Pago ou Pagar.me, onde o Pix é padrão.
-`NÃO VERIFICADO`: não busquei os preços desses dois.
+| Fornecedor | Cartão | Pix | Cartão em R$ 29,90 | Pix em R$ 29,90 |
+|---|---|---|---|---|
+| **Stripe** | 3,99% + R$ 0,39 **+ 0,7%** (Billing) | 1,19% + 0,7% — **só por convite** | R$ 1,79 — 6,0% | R$ 0,57 — 1,9% |
+| **Mercado Pago** (receber em 30 dias) | 3,99%, sem taxa fixa e sem adicional de assinatura | **0%** para a maioria dos vendedores | **R$ 1,19 — 4,0%** | **R$ 0,00** |
+| **Pagar.me (Stone)** | não publica preço | não publica preço | — | — |
+
+**O que decide, e não é a diferença no cartão:**
+
+1. **A taxa fixa da Stripe machuca desproporcionalmente num ticket baixo.** R$ 0,39 sozinho é 1,3%
+   de R$ 29,90. Numa assinatura barata, taxa fixa pesa mais que ponto percentual.
+2. **A Stripe cobra 0,7% a mais só por ser assinatura** (add-on do Billing). O Mercado Pago não
+   tem esse adicional — a recorrência está incluída.
+3. **O Pix do Mercado Pago é gratuito na escala do ZELO**; o da Stripe custa R$ 0,57 **e é por
+   convite**, ou seja, pode simplesmente não estar disponível.
+
+Prazos do Mercado Pago no cartão: **3,99% recebendo em 30 dias**, 4,49% em 14 dias, 4,99% na hora.
+Assinatura não precisa de dinheiro na hora — o prazo de 30 dias é o certo, e é o mais barato.
+
+**Pagar.me está fora por enquanto:** exige **CNPJ ou MEI ativo** e **não publica preço** — só por
+contato comercial. Fornecedor cujo preço só se descobre negociando é o errado para começar.
+
+#### A pergunta que decide, e ainda não tem resposta
+
+`NÃO VERIFICADO — RISCO ALTO`
+
+A documentação de assinaturas do Mercado Pago lista Pix entre os meios aceitos, mas **não menciona
+"Pix Automático" pelo nome**. Se a cobrança recorrente por Pix exigir que a pessoa aprove todo mês,
+a vantagem do "Pix de graça" **evapora na prática** — vira atrito mensal, e atrito mensal em
+assinatura é cancelamento.
+
+**Confirmar isso antes de escrever a primeira linha da QUI-12.** É a única coisa que pode inverter
+a recomendação.
+
+Outros pontos não verificados, que valem confirmar no cadastro:
+
+| Ponto | Estado |
+|---|---|
+| Stripe Brasil exige CNPJ | `NÃO VERIFICADO` |
+| Mercado Pago aceita CPF (vendedor pessoa física) | `NÃO VERIFICADO` |
+| Condições do Pix 0% do Mercado Pago por tipo de conta | `NÃO VERIFICADO` — a fonte cita 0,49% para CNPJ novo acima de R$ 15 mil/mês |
+
+#### Desenhar para poder trocar
+
+Independente da escolha, a QUI-12 deve manter o PSP **atrás de uma interface fina** — criar
+assinatura, cancelar, tratar webhook. O resto do app não deve saber o nome do fornecedor.
+
+Dois motivos concretos: o Pix Automático pode obrigar a trocar, e **um comprador internacional
+provavelmente vai querer Stripe** — o Mercado Pago é só Brasil. Com o adaptador, trocar é um dia de
+trabalho; sem ele, é reescrever a cobrança inteira.
+
+**Fontes:** [Stripe Brasil — preços](https://stripe.com/br/pricing),
+[Mercado Pago — assinaturas (docs)](https://www.mercadopago.com.br/developers/pt/docs/subscriptions/landing),
+[Mercado Pago — custo do Pix](https://www.mercadopago.com.br/ajuda/qual-o-custo-de-um-pix_21723),
+[Mercado Pago — quanto custa vender online](https://www.mercadopago.com.br/blog/quanto-custa-vender-on-line-com-mercado-pago),
+[Pagar.me — preços](https://www.pagar.me/precos).
 
 ---
 
@@ -129,7 +178,7 @@ O Pix custa **um terço** do cartão. Vale priorizá-lo na tela de assinatura �
 | **Hospedagem (Replit)** | Já é custo fixo existente. `NÃO VERIFICADO`: o banco de produção foi congelado num teto de US$ 1, então o custo real de banco + deploy em escala **nunca foi medido** |
 | **Ligação automática** (Épico 9) | Voz custa por minuto e é bem mais cara que SMS. Só faz sentido estimar quando a história for retomada |
 | **Domínio** | ~R$ 40–60/ano num `.com.br`. Irrelevante no total, mas **bloqueia o e-mail** (o provedor exige domínio verificado), que por sua vez bloqueia o cadastro |
-| **Mercado Pago / Pagar.me** | `NÃO VERIFICADO` — não busquei. Provavelmente melhores que a Stripe para Pix no Brasil |
+| ~~**Mercado Pago / Pagar.me**~~ | Pesquisados em 25/08/2026 — ver a comparação acima |
 
 ---
 
@@ -140,7 +189,9 @@ O Pix custa **um terço** do cartão. Vale priorizá-lo na tela de assinatura �
    separa margem de prejuízo. Confirmar o preço antes: a pesquisa é de 18/08.
 2. **Reduzir a taxa de SMS por desenho**, não só por preço. Cada ponto percentual a menos vale
    mais que qualquer negociação. Vale **medir a entrega real de push antes de ligar o SMS** — e o
-   painel que mede isso (REQ-027) está inacessível hoje por falta do `ADMIN_PANEL_SECRET`.
+   painel que mede isso (REQ-027) depende do `ADMIN_PANEL_SECRET`, que o fundador informou já
+   estar configurado no Replit em 25/08/2026 — `NÃO VERIFICADO` por mim, falta abrir `/admin` e
+   confirmar que entra.
 3. **Endereço: Google Maps — decidido em 24/08/2026.** O fundador ativou o faturamento e pagou o
    pré-pagamento de R$ 150, que virou saldo na conta (custo consumido até agora: R$ 0,00).
    Recomendado criar alerta de orçamento de R$ 10 para não descobrir surpresa na fatura.
@@ -151,7 +202,11 @@ O Pix custa **um terço** do cartão. Vale priorizá-lo na tela de assinatura �
    ~~Preferir ViaCEP ao Google Maps.~~ O custo recorrente dos dois é zero,
    mas o Google exige R$ 150 de pré-pagamento no Brasil e uma conta de faturamento que teria de
    ser transferida ao comprador. O ViaCEP não exige nada.
-4. **Priorizar Pix** na assinatura: um terço do custo do cartão.
+4. **PSP: Mercado Pago é a recomendação**, com uma condição. Ele é mais barato no cartão
+   (4,0% contra 6,0%) e o Pix sai de graça, enquanto o da Stripe custa R$ 0,57 e depende de convite.
+   **A condição:** confirmar se a assinatura por Pix cobra sozinha todo mês (Pix Automático). Se
+   não cobrar, a vantagem some e a Stripe volta a ser a escolha. Em qualquer caso, **priorizar Pix
+   na tela** e manter o fornecedor atrás de um adaptador, para poder trocar.
 5. **Definir o domínio** — ele bloqueia o e-mail, que bloqueia o cadastro (fase 11.1b).
 
 > Conversões para real dependem do câmbio do dia, que **não verifiquei**. Os valores estão em USD
