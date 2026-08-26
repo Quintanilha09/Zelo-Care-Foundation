@@ -56,7 +56,19 @@
     "pino-pretty",
     "thread-stream",
     "@biomejs/biome",
-    "knip"
+    "knip",
+
+    // ── Falsos positivos: o Knip nao le CSS ────────────────────────────────
+    //
+    // Estes tres sao usados em artifacts/zelo/src/index.css, por diretiva do
+    // Tailwind — `@import` e `@plugin`. O Knip analisa o grafo de modulos
+    // JavaScript e nao enxerga isso, entao acusa como nao usados.
+    //
+    // **Remover qualquer um quebraria todas as telas do app.** Foi o cuidado
+    // numero um da Issue #10, e a suspeita se confirmou.
+    "tailwindcss",
+    "@tailwindcss/typography",
+    "tw-animate-css"
   ],
 
   // Um export sem uso hoje pode ser API pública deliberada. O Knip lista; quem
