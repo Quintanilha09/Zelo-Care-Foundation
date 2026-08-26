@@ -82,6 +82,19 @@ arquivo, e monitor de janela de contexto.
 
 ## Como trabalhar
 
+- **NENHUMA mudança de código entra no `main` sem Issue e PR.** Regra do fundador, 25/08/2026,
+  e vale para **qualquer agente, de qualquer modelo**. O ciclo é
+  `Issue → branch → commits → PR que menciona a Issue → merge`.
+  O texto completo está em [planning/decisoes/FLUXO-GITHUB.md](planning/decisoes/FLUXO-GITHUB.md).
+  O essencial:
+  - Três tipos de Issue: **Correção**, **Melhoria**, **Nova função** — templates em `.github/ISSUE_TEMPLATE/`.
+  - Branch nomeada com o número: `correcao/12-...`, `melhoria/13-...`, `funcao/14-...`.
+  - **O PR precisa dizer `Closes #N`** (ou `Refs #N` quando só avança). PR sem Issue não entra.
+  - Merge com `--squash`: um commit por Issue no `main`.
+  - O PR declara o que foi verificado **com número medido** e o que **NÃO** foi verificado.
+  - **Exceção única:** mudança só de documentação (`planning/`, `CLAUDE.md`, `CONTEXT.md`) vai
+    direto ao `main`. Qualquer coisa em `artifacts/`, `lib/` ou `.github/workflows/` passa por PR.
+  - O Linear continua sendo o backlog de **produto**; a Issue é a unidade de **trabalho no código**.
 - **Ordem numérica estrita das histórias:** terminar a de menor número por completo antes da próxima.
 - **Commit + push por história**, sempre. Mensagem em português, sem acentos no assunto.
 - **Uma sessão de agente por vez no `main`.** Duas sessões simultâneas já geraram um rebase preso e uma referência
@@ -130,6 +143,7 @@ ele foi migrado para cá justamente porque duas fontes divergiram e dois agentes
 | Backlog: onde vive, como está estruturado, fornecedores | [planning/BACKLOG.md](planning/BACKLOG.md) |
 | Invariantes, stack, modelo de dados | [planning/decisoes/FOUNDATION.md](planning/decisoes/FOUNDATION.md) |
 | Decisões de plataforma e alternativas descartadas | [planning/decisoes/PLATFORM_DECISIONS.md](planning/decisoes/PLATFORM_DECISIONS.md) |
+| Fluxo de Issue e PR — obrigatorio | [planning/decisoes/FLUXO-GITHUB.md](planning/decisoes/FLUXO-GITHUB.md) |
 | Custo de tudo, em dolar e real, por tamanho de base | [planning/decisoes/CUSTOS-APIS.md](planning/decisoes/CUSTOS-APIS.md) |
 | Em que ambiente o produto vive ate a venda | [planning/decisoes/ESTRATEGIA-ATE-A-VENDA.md](planning/decisoes/ESTRATEGIA-ATE-A-VENDA.md) |
 | Armadilhas técnicas em detalhe | [planning/decisoes/ARMADILHAS.md](planning/decisoes/ARMADILHAS.md) |

@@ -1,0 +1,21 @@
+name: "Melhoria"
+description: "Algo que já existe pode ficar melhor"
+title: "[Melhoria] "
+labels: ["melhoria"]
+body:
+  - type: textarea
+    id: hoje
+    attributes:
+      label: Como é hoje
+    validations: { required: true }
+  - type: textarea
+    id: proposta
+    attributes:
+      label: Como deveria ser
+    validations: { required: true }
+  - type: textarea
+    id: porque
+    attributes:
+      label: Por que vale a pena
+      description: Quem ganha com isso, e o quê. "Fica mais bonito" não é motivo.
+    validations: { required: true }

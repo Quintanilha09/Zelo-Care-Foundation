@@ -1,0 +1,39 @@
+name: "Nova função"
+description: "Algo que ainda não existe"
+title: "[Nova função] "
+labels: ["nova-funcao"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use o mesmo template de história que o projeto usa desde o início. O bloco
+        **NÃO faça** não é enfeite: foi ele que manteve as 45 histórias anteriores
+        dentro do escopo.
+  - type: textarea
+    id: objetivo
+    attributes:
+      label: Objetivo
+      description: Uma frase. Quem ganha o quê.
+    validations: { required: true }
+  - type: textarea
+    id: escopo
+    attributes:
+      label: Escopo
+    validations: { required: true }
+  - type: textarea
+    id: aceite
+    attributes:
+      label: Critérios de aceite
+      description: Verificáveis. "Funciona bem" não é critério; "foto de 5 MB chega com menos de 500 KB" é.
+    validations: { required: true }
+  - type: textarea
+    id: nao-faca
+    attributes:
+      label: NÃO faça nesta story
+      description: O que fica de fora de propósito. É isto que trava scope creep.
+    validations: { required: true }
+  - type: textarea
+    id: depende
+    attributes:
+      label: Depende de
+      placeholder: "#12, ou 'nada'"
