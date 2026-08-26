@@ -9,7 +9,29 @@
 > Se este arquivo voltar a passar de ~150 linhas, mova o excedente para `historico/` — foi
 > justamente por virar diário de 609 linhas que ele parou de ser lido.
 >
-> Última revisão: 23/08/2026.
+> Última revisão: 26/08/2026.
+
+---
+
+## O que mudou no processo em 25–26/08/2026 — leia antes de tocar em código
+
+**Nenhuma mudança de código entra no `main` sem Issue e PR.** Regra do fundador,
+e vale para qualquer agente de qualquer modelo. O ciclo inteiro está em
+[decisoes/FLUXO-GITHUB.md](decisoes/FLUXO-GITHUB.md); o resumo está no
+`CLAUDE.md`, que é carregado sozinho.
+
+Ferramentas que passaram a existir:
+
+| | O quê | Estado |
+|---|---|---|
+| `gh` (GitHub CLI) | abre Issue e PR pela linha de comando | instalado e autenticado |
+| **Biome** | revisor de código | **portão de CI** — falha o build |
+| **Knip** | detector de código morto | **relatório** — não falha o build |
+| `design-motion-principles` | skill de movimento | instalada em `.agents/skills/`, fora do git |
+
+**O passo de Build do CI nunca tinha passado** antes de 26/08/2026 — faltavam
+`PORT` e `BASE_PATH` no ambiente do workflow, e a falha não tinha relação com
+o código em revisão. Corrigido na Issue #8.
 
 ---
 
@@ -52,6 +74,19 @@ compressão no aparelho. Ver [decisoes/CUSTOS-APIS.md](decisoes/CUSTOS-APIS.md).
 
 A próxima do projeto Momentos é a **QUI-10 — aviso de momento novo, e um coração**, que fecha o
 ciclo: hoje a família só vê se lembrar de abrir o app.
+
+### Trabalho aberto no GitHub, em 26/08/2026
+
+| Issue | O quê | Estado |
+|---|---|---|
+| [#5](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/5) | Movimento na interface | **PR #12 aberto, esperando conferência visual** |
+| [#6](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/6) | Sentry desligado, com filtro de dado sensível | não começada |
+| [#7](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/7) | Playwright no CI | não começada |
+| [#10](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/10) | Limpar o código morto que o Knip achou | não começada |
+
+**O PR #12 é o único que não pode ser mergeado sem alguém olhar.** Os outros
+desta leva foram verificados por teste; aquele é sobre aparência, e o CI verde
+não prova que a tela ficou boa.
 
 **Mas antes dela vem o bloco de padrões pedido pelo fundador em 25/08/2026** — fluxo de Issue e PR
 (já implantado), movimento de interface, observabilidade, lint e testes de ponta a ponta.
