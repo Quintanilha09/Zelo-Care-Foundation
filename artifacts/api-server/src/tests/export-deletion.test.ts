@@ -18,7 +18,7 @@ import { db } from "@workspace/db";
 import {
   usersTable, caregiversTable, familiesTable, patientsTable,
   treatmentsTable, scheduledDosesTable, medicationsTable,
-  consentRecordsTable, deletionRequestsTable, exportTokensTable,
+  consentRecordsTable, deletionRequestsTable, 
 } from "@workspace/db";
 import { generateAccessToken } from "../lib/tokens.ts";
 import { hashPassword } from "../lib/password.ts";

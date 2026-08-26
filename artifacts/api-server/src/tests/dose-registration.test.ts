@@ -25,7 +25,7 @@ import app from "../app.ts";
 let testPort: number;
 let closeServer: () => Promise<void>;
 let familyId: number;
-let caregiverId: number;
+let _caregiverId: number;
 let token: string;
 let observerToken: string;
 let patientId: number;
@@ -104,7 +104,7 @@ before(async () => {
     .insert(caregiversTable)
     .values({ familyId, userId: user.id, name: "Cuidador Teste", role: "primary_caregiver" })
     .returning();
-  caregiverId = caregiver.id;
+  _caregiverId = caregiver.id;
   token = generateAccessToken(user.id, familyId, caregiver.id, "primary_caregiver");
 
   const [observerUser] = await db

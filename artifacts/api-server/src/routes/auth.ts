@@ -19,7 +19,7 @@ import { getAuth } from "../lib/auth-types.ts";
 
 import { Router } from "express";
 import { z } from "zod";
-import { eq, and, gt, isNull, or } from "drizzle-orm";
+import { eq, and, gt, } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   usersTable,

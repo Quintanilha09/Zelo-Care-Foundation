@@ -18,15 +18,13 @@ import {
   patientsTable,
   caregiversTable,
   medicationsTable,
-  treatmentsTable,
-  scheduledDosesTable,
 } from "@workspace/db";
 
 const SEED_SLUG = "familia-ficticia-teste";
 
 // Contagem do estado antes de rodar o seed
-let initialFamilyCount: number;
-let initialPatientCount: number;
+let _initialFamilyCount: number;
+let _initialPatientCount: number;
 
 before(async () => {
   // Captura contagem antes de qualquer seed
@@ -34,8 +32,8 @@ before(async () => {
     db.select({ count: count() }).from(familiesTable),
     db.select({ count: count() }).from(patientsTable),
   ]);
-  initialFamilyCount = Number(fc.count);
-  initialPatientCount = Number(pc.count);
+  _initialFamilyCount = Number(fc.count);
+  _initialPatientCount = Number(pc.count);
 });
 
 after(async () => {

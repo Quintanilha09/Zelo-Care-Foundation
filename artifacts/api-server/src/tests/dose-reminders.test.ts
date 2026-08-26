@@ -19,7 +19,7 @@ import { eq, and } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   usersTable, caregiversTable, familiesTable, patientsTable, medicationsTable,
-  treatmentsTable, scheduledDosesTable, doseRecordsTable, notificationsTable,
+  treatmentsTable, scheduledDosesTable, notificationsTable,
   notificationPreferencesTable,
 } from "@workspace/db";
 import { generateAccessToken } from "../lib/tokens.ts";

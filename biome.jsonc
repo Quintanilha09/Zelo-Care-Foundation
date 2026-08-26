@@ -1,0 +1,125 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+
+  // ── Por que este arquivo é pequeno ─────────────────────────────────────────
+  //
+  // A primeira execução com o conjunto "recommended" inteiro devolveu 209
+  // problemas, dos quais ~160 eram só reordenar import. Ligar tudo de uma vez
+  // produziria um diff de 200 arquivos onde nenhuma mudança real seria
+  // visível — e um revisor que não consegue ler o diff não revisa.
+  //
+  // Entra o que pega defeito de verdade. Cresce depois, com calma.
+
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+
+  "files": {
+    "includes": [
+      "artifacts/api-server/src/**/*.ts",
+      "artifacts/zelo/src/**/*.ts",
+      "artifacts/zelo/src/**/*.tsx",
+      "lib/**/*.ts",
+      "scripts/**/*.ts",
+      "!**/dist/**",
+      "!**/node_modules/**",
+      // Componentes do shadcn/ui são código de terceiro copiado para dentro do
+      // projeto. Revisar o estilo deles não é trabalho nosso, e "corrigir"
+      // dificulta atualizar depois.
+      "!artifacts/zelo/src/components/ui/**",
+      "!artifacts/mockup-sandbox/**"
+    ]
+  },
+
+  // O formatador fica DESLIGADO de propósito. Ligar reformataria o
+  // repositório inteiro num commit só. Se for adotado um dia, tem que ser
+  // história própria, com o diff de formatação isolado de qualquer outra coisa.
+  "formatter": { "enabled": false },
+
+  // Mesmo motivo: reordenar import em 227 arquivos esconde tudo.
+  "assist": { "enabled": false },
+
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": false,
+
+      "correctness": {
+        "noUnusedVariables": "error",
+        "noUnusedImports": "error",
+        "noUnusedFunctionParameters": "error",
+        "noConstantCondition": "error",
+        // ── DESLIGADA, e o motivo importa ─────────────────────────────────
+        //
+        // Mudar o array de dependências de um `useEffect` **muda o
+        // comportamento em runtime** — pode virar laço infinito, chamada
+        // extra, ou efeito que deixa de rodar. Não é estilo, é lógica.
+        //
+        // O `biome check --write --unsafe` aplicou 5 dessas correções de uma
+        // vez, e uma delas quebrou a compilação: adicionou ao array uma função
+        // declarada mais abaixo no arquivo. As outras 4 compilavam — e é isso
+        // que assusta, porque compilar não prova que o comportamento ficou o
+        // mesmo.
+        //
+        // O front não sobe nesta máquina e ainda não há teste de interface.
+        // Ligar uma regra cujo conserto automático muda comportamento sem ter
+        // como verificar seria trocar defeito conhecido por defeito invisível.
+        //
+        // **Volta a ligar quando o Playwright existir** — aí há como provar.
+        "useExhaustiveDependencies": "off"
+      },
+
+      "suspicious": {
+        "noDoubleEquals": "error",
+        "noExplicitAny": "warn",
+
+        // ── A regra mais importante deste arquivo, para ESTE projeto ────────
+        //
+        // O ZELO tem `safeLog` justamente para que nome de medicamento,
+        // condição de saúde e identificador de paciente NUNCA cheguem ao log
+        // (invariante 3). Um `console.log` esquecido contorna essa proteção
+        // inteira — não por malícia, por distração.
+        //
+        // `info`, `warn` e `error` seguem permitidos: são usados de propósito
+        // no cliente para diagnóstico de capacidade ausente (Maps sem chave,
+        // e-mail sem provedor) e para a medição da compressão de foto.
+        "noConsole": { "level": "warn", "options": { "allow": ["info", "warn", "error"] } },
+
+        "noDebugger": "error",
+        "noFallthroughSwitchClause": "error",
+        "noSelfCompare": "error"
+      },
+
+      "complexity": {
+        "noUselessTernary": "error",
+        "noForEach": "off"
+      },
+
+      "style": {
+        "noNonNullAssertion": "off",
+        "useConst": "error"
+      }
+    }
+  },
+
+  "javascript": {
+    // Não estão no lib padrão do TypeScript que o Biome assume, mas existem em
+    // todo navegador que este app suporta. Sem declarar, viram "não definido".
+    "globals": ["MediaRecorder", "createImageBitmap"]
+  },
+
+  "overrides": [
+    {
+      // Scripts de linha de comando: `console.log` é a saída CORRETA aqui — é
+      // assim que o script fala com quem o rodou. Trocar por logger
+      // estruturado deixaria o terminal mudo.
+      //
+      // Os 17 avisos de `noConsole` da primeira execução eram todos daqui.
+      // O problema era a regra, não o código.
+      "includes": [
+        "artifacts/api-server/src/seed.ts",
+        "lib/db/src/**/*.ts",
+        "scripts/**/*.ts"
+      ],
+      "linter": { "rules": { "suspicious": { "noConsole": "off" } } }
+    }
+  ]
+}

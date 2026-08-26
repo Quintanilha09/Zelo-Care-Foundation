@@ -89,6 +89,20 @@ jobs:
       # Rápidos e sem banco: falham antes de subir o Postgres se o motor de
       # recorrência quebrar. Ficaram fora do CI até 23/08/2026 — 33 casos que
       # passavam e nunca eram exercidos (auditoria §10).
+      # Biome e PORTAO: falha o build. As regras foram calibradas para pegar
+      # defeito, nao estilo — ver os comentarios em biome.jsonc.
+      - name: Lint (Biome)
+        run: pnpm run lint
+
+      # Knip e RELATORIO, nao portao: `|| true` de proposito.
+      #
+      # A primeira execucao achou 98 arquivos sem uso. Fazer o CI falhar com
+      # esse numero criaria um portao que ninguem atravessa — e portao assim se
+      # contorna, nao se respeita. O numero aparece no log; apertar ate virar
+      # portao e trabalho de outra historia.
+      - name: Codigo morto (Knip, so relatorio)
+        run: pnpm run deadcode || true
+
       - name: Run library tests
         run: pnpm run test:libs
 

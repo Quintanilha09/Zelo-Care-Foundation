@@ -225,7 +225,7 @@ describe("POST /treatments com initialStock", () => {
     }, token);
     const treatment1Id = (res1.body as { id: number }).id;
 
-    let [stock] = await db.select().from(stockEntriesTable).where(and(eq(stockEntriesTable.patientId, patientId), eq(stockEntriesTable.medicationId, medicationId)));
+    const [stock] = await db.select().from(stockEntriesTable).where(and(eq(stockEntriesTable.patientId, patientId), eq(stockEntriesTable.medicationId, medicationId)));
     assert.equal(stock.quantityRemaining, 30);
 
     await api("PATCH", `/treatments/${treatment1Id}`, { status: "cancelled" }, token);

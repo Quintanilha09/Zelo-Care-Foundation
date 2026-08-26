@@ -139,7 +139,7 @@ export default function AdherenceCalendarPage({ params }: { params: { id: string
 
   const medications = new Map<number, string>();
   for (const t of treatments ?? []) medications.set(t.id, t.medicationName);
-  const uniqueMedications = Array.from(new Set(medications.values()));
+  const _uniqueMedications = Array.from(new Set(medications.values()));
 
   const goPrev = () => { setAnchor(viewMode === "month" ? addMonths(anchor, -1) : addDays(anchor, -7)); setReport(null); setReportError(null); };
   const goNext = () => { setAnchor(viewMode === "month" ? addMonths(anchor, 1) : addDays(anchor, 7)); setReport(null); setReportError(null); };

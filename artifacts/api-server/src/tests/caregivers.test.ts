@@ -92,7 +92,7 @@ describe("Cuidadores — proteção do último principal e revogação em cascat
   let primaryCaregiverId: number;
   let secondPrimaryId: number;
   let secondPrimaryUserId: number;
-  let secondPrimaryToken: string;
+  let _secondPrimaryToken: string;
 
   before(async () => {
     const [family] = await db
@@ -122,7 +122,7 @@ describe("Cuidadores — proteção do último principal e revogação em cascat
       .values({ familyId, userId: user2.id, name: "Principal Dois", role: "primary_caregiver" })
       .returning();
     secondPrimaryId = caregiver2.id;
-    secondPrimaryToken = generateAccessToken(user2.id, familyId, caregiver2.id, "primary_caregiver");
+    _secondPrimaryToken = generateAccessToken(user2.id, familyId, caregiver2.id, "primary_caregiver");
 
     // Assinatura de push para o segundo principal — usada para provar que a
     // revogação cancela push, não só a sessão.

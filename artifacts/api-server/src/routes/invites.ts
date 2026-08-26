@@ -15,7 +15,6 @@ import {
   caregiverInvitesTable,
   caregiversTable,
   usersTable,
-  familiesTable,
   patientsTable,
   refreshTokensTable,
 } from "@workspace/db";

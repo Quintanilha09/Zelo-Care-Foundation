@@ -30,7 +30,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { authFetch } from "@/lib/auth-client";
 import { deactivateElderModeOnThisDevice } from "@/lib/elder-mode";
-import { patientFetch, getPatientAccessToken, clearPatientAccess } from "@/lib/patient-access";
+import { patientFetch, clearPatientAccess } from "@/lib/patient-access";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
