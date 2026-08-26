@@ -8,6 +8,7 @@ import { Router } from "express";
 import { eq, and } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { patientsTable, consentRecordsTable, treatmentsTable } from "@workspace/db";
+import { apagarMidiasDoPaciente } from "../lib/media-cleanup.ts";
 import { z } from "zod";
 import { requireAuth, requirePrimaryCaregiver } from "../middleware/require-auth";
 import { safeLog } from "../lib/safe-logger";
@@ -333,6 +334,19 @@ router.delete("/patients/:patientId", requirePrimaryCaregiver, async (req, res):
     ipAddress: req.ip,
     diff: JSON.stringify({ name: patient.name, reason: body.data.reason }),
   });
+
+  // QUI-11 — apagar o paciente tem que apagar a MÍDIA dele do balde.
+  //
+  // O cascade derruba as linhas de media_assets, mas não toca no
+  // armazenamento. Chamado ANTES do delete: depois não haveria mais linha
+  // dizendo quais objetos apagar.
+  const limpezaDeMidia = await apagarMidiasDoPaciente(patientId);
+  if (limpezaDeMidia.falhas > 0) {
+    safeLog.error(
+      { action: "patient_media_purge_incomplete", familyId: getAuth(req).familyId },
+      "Exclusao de paciente: nem toda a midia foi apagada do armazenamento"
+    );
+  }
 
   await db
     .delete(patientsTable)

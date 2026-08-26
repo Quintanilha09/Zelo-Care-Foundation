@@ -29,6 +29,7 @@ import { audit } from "../lib/audit";
 import { obterArmazenamento } from "../lib/media-storage.ts";
 import { guardarMidia } from "../lib/media-upload.ts";
 import { gerarTokenDeMidia, lerTokenDeMidia } from "../lib/media-links.ts";
+import { Clock } from "../lib/clock.ts";
 
 const router = Router();
 
@@ -167,6 +168,60 @@ router.get<{ id: string }>("/media/:id/link", requireAuth, async (req, res): Pro
     url: `/api/media/content/${token}`,
     expiraEm: expiraEm.toISOString(),
   });
+});
+
+// ── Guardar, para não expirar — QUI-11 ────────────────────────────────────
+//
+// Momento expira em 90 dias. Marcar como guardado tira ele dessa conta.
+//
+// **Qualquer cuidador da família pode guardar**, não só o principal: decidir
+// que uma foto é importante é da família inteira, e exigir hierarquia aqui
+// faria alguém perder uma memória esperando aprovação.
+//
+// **Sem limite de quantos podem ser guardados**, de propósito. Inventar cota
+// seria criar atrito onde não há problema ainda.
+
+router.patch<{ id: string }>("/media/:id/guardar", requireAuth, async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    res.status(404).json({ error: "Recurso não encontrado" });
+    return;
+  }
+
+  const guardar = req.body?.guardar;
+  if (typeof guardar !== "boolean") {
+    res.status(400).json({ error: "Informe se quer guardar ou não.", code: "KEEP_FLAG_REQUIRED" });
+    return;
+  }
+
+  const auth = getAuth(req);
+  const [asset] = await db
+    .select({ id: mediaAssetsTable.id })
+    .from(mediaAssetsTable)
+    .where(and(eq(mediaAssetsTable.id, id), eq(mediaAssetsTable.familyId, auth.familyId)))
+    .limit(1);
+
+  if (!asset) {
+    res.status(404).json({ error: "Recurso não encontrado" });
+    return;
+  }
+
+  // Clock.now(), nunca new Date(): "agora" é o relógio do servidor, e é o
+  // que permite o teste congelar o tempo e provar a retenção.
+  const keptAt = guardar ? Clock.now() : null;
+  await db.update(mediaAssetsTable).set({ keptAt }).where(eq(mediaAssetsTable.id, asset.id));
+
+  await audit({
+    familyId: auth.familyId,
+    entityType: "media_asset",
+    entityId: String(asset.id),
+    action: "updated",
+    actorType: "caregiver",
+    actorId: String(auth.caregiverId),
+    diff: JSON.stringify({ guardado: guardar }),
+  });
+
+  res.json({ id: asset.id, guardado: guardar });
 });
 
 // ── Apagar ────────────────────────────────────────────────────────────────

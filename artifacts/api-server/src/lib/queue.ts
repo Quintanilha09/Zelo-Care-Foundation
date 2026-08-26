@@ -56,6 +56,8 @@
 import { PgBoss } from "pg-boss";
 
 export const QUEUE_DOSE_SCHEDULED = "dose-scheduled";
+// QUI-11: expurgo diário da mídia vencida. Cron, sem payload.
+export const QUEUE_PURGE_EXPIRED_MEDIA = "purge-expired-media";
 export const QUEUE_EXTEND_DOSE_WINDOW = "extend-dose-window";
 export const QUEUE_TREATMENT_LIFECYCLE = "treatment-lifecycle";
 export const QUEUE_DOSE_TAKEN = "dose-taken";
@@ -117,6 +119,7 @@ export async function startQueue(handlers: {
   runTreatmentLifecycle: () => Promise<void>;
   markLateDoses: () => Promise<void>;
   runOperationalChecks: () => Promise<void>;
+  purgeExpiredMedia: () => Promise<void>;
   onDoseTaken: (data: { patientId: number; medicationId: number }) => Promise<void>;
   onDoseReminder: (data: { scheduledDoseId: number; level?: number }) => Promise<void>;
   onDeliveryCheck: (data: { notificationId: number }) => Promise<void>;
@@ -128,6 +131,7 @@ export async function startQueue(handlers: {
   await boss.createQueue(QUEUE_TREATMENT_LIFECYCLE, { policy: "singleton" });
   await boss.createQueue(QUEUE_MARK_LATE_DOSES, { policy: "singleton" });
   await boss.createQueue(QUEUE_OPERATIONAL_MONITOR, { policy: "singleton" });
+  await boss.createQueue(QUEUE_PURGE_EXPIRED_MEDIA, { policy: "singleton" });
 
   // 03:00 UTC todo dia — não é crítico ser exato por fuso do paciente,
   // a janela é de 14 dias, algumas horas de folga não importam.
@@ -139,6 +143,10 @@ export async function startQueue(handlers: {
   await boss.schedule(QUEUE_MARK_LATE_DOSES, "*/15 * * * *", null, { tz: "UTC" });
   // A cada 2min — a história pede detecção de queda operacional em <5min.
   await boss.schedule(QUEUE_OPERATIONAL_MONITOR, "*/2 * * * *", null, { tz: "UTC" });
+  // 03:20 UTC, uma vez por dia. A retenção é de 90 dias: algumas horas de
+  // folga não mudam nada, e a madrugada é quando ninguém está olhando o
+  // mural. Deslocado dos outros dois só pra não competirem à toa.
+  await boss.schedule(QUEUE_PURGE_EXPIRED_MEDIA, "20 3 * * *", null, { tz: "UTC" });
 
   await boss.work(QUEUE_EXTEND_DOSE_WINDOW, async () => {
     await handlers.extendWindows();
@@ -151,6 +159,9 @@ export async function startQueue(handlers: {
   });
   await boss.work(QUEUE_OPERATIONAL_MONITOR, async () => {
     await handlers.runOperationalChecks();
+  });
+  await boss.work(QUEUE_PURGE_EXPIRED_MEDIA, async () => {
+    await handlers.purgeExpiredMedia();
   });
   await boss.work(QUEUE_DOSE_TAKEN, async (jobs) => {
     for (const job of jobs) {

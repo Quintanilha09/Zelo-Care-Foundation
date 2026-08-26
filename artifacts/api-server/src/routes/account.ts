@@ -1,4 +1,5 @@
 import { getAuth } from "../lib/auth-types.ts";
+import { apagarMidiasDaFamilia } from "../lib/media-cleanup.ts";
 /**
  * Gerenciamento de conta e exclusão de dados — ZELO.
  * POST /api/account/deletion/request  — inicia solicitação (7 dias de janela)
@@ -410,6 +411,25 @@ router.post("/account/deletion/execute", requirePrimaryCaregiver, async (req, re
   }
 
   const familyId = getAuth(req).familyId;
+
+  // QUI-11 — REQ-006 passa a incluir MÍDIA.
+  //
+  // O cascade da tabela derruba as linhas de media_assets quando a família
+  // some, mas NÃO toca no balde. Sem esta chamada, apagar a conta deixaria
+  // as fotos da pessoa no armazenamento para sempre, sem nada apontando
+  // para elas — exclusão que não exclui.
+  //
+  // Fora da transação de propósito: apagar objeto é I/O de rede, e uma
+  // falha lá não pode segurar a transação do banco aberta. Se sobrar
+  // objeto, o log registra e a exclusão do banco segue — porque o direito
+  // do titular de sumir do sistema não pode ficar refém do bucket.
+  const limpezaDeMidia = await apagarMidiasDaFamilia(familyId);
+  if (limpezaDeMidia.falhas > 0) {
+    safeLog.error(
+      { action: "family_media_purge_incomplete", count: limpezaDeMidia.falhas },
+      "Exclusao do titular: nem toda a midia foi apagada do armazenamento"
+    );
+  }
 
   // Coleta usuários vinculados à família para revogar sessões
   const caregivers = await db
