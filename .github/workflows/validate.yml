@@ -28,6 +28,15 @@ jobs:
       SESSION_SECRET: ci-session-${{ github.run_id }}-${{ github.run_attempt }}
       NODE_ENV: test
       CI: "true"
+      # Os dois vite.config.ts (zelo e mockup-sandbox) exigem PORT no topo do
+      # arquivo e lancam sem ele. A exigencia faz sentido para `vite dev`, que
+      # precisa saber onde servir; para `vite build`, que so gera arquivo, o
+      # valor e irrelevante — mas o throw esta no topo e roda nos dois casos.
+      #
+      # Sem esta linha o passo de Build falhava SEMPRE, desde que este workflow
+      # veio para o main, e por um motivo sem relacao com o codigo em revisao.
+      # CI sempre vermelho e CI que ninguem olha.
+      PORT: "5000"
     services:
       postgres:
         image: postgres:16-alpine
