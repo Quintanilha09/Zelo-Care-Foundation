@@ -32,7 +32,7 @@ import app from "../app.ts";
 let testPort: number;
 let closeServer: () => Promise<void>;
 let ownerFamilyId: number;
-let ownerToken: string;
+let _ownerToken: string;
 let ownerPatientId: number;
 const createdUserIds: number[] = [];
 const createdFamilyIds: number[] = [];
@@ -99,7 +99,7 @@ before(async () => {
   const [ownerCaregiver] = await db.insert(caregiversTable).values({
     familyId: ownerFamilyId, userId: owner.id, name: "Dono da Família", role: "primary_caregiver",
   }).returning();
-  ownerToken = generateAccessToken(owner.id, ownerFamilyId, ownerCaregiver.id, "primary_caregiver");
+  _ownerToken = generateAccessToken(owner.id, ownerFamilyId, ownerCaregiver.id, "primary_caregiver");
 
   const [patient] = await db.insert(patientsTable).values({
     familyId: ownerFamilyId, name: "Paciente Multi Teste", timezone: "America/Sao_Paulo",

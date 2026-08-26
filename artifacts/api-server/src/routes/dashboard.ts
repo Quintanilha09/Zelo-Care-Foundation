@@ -4,7 +4,7 @@ import { getAuth } from "../lib/auth-types.ts";
  * familyId vem do token JWT.
  */
 import { Router } from "express";
-import { eq, and, count, gte, lte, inArray, isNull } from "drizzle-orm";
+import { eq, and, count, gte, lte, inArray, } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   patientsTable, caregiversTable, scheduledDosesTable, appointmentsTable, stockEntriesTable,

@@ -7,13 +7,18 @@
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
-    "test:libs": "pnpm -r --filter \"./lib/**\" --if-present run test"
+    "test:libs": "pnpm -r --filter \"./lib/**\" --if-present run test",
+    "lint": "biome check",
+    "lint:fix": "biome check --write",
+    "deadcode": "knip"
   },
   "private": true,
   "dependencies": {
     "@replit/connectors-sdk": "^0.4.1"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.10",
+    "knip": "^6.32.2",
     "prettier": "^3.9.6",
     "typescript": "~5.9.3"
   }

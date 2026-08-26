@@ -269,7 +269,7 @@ describe("Downgrade nunca apaga dado — excedente vira somente-leitura", () => 
   it("registrar dose NUNCA é bloqueado por plano, nem no paciente excedente — é a função vital do produto", async () => {
     await setPlan("premium");
     const p1 = await createPatient("A");
-    const patient1Id = (p1.body as { id: number }).id;
+    const _patient1Id = (p1.body as { id: number }).id;
     const p2 = await createPatient("B");
     const patient2Id = (p2.body as { id: number }).id;
     const med = await api("POST", "/medications", { name: "Medicamento Dose Downgrade" });

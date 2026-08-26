@@ -13,7 +13,6 @@
  */
 
 import { Router } from "express";
-import type { Request, Response } from "express";
 import { Clock } from "../lib/clock";
 
 const router = Router();

@@ -21,7 +21,7 @@ import {
   usersTable, caregiversTable, familiesTable, patientsTable,
   treatmentsTable, scheduledDosesTable, medicationsTable,
   notificationsTable, consentRecordsTable, photoExtractionsTable, doseRecordsTable,
-  pushSubscriptionsTable, notificationPreferencesTable, subscriptionsTable,
+  pushSubscriptionsTable, subscriptionsTable,
 } from "@workspace/db";
 import { generateAccessToken } from "../lib/tokens.ts";
 import { hashPassword } from "../lib/password.ts";
@@ -111,12 +111,12 @@ let closeServer: () => Promise<void>;
 let tokenA: string;
 let familyAId: number;
 let userIdA: number;
-let patientAId: number;
+let _patientAId: number;
 let caregiverAId: number;
-let medicationAId: number;
-let treatmentAId: number;
+let _medicationAId: number;
+let _treatmentAId: number;
 let doseAId: number;
-let notifAId: number;
+let _notifAId: number;
 
 // Família B
 let tokenB: string;
@@ -207,9 +207,9 @@ before(async () => {
     setupFamily("A", "iso-a@zelo.test"),
     setupFamily("B", "iso-b@zelo.test"),
   ]);
-  tokenA = a.token; familyAId = a.familyId; userIdA = a.userId; patientAId = a.patientId;
-  caregiverAId = a.caregiverId; medicationAId = a.medicationId; treatmentAId = a.treatmentId;
-  doseAId = a.doseId; notifAId = a.notifId;
+  tokenA = a.token; familyAId = a.familyId; userIdA = a.userId; _patientAId = a.patientId;
+  caregiverAId = a.caregiverId; _medicationAId = a.medicationId; _treatmentAId = a.treatmentId;
+  doseAId = a.doseId; _notifAId = a.notifId;
   tokenB = b.token; familyBId = b.familyId; userIdB = b.userId; patientBId = b.patientId;
   caregiverBId = b.caregiverId; medicationBId = b.medicationId; treatmentBId = b.treatmentId;
   notifBId = b.notifId;

@@ -15,7 +15,7 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
-import { eq, and, like } from "drizzle-orm";
+import { eq, like } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   usersTable,
@@ -25,7 +25,7 @@ import {
   emailVerificationsTable,
   consentRecordsTable,
 } from "@workspace/db";
-import { hashToken, generateAccessToken, revokeAccessToken } from "../lib/tokens.ts";
+import { hashToken, generateAccessToken, } from "../lib/tokens.ts";
 import { hashPassword } from "../lib/password.ts";
 import { Clock } from "../lib/clock.ts";
 import app from "../app.ts";
@@ -341,7 +341,7 @@ describe("Autenticação — ZELO", () => {
           email: "auth-test2@zelo.test",
         });
         // Verifica que o token foi criado (sem ver o valor — só a existência)
-        const tokens = await db
+        const _tokens = await db
           .select({ id: emailVerificationsTable.id })
           .from(emailVerificationsTable)
           .where(eq(emailVerificationsTable.userId, userId));

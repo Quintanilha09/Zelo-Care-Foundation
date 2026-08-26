@@ -36,7 +36,7 @@ let patientId: number;
 let principalUserId: number;
 let token: string;        // cuidador principal
 let comumToken: string;   // cuidador comum
-let comumCaregiverId: number;
+let _comumCaregiverId: number;
 let otherFamilyId: number;
 let otherToken: string;
 
@@ -156,7 +156,7 @@ before(async () => {
   }).returning();
   const [comumCaregiver] = await db.insert(caregiversTable)
     .values({ familyId, userId: comum.id, name: "Bruno Fictício", role: "caregiver" }).returning();
-  comumCaregiverId = comumCaregiver.id;
+  _comumCaregiverId = comumCaregiver.id;
   comumToken = generateAccessToken(comum.id, familyId, comumCaregiver.id, "caregiver");
 
   // Fuso propositalmente diferente do de quem roda o teste: é o que permite

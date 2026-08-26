@@ -1,0 +1,65 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+
+  // ── O que o Knip faz aqui, e o que ele NÃO faz ─────────────────────────────
+  //
+  // Ele acha o que ninguém usa: arquivo que nenhum outro importa, export que
+  // ninguém chama, dependência declarada que nenhum código instala.
+  //
+  // **Entra como RELATÓRIO, não como portão.** A primeira execução sem
+  // configuração devolveu 98 arquivos e 76 devDependencies — quase tudo ruído
+  // de biblioteca copiada. Fazer o CI falhar com esse número seria criar um
+  // portão que ninguém consegue atravessar, e portão assim se contorna, não se
+  // respeita.
+  //
+  // O objetivo desta configuração é que o número que sobra SIGNIFIQUE alguma
+  // coisa. Zerá-lo é trabalho de outra história.
+
+  "workspaces": {
+    "artifacts/api-server": {
+      "entry": ["src/index.ts", "src/seed.ts", "src/tests/*.test.ts", "scripts/*.mjs", "build.mjs"],
+      "project": ["src/**/*.ts"]
+    },
+    "artifacts/zelo": {
+      // Os componentes do shadcn/ui entram como PONTO DE ENTRADA, não como
+      // ignorados — e a diferença importa.
+      //
+      // Ignorar tira o arquivo do grafo, e aí os `import` que ele faz somem
+      // junto: o Knip passou a acusar 32 pacotes @radix-ui como não usados,
+      // quando eles são usados exatamente ali. Falso positivo criado pela
+      // própria configuração.
+      //
+      // Como entrada, os imports deles contam e os exports não são cobrados —
+      // que é o tratamento certo para biblioteca copiada: um componente ainda
+      // não usado não é código morto, é biblioteca esperando uso.
+      "entry": ["src/main.tsx", "src/sw.ts", "vite.config.ts", "src/components/ui/**"],
+      "project": ["src/**/*.{ts,tsx}"]
+    },
+    "lib/db": {
+      "entry": ["src/index.ts", "src/apply-raw-sql.ts", "scripts/*.mjs"],
+      "project": ["src/**/*.ts"]
+    },
+    "lib/scheduling": { "entry": ["src/index.ts"], "project": ["src/**/*.ts"] },
+    "lib/api-zod": { "entry": ["src/index.ts"], "project": ["src/**/*.ts"] }
+  },
+
+  // O mockup-sandbox é área de rascunho de interface, não código de produção.
+  // Cobrar código morto de um sandbox é cobrar a coisa errada.
+  "ignoreWorkspaces": ["artifacts/mockup-sandbox", "lib/api-client-react", "scripts"],
+
+  "ignoreDependencies": [
+    // Usados por configuração ou pela linha de comando, nunca por `import` —
+    // o Knip não tem como enxergar isso sozinho.
+    "tsx",
+    "esbuild",
+    "esbuild-plugin-pino",
+    "pino-pretty",
+    "thread-stream",
+    "@biomejs/biome",
+    "knip"
+  ],
+
+  // Um export sem uso hoje pode ser API pública deliberada. O Knip lista; quem
+  // decide apagar é quem conhece a intenção.
+  "includeEntryExports": false
+}

@@ -22,7 +22,7 @@ import { hashPassword } from "../lib/password.ts";
 import { Clock } from "../lib/clock.ts";
 import { boss, QUEUE_APPOINTMENT_REMINDER } from "../lib/queue.ts";
 import {
-  sendAppointmentReminder, rescheduleAppointmentReminders,
+  sendAppointmentReminder, 
   APPOINTMENT_REMINDER_LEVEL_WEEK, APPOINTMENT_REMINDER_LEVEL_DAY, APPOINTMENT_REMINDER_LEVEL_HOURS,
   APPOINTMENT_REMINDER_MINUTES_BEFORE,
 } from "../lib/appointment-reminders.ts";
@@ -32,7 +32,7 @@ let testPort: number;
 let closeServer: () => Promise<void>;
 let familyId: number;
 let token: string;
-let userId: number;
+let _userId: number;
 let patientId: number;
 
 async function api(method: string, path: string, body?: unknown, authToken = token): Promise<{ status: number; body: unknown }> {
@@ -77,7 +77,7 @@ before(async () => {
   familyId = family.id;
 
   const [user] = await db.insert(usersTable).values({ email: `appt-test-${Date.now()}@zelo.test`, name: "Cuidador Consultas", passwordHash: await hashPassword("x"), emailVerified: true, status: "active" }).returning();
-  userId = user.id;
+  _userId = user.id;
   const [caregiver] = await db.insert(caregiversTable).values({ familyId, userId: user.id, name: "Cuidador Consultas", role: "primary_caregiver" }).returning();
   token = generateAccessToken(user.id, familyId, caregiver.id, "primary_caregiver");
 
