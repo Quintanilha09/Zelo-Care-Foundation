@@ -60,3 +60,9 @@ Thumbs.db
 # auto-atualiza, entao versionar geraria ruido de merge a cada update.
 # settings.local.json e, por convencao, configuracao de maquina.
 .claude/
+
+# Skills instaladas por `npx skills add` — ferramenta de agente, nao codigo do
+# projeto, mesma regra do .claude/. O que NAO fica de fora e o
+# skills-lock.json: ele registra QUAL skill e em que versao, e isso e decisao
+# do projeto, nao configuracao de maquina.
+.agents/skills/

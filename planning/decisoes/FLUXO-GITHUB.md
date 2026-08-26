@@ -147,11 +147,21 @@ mais útil para quem vai ler depois.
 Adotar commitlint significaria trocar a convenção por uma pior para este caso.
 **Decisão do fundador: fica como está.**
 
-### `kylezantos/design-motion-principles` — NÃO instalada
+### `kylezantos/design-motion-principles` — instalada em 26/08/2026
 
-É uma skill de terceiro que rodaria na máquina do fundador. **Decisão do
-fundador: não instalar.** Os princípios de movimento são aplicados à mão — ver
-a Issue de movimento na interface.
+**O fundador reverteu a decisão** algumas horas depois de tomá-la, e vale
+registrar as duas metades para não parecer contradição no histórico.
+
+Primeira decisão: não instalar, por ser skill de terceiro rodando na máquina
+dele. Segunda: *"Usaremos sim"*.
+
+Instalada com `npx skills add kylezantos/design-motion-principles`. O scanner do
+instalador classificou como **Safe, 0 alertas, baixo risco**.
+
+Fica em `.agents/skills/`, **fora do git** — é ferramenta de agente, não código
+do projeto, mesma regra do `.claude/`. O que **entra** no git é o
+`skills-lock.json`: ele registra qual skill e em que versão, e isso é decisão do
+projeto, não configuração de máquina.
 
 ### Datadog, New Relic e backend de OpenTelemetry — fora
 
