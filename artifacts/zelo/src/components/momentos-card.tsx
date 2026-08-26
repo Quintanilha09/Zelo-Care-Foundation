@@ -34,7 +34,8 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Camera, Trash2, ImagePlus, Loader2, Bookmark } from "lucide-react";
+import { Camera, Trash2, ImagePlus, Bookmark } from "lucide-react";
+import { AreaCarregando, EsqueletoDeMomento, BarraDeProgresso } from "@/components/esqueleto";
 
 interface Momento {
   id: number;
@@ -200,7 +201,32 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
     }
   };
 
-  if (isLoading || !mural) return null;
+  // ── Carregando ──────────────────────────────────────────────────────────
+  //
+  // Antes isto era `return null`: a seção sumia e reaparecia de repente, e a
+  // página inteira pulava quando o conteúdo chegava. Para quem lê devagar,
+  // página que se reorganiza embaixo do olho obriga a começar de novo.
+  //
+  // Dois esqueletos, não dez: o suficiente para reservar o espaço e dizer o
+  // que vem, sem fingir que já sabemos quantas fotos existem.
+  if (isLoading) {
+    return (
+      <div className="p-4 rounded-xl border space-y-4">
+        <div className="flex items-center gap-2">
+          <Camera className="w-4 h-4 text-muted-foreground shrink-0" />
+          <p className="font-medium">Momentos</p>
+        </div>
+        <AreaCarregando rotulo="Carregando os momentos">
+          <ul className="space-y-4">
+            <EsqueletoDeMomento />
+            <EsqueletoDeMomento />
+          </ul>
+        </AreaCarregando>
+      </div>
+    );
+  }
+
+  if (!mural) return null;
 
   // ── Sem consentimento ───────────────────────────────────────────────────
   if (!mural.consentido) {
@@ -266,15 +292,21 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
               placeholder="Escreva alguma coisa, se quiser"
               rows={2}
             />
-            <div className="flex items-center gap-2">
-              <Button size="sm" onClick={publicar} disabled={enviando} className="gap-2">
-                {enviando && <Loader2 className="w-4 h-4 animate-spin" />}
-                {enviando ? "Enviando…" : "Publicar"}
-              </Button>
-              <Button variant="ghost" size="sm" onClick={limparPrevia} disabled={enviando}>
-                Cancelar
-              </Button>
-            </div>
+            {/* Enquanto envia, a barra substitui os botoes. Deixar botao
+                desabilitado do lado de uma barra e dar duas mensagens sobre a
+                mesma coisa — e um deles convida a clicar de novo. */}
+            {enviando ? (
+              <BarraDeProgresso rotulo="Enviando a foto…" />
+            ) : (
+              <div className="flex items-center gap-2">
+                <Button size="sm" onClick={publicar} className="gap-2">
+                  Publicar
+                </Button>
+                <Button variant="ghost" size="sm" onClick={limparPrevia}>
+                  Cancelar
+                </Button>
+              </div>
+            )}
           </div>
         )}
 
@@ -300,7 +332,11 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
       ) : (
         <ul className="space-y-4">
           {mural.momentos.map((momento) => (
-            <li key={momento.id} className="space-y-2">
+            // `zelo-entra` no item, NAO escalonado. Escalonar uma lista
+            // inteira ("stagger") faz a ultima foto chegar meio segundo depois
+            // da primeira, e quem abriu o mural quer ver tudo, nao assistir a
+            // uma sequencia.
+            <li key={momento.id} className="space-y-2 zelo-entra">
               {momento.kind === "audio" ? (
                 // Recado do paciente (QUI-8). `preload="none"` de propósito: um
                 // mural com vários recados não pode baixar todos ao abrir.

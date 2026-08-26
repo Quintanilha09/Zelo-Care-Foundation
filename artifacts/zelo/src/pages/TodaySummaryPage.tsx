@@ -20,6 +20,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { authFetch } from "@/lib/auth-client";
 import { AppHeader } from "@/components/app-header";
+import { AreaCarregando, Esqueleto } from "@/components/esqueleto";
 import { CheckCircle2, AlertCircle, ChevronRight, Users, Clock } from "lucide-react";
 
 interface PatientSummary {
@@ -76,10 +77,12 @@ export default function TodaySummaryPage() {
         </div>
 
         {isLoading && (
-          <div className="space-y-3 animate-pulse">
-            <div className="h-20 rounded-xl bg-muted" />
-            <div className="h-20 rounded-xl bg-muted" />
-          </div>
+          <AreaCarregando rotulo="Carregando o resumo do dia">
+            <div className="space-y-3">
+              <Esqueleto className="h-20" />
+              <Esqueleto className="h-20" />
+            </div>
+          </AreaCarregando>
         )}
 
         {isError && (
