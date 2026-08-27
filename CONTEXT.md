@@ -50,10 +50,10 @@ Medido nesta data, nesta máquina:
 
 ### Contagem de testes passando — medida em 27/08/2026
 
-**Servidor: 543 testes, 541 passando, 2 pulados, zero falhas.** Executado localmente nesta máquina,
+**Servidor: 545 testes, 543 passando, 2 pulados, zero falhas.** Executado localmente nesta máquina,
 contra o Postgres em Docker descrito em
 [runbooks/banco-de-teste-local.md](planning/runbooks/banco-de-teste-local.md), com
-`ADMIN_PANEL_SECRET` diferente do `SESSION_SECRET`. Duração: ~590 s.
+`ADMIN_PANEL_SECRET` diferente do `SESSION_SECRET`. Duração: ~534 s.
 
 **Tela: 42 testes de ponta a ponta**, Playwright, em Desktop Chrome e Pixel 7. Duração: ~2,7 min.
 

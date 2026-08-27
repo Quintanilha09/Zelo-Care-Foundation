@@ -29,14 +29,17 @@ import { generateAccessToken } from "../lib/tokens.ts";
 import { hashPassword } from "../lib/password.ts";
 import { boss } from "../lib/queue.ts";
 import { Clock } from "../lib/clock.ts";
-import { textoDoAviso } from "../lib/momento-aviso.ts";
+import { textoDoAviso, avisarMomentoNovo } from "../lib/momento-aviso.ts";
 import app from "../app.ts";
 
 let testPort: number;
 let closeServer: () => Promise<void>;
 
 let familyId: number;
+/** Paciente dos testes do coração — publicações passam pela rota HTTP. */
 let patientId: number;
+/** Paciente dos testes do aviso — publicações entram direto e são aguardadas. */
+let pacienteDoAviso: number;
 
 /** Ana publica. */
 let anaToken: string;
@@ -137,17 +140,65 @@ async function publicar(opcoes: {
   return (r.body as { id: number }).id;
 }
 
-/** Espera o aviso assíncrono assentar. Teto curto — se não vier, é defeito. */
-async function avisosDaFamilia(): Promise<Array<{ caregiverId: number | null; body: string | null }>> {
-  for (let tentativa = 0; tentativa < 50; tentativa++) {
-    const linhas = await db
-      .select({ caregiverId: notificationsTable.caregiverId, body: notificationsTable.body })
-      .from(notificationsTable)
-      .where(and(eq(notificationsTable.familyId, familyId), eq(notificationsTable.type, "moment_new")));
-    if (linhas.length > 0) return linhas;
-    await new Promise((r) => setTimeout(r, 20));
-  }
-  return [];
+/**
+ * Publica direto no banco e **espera o aviso terminar de verdade**.
+ *
+ * ── Por que não pela rota, e por que isto importa ─────────────────────────
+ *
+ * A primeira versão publicava por HTTP e consultava a tabela em laço até a
+ * primeira linha aparecer. Passava sozinha, passava no arquivo, e **falhou
+ * duas vezes na suíte completa** — o pior tipo de teste, porque ensina a
+ * ignorar vermelho.
+ *
+ * A causa: o aviso sai sem bloquear a resposta do envio (de propósito, ver
+ * media-upload.ts). "Apareceu a primeira linha" não é "o aviso acabou" — o
+ * laço voltava no meio, o `beforeEach` do teste seguinte apagava tudo, e as
+ * inserções atrasadas do teste ANTERIOR caíam depois da limpeza. O teste
+ * seguinte então via avisos que ele não tinha causado.
+ *
+ * Aqui a mídia entra direto no catálogo e o aviso é **aguardado**. Não há
+ * corrida possível: quando esta função retorna, acabou. O caminho por HTTP
+ * continua coberto — em "a rota de envio dispara o aviso", que é o único
+ * teste que precisa provar aquela ligação.
+ */
+async function publicarEAvisar(opcoes: { kind?: "image" | "audio"; autor?: number | null } = {}): Promise<number> {
+  const [asset] = await db
+    .insert(mediaAssetsTable)
+    .values({
+      familyId,
+      patientId: pacienteDoAviso,
+      uploadedByCaregiverId: opcoes.autor === undefined ? anaCaregiverId : opcoes.autor,
+      kind: opcoes.kind ?? "image",
+      mimeType: opcoes.kind === "audio" ? "audio/webm" : "image/png",
+      sizeBytes: 68,
+      objectKey: `teste/${crypto.randomBytes(12).toString("hex")}`,
+      caption: "Tomando Losartana 50mg hoje, a pressão estava alta",
+    })
+    .returning({ id: mediaAssetsTable.id });
+
+  await avisarMomentoNovo(asset.id);
+  return asset.id;
+}
+
+/**
+ * Os avisos do PACIENTE DO AVISO — nunca os do paciente do coração.
+ *
+ * Os dois pacientes existem para separar o que é assíncrono do que não é. As
+ * publicações por HTTP (dos testes do coração) deixam avisos em voo que podem
+ * cair a qualquer momento; filtrar por paciente isola um bloco do outro sem
+ * precisar sincronizar nada.
+ */
+async function avisosDoPaciente(): Promise<Array<{ caregiverId: number | null; body: string | null }>> {
+  return db
+    .select({ caregiverId: notificationsTable.caregiverId, body: notificationsTable.body })
+    .from(notificationsTable)
+    .where(
+      and(
+        eq(notificationsTable.familyId, familyId),
+        eq(notificationsTable.patientId, pacienteDoAviso),
+        eq(notificationsTable.type, "moment_new")
+      )
+    );
 }
 
 /** Confere que NENHUMA chave da resposta parece contagem. */
@@ -238,6 +289,13 @@ before(async () => {
     ipAddress: "127.0.0.1",
   });
 
+  // Segundo paciente, só para os testes do aviso. Ver `avisosDoPaciente`:
+  // separar os dois é o que impede o assíncrono de um bloco de contaminar o
+  // outro, sem precisar sincronizar nada.
+  const [doAviso] = await db.insert(patientsTable)
+    .values({ familyId, name: "Dona Maria Teste (aviso)", timezone: "America/Sao_Paulo" }).returning();
+  pacienteDoAviso = doAviso.id;
+
   const [outra] = await db.insert(familiesTable)
     .values({ name: "Outra Família Fictícia", slug: `cor-outra-${marca}` }).returning();
   outraFamilyId = outra.id;
@@ -256,6 +314,7 @@ beforeEach(async () => {
   await db.delete(notificationsTable).where(eq(notificationsTable.familyId, familyId));
   await db.delete(mediaAssetsTable).where(eq(mediaAssetsTable.familyId, familyId));
   await db.delete(notificationPreferencesTable).where(eq(notificationPreferencesTable.patientId, patientId));
+  await db.delete(notificationPreferencesTable).where(eq(notificationPreferencesTable.patientId, pacienteDoAviso));
 });
 
 after(async () => {
@@ -270,9 +329,9 @@ describe("O aviso não carrega o conteúdo", () => {
   it("a legenda NUNCA entra no texto do aviso", async () => {
     // Legenda plantada com nome de medicamento. Se alguém trocar o template
     // por interpolação, isto vaza — e é o que este teste impede.
-    await publicar({ legenda: "Tomando Losartana 50mg hoje, a pressão estava alta" });
+    await publicarEAvisar();
 
-    const avisos = await avisosDaFamilia();
+    const avisos = await avisosDoPaciente();
     assert.ok(avisos.length > 0, "a família precisa ser avisada");
 
     for (const aviso of avisos) {
@@ -298,8 +357,8 @@ describe("O aviso não carrega o conteúdo", () => {
 
 describe("Quem recebe o aviso", () => {
   it("quem publicou NÃO é avisado do próprio momento", async () => {
-    await publicar();
-    const avisos = await avisosDaFamilia();
+    await publicarEAvisar();
+    const avisos = await avisosDoPaciente();
 
     assert.ok(avisos.length > 0);
     assert.equal(
@@ -310,8 +369,8 @@ describe("Quem recebe o aviso", () => {
   });
 
   it("o observador recebe — é justamente quem não abre o app todo dia", async () => {
-    await publicar();
-    const avisos = await avisosDaFamilia();
+    await publicarEAvisar();
+    const avisos = await avisosDoPaciente();
     assert.ok(
       avisos.some((a) => a.caregiverId === carlaCaregiverId),
       "ver a mãe não exige capacidade de registrar dose"
@@ -319,8 +378,8 @@ describe("Quem recebe o aviso", () => {
   });
 
   it("cuidador sem conta vinculada não gera aviso", async () => {
-    await publicar();
-    const avisos = await avisosDaFamilia();
+    await publicarEAvisar();
+    const avisos = await avisosDoPaciente();
     assert.equal(
       avisos.some((a) => a.caregiverId === daviCaregiverId), false,
       "convite pendente não tem aparelho — a linha registraria um envio que não houve"
@@ -329,11 +388,11 @@ describe("Quem recebe o aviso", () => {
 
   it("quem desligou a categoria moment não recebe", async () => {
     await db.insert(notificationPreferencesTable).values({
-      caregiverId: brunoCaregiverId, patientId, category: "moment", enabled: false,
+      caregiverId: brunoCaregiverId, patientId: pacienteDoAviso, category: "moment", enabled: false,
     });
 
-    await publicar();
-    const avisos = await avisosDaFamilia();
+    await publicarEAvisar();
+    const avisos = await avisosDoPaciente();
 
     assert.equal(
       avisos.some((a) => a.caregiverId === brunoCaregiverId), false,
@@ -342,9 +401,24 @@ describe("Quem recebe o aviso", () => {
     assert.ok(avisos.some((a) => a.caregiverId === carlaCaregiverId), "Carla não desligou nada");
   });
 
+  it("o recado do próprio paciente avisa em nome dela", async () => {
+    // Autor nulo = publicado do aparelho do paciente (QUI-8). É o caso em que
+    // ninguém pode ficar sem saber, e o texto muda para a voz dela.
+    await publicarEAvisar({ kind: "audio", autor: null });
+    const avisos = await avisosDoPaciente();
+
+    assert.ok(avisos.length > 0, "recado do paciente avisa a família inteira");
+    for (const aviso of avisos) {
+      assert.equal(aviso.body, "Dona Maria Teste (aviso) mandou um recado.");
+    }
+    assert.ok(
+      avisos.some((a) => a.caregiverId === anaCaregiverId),
+      "sem cuidador autor, ninguém é excluído — nem a Ana"
+    );
+  });
+
   it("a outra família nunca é avisada", async () => {
-    await publicar();
-    await avisosDaFamilia();
+    await publicarEAvisar();
 
     const dosVizinhos = await db
       .select({ id: notificationsTable.id })
@@ -352,6 +426,34 @@ describe("Quem recebe o aviso", () => {
       .where(and(eq(notificationsTable.familyId, outraFamilyId), eq(notificationsTable.type, "moment_new")));
 
     assert.deepEqual(dosVizinhos, [], "aviso não atravessa fronteira de família");
+  });
+});
+
+describe("A rota de envio dispara o aviso", () => {
+  it("publicar por HTTP avisa a família, sem a rota esperar por isso", async () => {
+    // O único teste que passa pela rota de verdade. Os outros do aviso entram
+    // direto no catálogo para poder AGUARDAR — ver `publicarEAvisar`.
+    //
+    // Aqui o laço é inevitável: o envio responde 201 antes de o aviso sair, e
+    // é exatamente esse comportamento que se quer provar.
+    await publicar();
+
+    let avisos: Array<{ id: number }> = [];
+    for (let tentativa = 0; tentativa < 100 && avisos.length === 0; tentativa++) {
+      avisos = await db
+        .select({ id: notificationsTable.id })
+        .from(notificationsTable)
+        .where(
+          and(
+            eq(notificationsTable.familyId, familyId),
+            eq(notificationsTable.patientId, patientId),
+            eq(notificationsTable.type, "moment_new")
+          )
+        );
+      if (avisos.length === 0) await new Promise((r) => setTimeout(r, 20));
+    }
+
+    assert.ok(avisos.length > 0, "a rota POST /media precisa disparar o aviso");
   });
 });
 
@@ -365,17 +467,16 @@ describe("Silêncio noturno", () => {
     // passaria ou falharia conforme a hora em que a suíte rodasse.
     Clock.freezeAt(new Date("2026-08-27T06:00:00.000Z")); // 03:00 BRT
 
-    await publicar();
-    // Não dá para "esperar aparecer" algo que não deve aparecer: espera um
-    // tempo fixo curto e confere que continua vazio.
-    await new Promise((r) => setTimeout(r, 300));
+    // Aguardado, não esperado por tempo. "Não apareceu em 300ms" não prova
+    // nada — só que ainda não tinha aparecido. Aqui o aviso já terminou
+    // quando esta linha retorna, então lista vazia é conclusão, não palpite.
+    await publicarEAvisar();
 
-    const avisos = await db
-      .select({ id: notificationsTable.id })
-      .from(notificationsTable)
-      .where(and(eq(notificationsTable.familyId, familyId), eq(notificationsTable.type, "moment_new")));
-
-    assert.deepEqual(avisos, [], "uma foto no mural não é urgência: ela continua lá de manhã");
+    assert.deepEqual(
+      await avisosDoPaciente(),
+      [],
+      "uma foto no mural não é urgência: ela continua lá de manhã"
+    );
 
     await db.update(familiesTable).set({ quietHoursEnabled: false }).where(eq(familiesTable.id, familyId));
   });
@@ -387,8 +488,8 @@ describe("Silêncio noturno", () => {
 
     Clock.freezeAt(new Date("2026-08-27T18:00:00.000Z")); // 15:00 BRT
 
-    await publicar();
-    const avisos = await avisosDaFamilia();
+    await publicarEAvisar();
+    const avisos = await avisosDoPaciente();
     assert.ok(avisos.length > 0, "às 15h da tarde o aviso tem que sair");
 
     await db.update(familiesTable).set({ quietHoursEnabled: false }).where(eq(familiesTable.id, familyId));

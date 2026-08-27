@@ -586,6 +586,26 @@ estava alta"* e prova que nada dela aparece.
 dois interessados e duas cópias da mesma conta de horário divergem. Mesma função; os testes da
 cascata de dose continuam sendo a prova.
 
+### O teste instável que esta história produziu, e como foi consertado
+
+Vale registrar porque é o tipo de armadilha que volta.
+
+Dois testes do aviso passavam sozinhos e **falharam na suíte completa**. A causa: o aviso sai sem
+bloquear a resposta do envio, então o auxiliar consultava o banco em laço até a *primeira* linha
+aparecer — e "apareceu a primeira" não é "acabou". O laço voltava no meio, o `beforeEach` seguinte
+apagava tudo, e as inserções atrasadas do teste anterior caíam **depois** da limpeza.
+
+A correção **não foi aumentar a espera** — isso só esconde a corrida. Foi estrutural: os testes do
+aviso inserem a mídia direto no catálogo e **aguardam** `avisarMomentoNovo`, e um segundo paciente
+isola esse bloco dos testes do coração, que continuam passando pela rota. **Um** teste passa por
+HTTP, com laço, porque é exatamente o comportamento assíncrono que ele existe para provar.
+
+**22 testes novos:** 19 em `momento-aviso.test.ts`, 3 em `environment-hardening.test.ts` (que
+provam que o `RATE_LIMIT_MULTIPLIER` não afrouxa produção). Mais 3 de tela em `e2e/coracao.spec.ts`.
+
+**Suíte completa depois desta história:** **545 testes, 543 passando, 2 pulados, zero falhas** no
+servidor, e **42 de ponta a ponta** na tela — medido em 27/08/2026.
+
 **Novo no banco:** tabela `media_reactions`, mais os valores `moment` em `notification_category` e
 `moment_new` em `notification_type`.
 
