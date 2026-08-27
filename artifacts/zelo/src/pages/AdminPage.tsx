@@ -85,7 +85,11 @@ function AdminLogin({ onSuccess }: { onSuccess: () => void }) {
     try {
       const res = await adminFetch("/api/admin/login", { method: "POST", body: JSON.stringify({ password }) });
       if (!res.ok) {
-        setError("Senha incorreta");
+        // O servidor distingue "painel indisponivel" (503) de "senha errada"
+        // (401). Antes a tela dizia "Senha incorreta" nos dois casos, e quem
+        // tinha a senha CERTA ficava preso numa mensagem falsa.
+        const corpo = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(corpo.error ?? "Senha incorreta");
         return;
       }
       const data = (await res.json()) as { token: string };
