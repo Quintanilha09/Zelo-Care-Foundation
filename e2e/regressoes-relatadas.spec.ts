@@ -37,13 +37,11 @@ test.beforeAll(async ({ request }) => {
 });
 
 test.describe("Defeitos relatados em 24 e 25/08/2026", () => {
-
-  test.beforeEach(async ({ page, request }) => {
+  test.beforeEach(async ({ page }) => {
     await entrar(page, conta);
   });
 
   test("a janela de Novo tratamento cabe na tela", async ({ page }) => {
-
     await page.goto(`/pacientes/${patientId}`);
 
     await page.getByRole("button", { name: /tratamento/i }).first().click();
@@ -75,7 +73,6 @@ test.describe("Defeitos relatados em 24 e 25/08/2026", () => {
   });
 
   test("o campo numérico não usa as setinhas nativas e recusa letra", async ({ page }) => {
-
     await page.goto(`/pacientes/${patientId}`);
     await page.getByRole("button", { name: /tratamento/i }).first().click();
     await expect(page.getByRole("dialog")).toBeVisible();
@@ -105,7 +102,6 @@ test.describe("Defeitos relatados em 24 e 25/08/2026", () => {
   });
 
   test("os botões de aumentar e diminuir têm alvo de toque decente", async ({ page }) => {
-
     await page.goto(`/pacientes/${patientId}`);
     await page.getByRole("button", { name: /tratamento/i }).first().click();
     await expect(page.getByRole("dialog")).toBeVisible();
@@ -121,8 +117,6 @@ test.describe("Defeitos relatados em 24 e 25/08/2026", () => {
   });
 
   test("nenhuma tela rola na horizontal", async ({ page }) => {
-
-
     for (const caminho of ["/", "/pacientes", `/pacientes/${patientId}`, "/cuidadores"]) {
       await page.goto(caminho);
       // `networkidle` NUNCA chega neste app: o canal de tempo real (REQ-021)
@@ -135,16 +129,24 @@ test.describe("Defeitos relatados em 24 e 25/08/2026", () => {
 });
 
 test.describe("Invariantes visuais que não podem regredir", () => {
-  test.beforeEach(async ({ page, request }) => {
+  test.beforeEach(async ({ page }) => {
     await entrar(page, conta);
   });
 
-  test("nada em contexto de dose usa vermelho", async ({ page, request }) => {
+  test("nada em contexto de dose usa vermelho", async ({ page }) => {
     await page.goto("/");
-    // `networkidle` NUNCA chega neste app: o canal de tempo real (REQ-021)
-      // mantem uma conexao aberta de proposito, entao a rede nunca fica ociosa.
-      // Esperar por ela e esperar para sempre.
-      await page.waitForLoadState("domcontentloaded");
+
+    // Esperar por um ELEMENTO, não por um evento de carregamento.
+    //
+    // `networkidle` nunca chega neste app — o canal de tempo real mantém uma
+    // conexão aberta de propósito. E `domcontentloaded` chega CEDO DEMAIS: o
+    // HTML está pronto, mas o React ainda não pintou, então ler as cores
+    // calculadas daria uma tela vazia.
+    //
+    // Este teste falhou uma vez por isso, e passava quando rodado sozinho —
+    // o clássico teste instável, que é pior que teste ausente porque ensina
+    // a ignorar vermelho. O conserto é esperar exatamente o que se vai medir.
+    await expect(page.locator('a[href="/pacientes"]').first()).toBeVisible();
 
     // Invariante 5: âmbar para pendente e atrasada, verde para tomada.
     // Vermelho é proibido em qualquer contexto de dose — a única exceção

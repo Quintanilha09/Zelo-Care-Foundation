@@ -17,12 +17,12 @@ test.describe("Entrar", () => {
     conta = await criarConta(request);
   });
 
-  test("entra com senha correta e chega na tela inicial", async ({ page, request }) => {
+  test("entra com senha correta e chega na tela inicial", async ({ page }) => {
     await entrar(page, conta);
     await expect(page.locator('a[href="/pacientes"]').first()).toBeVisible();
   });
 
-  test("senha errada não entra, e a mensagem não diz se o e-mail existe", async ({ page, request }) => {
+  test("senha errada não entra, e a mensagem não diz se o e-mail existe", async ({ page }) => {
     await page.goto("/");
     await page.getByLabel(/E-mail/i).first().fill(conta.email);
     await page.getByLabel(/^Senha/i).first().fill("senha-errada-de-proposito");
@@ -40,7 +40,7 @@ test.describe("Entrar", () => {
     ).toBeFalsy();
   });
 
-  test("o campo obrigatório é marcado, e o marcador não é vermelho", async ({ page, request }) => {
+  test("o campo obrigatório é marcado, e o marcador não é vermelho", async ({ page }) => {
     await page.goto("/");
 
     // O asterisco de obrigatório usa âmbar, nunca vermelho: neste produto
