@@ -68,13 +68,21 @@ test.describe("Mandar um coração", () => {
       await expect(page.getByText(/mandou um coração/)).toBeVisible();
     }
 
-    // O texto da linha de reação não pode ter dígito nenhum. Com um só
-    // cuidador na família não há "e mais N" possível, então qualquer número
-    // aqui seria contagem — que é exatamente o que a CON-012 proíbe.
     const linha = await page.getByText(/mandou um coração/).first().innerText();
+
+    // A frase é EXATAMENTE o nome mais a ação. Nada antes, nada depois — é
+    // assim que se prova que ninguém pendurou um contador na ponta.
+    expect(linha.trim()).toBe(`${conta.nome} mandou um coração`);
+
+    // E, por segurança, nenhum dígito **fora do nome**.
+    //
+    // A primeira versão procurava dígito na linha inteira e reprovava sozinha:
+    // a conta de teste se chama "Ana Fictícia E2E", e o "2" do E2E entrava na
+    // conta. O teste acusava o app de um defeito que era do próprio teste.
+    const semNome = linha.replace(conta.nome, "");
     expect(
-      /\d/.test(linha),
-      `a linha de quem reagiu não pode conter número: "${linha}"`
+      /\d/.test(semNome),
+      `sobrou número fora do nome na linha de quem reagiu: "${linha}"`
     ).toBeFalsy();
   });
 

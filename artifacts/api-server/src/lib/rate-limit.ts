@@ -14,7 +14,39 @@ import rateLimit from "express-rate-limit";
 
 import { allowsDevelopmentShortcuts } from "./environment.ts";
 const isDev = allowsDevelopmentShortcuts();
-const M = isDev ? 10 : 1; // multiplicador: mais frouxo em dev
+
+/**
+ * Multiplicador dos limites. **Em produção é sempre 1, e não há como mudar.**
+ *
+ * ── Por que a variável existe ─────────────────────────────────────────────
+ *
+ * A suíte de ponta a ponta é um cliente anormal: dezenas de logins legítimos,
+ * da mesma máquina, em poucos minutos. Com o teto de dev (50 por IP a cada 15
+ * min) ela passou a esbarrar no limitador ao crescer, e o sintoma era
+ * enganoso — testes de tela falhando por "elemento não encontrado", quando na
+ * verdade o login tinha respondido 429.
+ *
+ * Baixar a proteção não era opção: o limite de dev é o que o fundador vê
+ * quando demonstra o produto. Então quem se declara é o **ambiente de teste**,
+ * e a declaração só é ouvida onde atalhos de desenvolvimento já valem.
+ *
+ * `isDev` vem de `allowsDevelopmentShortcuts()`, e ausência de `NODE_ENV`
+ * **é produção** — então esta variável não tem efeito nenhum lá, por
+ * construção, mesmo que alguém a defina por engano.
+ */
+export function multiplicadorDeLimite(
+  ehDesenvolvimento: boolean,
+  declarado: string | undefined
+): number {
+  if (!ehDesenvolvimento) return 1;
+  const bruto = Number(declarado);
+  // Valor inválido, zero ou negativo volta ao padrão de dev em vez de virar
+  // NaN — um limite NaN desabilitaria o limitador silenciosamente.
+  if (!Number.isFinite(bruto) || bruto < 1) return 10;
+  return Math.min(bruto, 1000);
+}
+
+const M = multiplicadorDeLimite(isDev, process.env.RATE_LIMIT_MULTIPLIER);
 
 /** Login: 5 tentativas por 15 min por IP. */
 export const loginByIpLimiter = rateLimit({

@@ -540,6 +540,59 @@ medido em 25/08/2026.
 
 ---
 
+## QUI-10 — Aviso de momento novo, e um coração (27/08/2026)
+
+Fecha o projeto **ZELO — Momentos**. Sem aviso, a família só vê se lembrar de abrir; sem resposta,
+o paciente fala sozinho.
+
+### O aviso não carrega o conteúdo, e isso é a história inteira
+
+Uma notificação aparece na tela bloqueada do celular, onde quem passar por perto lê. *"Ana publicou
+uma foto de Dona Maria"* não expõe ninguém; a legenda exporia.
+
+O texto é montado por **template fixo**, e `caption` **não é parâmetro** da função que o monta — não
+dá para vazar o que não se recebe. O teste planta a legenda *"Tomando Losartana 50mg hoje, a pressão
+estava alta"* e prova que nada dela aparece.
+
+- **Não recebe:** quem publicou (ninguém precisa ser avisado do próprio gesto), quem desligou a
+  categoria, quem foi convidado e ainda não criou conta, e ninguém durante o silêncio noturno.
+- **O observador recebe.** Diferente da cascata de dose, que filtra por capacidade de registrar,
+  ver a mãe não exige poder nenhum — é o parente distante quem mais precisa deste aviso.
+- **O silêncio noturno CANCELA, não adia.** Adiar exigiria fila, e fila exigiria decidir o que fazer
+  quando cinco fotos chegam de madrugada — mandar cinco avisos às 7h é pior que não mandar nenhum.
+  A foto continua no mural de manhã. Um momento não é uma dose.
+
+### O coração: quem, nunca quantos
+
+- **Sem coluna de tipo.** A existência da linha **é** a reação. Uma coluna `type` seria a porta de
+  entrada para variedade de reações, e escolher entre carinhas transforma um gesto em resposta.
+- **Sem contador em lugar nenhum.** A resposta traz nomes; a tela escreve os nomes. Dois testes
+  varrem a resposta inteira atrás de qualquer chave que pareça total, e um teste de ponta a ponta
+  reprova se aparecer dígito na linha de quem reagiu (CON-012).
+- **Sem trilha de auditoria**, e é decisão consciente: o `audit_log` existe para o que tem
+  consequência sobre o cuidado. Registrar quem curtiu qual foto seria vigilância de afeto.
+
+### Fora do escopo declarado, e por que entrou assim mesmo
+
+- **Categoria `moment` nas preferências de notificação.** Sem ela, este seria o único aviso do
+  produto impossível de desligar — e é o único que não protege ninguém.
+- **Defeito achado no service worker.** O aviso de momento chegava com os botões *"✓ Tomou"* e
+  *"Adiar 15 min"*, porque a condição olhava "mais de uma dose" em vez de "exatamente uma".
+  Oferecer registrar dose ao lado de uma foto da mãe é o tipo de erro que alguém toca por reflexo.
+
+### Mudança de lugar, não de comportamento
+
+`isQuietHoursNow` saiu de `dose-reminders.ts` para `lib/silencio-noturno.ts`, porque passou a ter
+dois interessados e duas cópias da mesma conta de horário divergem. Mesma função; os testes da
+cascata de dose continuam sendo a prova.
+
+**Novo no banco:** tabela `media_reactions`, mais os valores `moment` em `notification_category` e
+`moment_new` em `notification_type`.
+
+**Pendente de deploy:** `pnpm --filter @workspace/db run push`.
+
+---
+
 ## Fases
 
 | # | Fase | Status |

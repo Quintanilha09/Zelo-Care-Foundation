@@ -20,6 +20,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { multiplicadorDeLimite } from "../lib/rate-limit.ts";
 
 const raiz = fileURLToPath(new URL("../", import.meta.url));
 const ler = (caminho: string) => readFileSync(`${raiz}${caminho}`, "utf8");
@@ -452,5 +453,41 @@ describe("Cadastro sem provedor de e-mail", () => {
       "a tela precisa poder perguntar se há provedor"
     );
     assert.ok(auth.includes("configured:"), "o contrato devolve { configured }");
+  });
+});
+
+/**
+ * O multiplicador de limite de taxa não pode afrouxar produção — QUI-10.
+ *
+ * A variável `RATE_LIMIT_MULTIPLIER` nasceu para a suíte de ponta a ponta, que
+ * faz dezenas de logins legítimos em poucos minutos. É exatamente o tipo de
+ * atalho de teste que, mal escrito, vira porta aberta em produção: bastaria
+ * alguém definir a variável no ambiente publicado para desligar na prática a
+ * proteção contra força bruta.
+ *
+ * Aqui a defesa é estrutural, e este teste é a prova dela.
+ */
+describe("Limite de taxa — o atalho de teste não atravessa para produção", () => {
+  it("em produção o multiplicador é 1, aconteça o que acontecer com a variável", () => {
+    for (const declarado of ["200", "1000", "999999", "0", "-5", "abc", "", undefined]) {
+      assert.equal(
+        multiplicadorDeLimite(false, declarado),
+        1,
+        `com RATE_LIMIT_MULTIPLIER=${String(declarado)} produção teria afrouxado o limite`
+      );
+    }
+  });
+
+  it("em desenvolvimento, valor inválido cai no padrão em vez de virar NaN", () => {
+    // Um limite NaN desabilitaria o limitador em silêncio, que é pior que
+    // um limite baixo demais: ninguém perceberia.
+    for (const invalido of ["abc", "", "0", "-1", undefined]) {
+      assert.equal(multiplicadorDeLimite(true, invalido), 10, `entrada inválida: ${String(invalido)}`);
+    }
+  });
+
+  it("em desenvolvimento o valor declarado vale, com teto", () => {
+    assert.equal(multiplicadorDeLimite(true, "200"), 200);
+    assert.equal(multiplicadorDeLimite(true, "999999"), 1000, "o teto evita desligar o limitador por engano");
   });
 });
