@@ -11,7 +11,36 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
+import { AreaCarregando, Esqueleto } from "@/components/esqueleto";
 import { Plus, User, ChevronRight } from "lucide-react";
+
+/**
+ * Esqueleto da lista de pacientes — Issue #5.
+ *
+ * O formato imita a linha real: círculo do avatar à esquerda, nome e fuso à
+ * direita. É por isso que a tela não pula quando os pacientes chegam — o
+ * espaço já estava reservado no tamanho certo.
+ *
+ * Três linhas, não dez. Quase toda família cuida de uma ou duas pessoas, e um
+ * esqueleto mais longo que a lista real promete conteúdo que não vem.
+ */
+function EsqueletoDaLista() {
+  return (
+    <AreaCarregando rotulo="Carregando os pacientes">
+      <div className="space-y-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="flex items-center gap-4 p-4 rounded-xl border">
+            <Esqueleto className="w-12 h-12 rounded-full shrink-0" />
+            <div className="flex-1 space-y-2">
+              <Esqueleto className="h-5 w-1/2" />
+              <Esqueleto className="h-3.5 w-1/3" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </AreaCarregando>
+  );
+}
 
 interface Patient {
   id: number;
@@ -92,7 +121,7 @@ export default function PatientsPage() {
           </Dialog>
         </div>
 
-        {isLoading && <p className="text-muted-foreground text-center py-12">Carregando…</p>}
+        {isLoading && <EsqueletoDaLista />}
 
         {!isLoading && patients?.length === 0 && (
           <div className="text-center py-16 border rounded-xl border-dashed">
@@ -102,7 +131,7 @@ export default function PatientsPage() {
           </div>
         )}
 
-        <div className="space-y-3">
+        <div className={`space-y-3 ${isLoading ? "" : "zelo-entra"}`}>
           {patients?.filter((p) => !p.archived).map((patient) => (
             <Link key={patient.id} href={`/pacientes/${patient.id}`}>
               <a className="flex items-center gap-4 p-4 rounded-xl border bg-card shadow-sm hover:border-primary/40 transition-colors">

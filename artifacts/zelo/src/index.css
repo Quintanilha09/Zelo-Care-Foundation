@@ -276,6 +276,33 @@ gmp-place-autocomplete::part(prediction-item-match) {
   animation: zelo-entrada var(--zelo-motion-padrao) var(--zelo-motion-curva) both;
 }
 
+/* ── Saída de um item apagado ──────────────────────────────────────────────
+   Some encolhendo, em 120ms. Mais curta que a entrada de propósito: quem
+   mandou apagar já decidiu, e esperar a animação de saída é esperar por nada.
+
+   `scale(0.97)`, não `scale(0)`. Partir do zero produz movimento que não
+   existe no mundo físico, e o efeito fica de desenho animado — errado num app
+   onde a ação é destrutiva e irreversível.
+
+   **Por que a altura NÃO é animada.** Encolher o espaço junto exigiria animar
+   `height` ou `grid-template-rows`, que forçam recálculo de layout a cada
+   quadro — e, numa lista de fotos, isso engasga no celular. Aqui o item some
+   em 120ms e a lista fecha o buraco num único recálculo, quando o React tira
+   o elemento. O olho lê como "encolheu e saiu"; o navegador faz um passo de
+   layout, não trinta.
+
+   `pointer-events: none` porque um item que está saindo não pode mais ser
+   clicado — sem isso dá para tocar em "guardar" numa foto que já foi apagada. */
+@keyframes zelo-saida {
+  from { opacity: 1; transform: none; }
+  to   { opacity: 0; transform: scale(0.97); }
+}
+
+.zelo-sai {
+  animation: zelo-saida var(--zelo-motion-saida) var(--zelo-motion-curva) both;
+  pointer-events: none;
+}
+
 /* ── Esqueleto de carregamento ─────────────────────────────────────────────
    NÃO usa `animate-pulse` do Tailwind de propósito. Pulse pisca opacidade
    entre 1 e 0.5 em loop infinito — é "pulsing indicator", e num app usado por

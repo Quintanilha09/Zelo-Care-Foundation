@@ -89,6 +89,24 @@ export async function entrar(page: Page, conta: ContaDeTeste): Promise<void> {
 }
 
 /**
+ * Um access token novo, numa sessão de API separada da do navegador.
+ *
+ * **Nunca leia o token do `localStorage` do app para reaproveitar aqui.** Ver
+ * o aviso longo em `criarPaciente`: `POST /auth/refresh` rotaciona o par, e
+ * mexer nele pelo teste derruba a sessão da tela sem dar erro nenhum.
+ */
+export async function tokenDaConta(
+  request: APIRequestContext,
+  conta: ContaDeTeste
+): Promise<string> {
+  const login = await request.post("/api/auth/login", {
+    data: { email: conta.email, password: conta.senha },
+  });
+  expect(login.ok(), `login pela API falhou: ${await login.text()}`).toBeTruthy();
+  return ((await login.json()) as { accessToken: string }).accessToken;
+}
+
+/**
  * Cria um paciente pela API, **sem encostar na sessão do navegador**.
  *
  * ── O erro que custou meia hora, registrado ───────────────────────────────
@@ -110,11 +128,7 @@ export async function criarPaciente(
   conta: ContaDeTeste,
   nome = "Dona Maria Teste"
 ): Promise<number> {
-  const login = await request.post("/api/auth/login", {
-    data: { email: conta.email, password: conta.senha },
-  });
-  expect(login.ok(), `login pela API falhou: ${await login.text()}`).toBeTruthy();
-  const { accessToken } = (await login.json()) as { accessToken: string };
+  const accessToken = await tokenDaConta(request, conta);
 
   const res = await request.post("/api/patients", {
     headers: { Authorization: `Bearer ${accessToken}` },

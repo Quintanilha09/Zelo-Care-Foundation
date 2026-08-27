@@ -26,8 +26,34 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { AreaCarregando, Esqueleto } from "@/components/esqueleto";
 import { User, UserPlus, X, Copy, Check, MessageCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+
+/**
+ * Esqueleto de "Quem cuida com você" — Issue #5.
+ *
+ * Mesmo formato da linha real: círculo do avatar, nome e a etiqueta de papel
+ * logo abaixo. Duas linhas — a família típica tem dois ou três cuidadores, e
+ * quem está sozinho vê o esqueleto sumir rápido demais para contar.
+ */
+function EsqueletoDeCuidadores() {
+  return (
+    <AreaCarregando rotulo="Carregando quem cuida com você">
+      <div className="space-y-3">
+        {Array.from({ length: 2 }).map((_, i) => (
+          <div key={i} className="flex items-center gap-4 p-4 rounded-xl border">
+            <Esqueleto className="w-12 h-12 rounded-full shrink-0" />
+            <div className="flex-1 space-y-2">
+              <Esqueleto className="h-5 w-2/5" />
+              <Esqueleto className="h-4 w-24 rounded-full" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </AreaCarregando>
+  );
+}
 
 type Role = "primary_caregiver" | "caregiver" | "hired_caregiver" | "observer";
 
@@ -256,9 +282,9 @@ export default function CaregiversPage() {
           )}
         </div>
 
-        {isLoading && <p className="text-muted-foreground text-center py-8">Carregando…</p>}
+        {isLoading && <EsqueletoDeCuidadores />}
 
-        <div className="space-y-3">
+        <div className={`space-y-3 ${isLoading ? "" : "zelo-entra"}`}>
           {caregivers?.map((c) => {
             const isSelf = c.id === user?.caregiver?.id;
             return (
