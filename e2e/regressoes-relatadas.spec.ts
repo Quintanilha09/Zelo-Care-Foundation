@@ -42,16 +42,7 @@ test.describe("Defeitos relatados em 24 e 25/08/2026", () => {
     await entrar(page, conta);
   });
 
-  test("a janela de Novo tratamento cabe na tela", async ({ page }, info) => {
-    // DEFEITO CONHECIDO, Issue #17: no celular o botao que abre esta janela
-    // esta COBERTO pelo de "Consultas" — quatro botoes numa linha flex sem
-    // `flex-wrap`, que no desktop cabem e num Pixel 7 nao.
-    //
-    // Foi este teste que achou o defeito, e e o primeiro que a suite de
-    // interface pega sozinha antes de chegar ao fundador.
-    //
-    // Tirar esta linha e o que vai PROVAR a correcao do layout.
-    test.skip(info.project.name === "celular", "Issue #17: botao coberto no celular");
+  test("a janela de Novo tratamento cabe na tela", async ({ page }) => {
 
     await page.goto(`/pacientes/${patientId}`);
 
@@ -83,16 +74,7 @@ test.describe("Defeitos relatados em 24 e 25/08/2026", () => {
     await naoRolaNaHorizontal(page);
   });
 
-  test("o campo numérico não usa as setinhas nativas e recusa letra", async ({ page }, info) => {
-    // DEFEITO CONHECIDO, Issue #17: no celular o botao que abre esta janela
-    // esta COBERTO pelo de "Consultas" — quatro botoes numa linha flex sem
-    // `flex-wrap`, que no desktop cabem e num Pixel 7 nao.
-    //
-    // Foi este teste que achou o defeito, e e o primeiro que a suite de
-    // interface pega sozinha antes de chegar ao fundador.
-    //
-    // Tirar esta linha e o que vai PROVAR a correcao do layout.
-    test.skip(info.project.name === "celular", "Issue #17: botao coberto no celular");
+  test("o campo numérico não usa as setinhas nativas e recusa letra", async ({ page }) => {
 
     await page.goto(`/pacientes/${patientId}`);
     await page.getByRole("button", { name: /tratamento/i }).first().click();
@@ -122,16 +104,7 @@ test.describe("Defeitos relatados em 24 e 25/08/2026", () => {
     }
   });
 
-  test("os botões de aumentar e diminuir têm alvo de toque decente", async ({ page }, info) => {
-    // DEFEITO CONHECIDO, Issue #17: no celular o botao que abre esta janela
-    // esta COBERTO pelo de "Consultas" — quatro botoes numa linha flex sem
-    // `flex-wrap`, que no desktop cabem e num Pixel 7 nao.
-    //
-    // Foi este teste que achou o defeito, e e o primeiro que a suite de
-    // interface pega sozinha antes de chegar ao fundador.
-    //
-    // Tirar esta linha e o que vai PROVAR a correcao do layout.
-    test.skip(info.project.name === "celular", "Issue #17: botao coberto no celular");
+  test("os botões de aumentar e diminuir têm alvo de toque decente", async ({ page }) => {
 
     await page.goto(`/pacientes/${patientId}`);
     await page.getByRole("button", { name: /tratamento/i }).first().click();
@@ -147,19 +120,7 @@ test.describe("Defeitos relatados em 24 e 25/08/2026", () => {
     }
   });
 
-  test("nenhuma tela rola na horizontal", async ({ page }, info) => {
-    // MESMO defeito da Issue #17, por outro angulo — e um angulo PIOR.
-    //
-    // Os quatro botoes da ficha do paciente nao so se sobrepoem: eles fazem a
-    // pagina INTEIRA rolar na horizontal no celular.
-    //
-    // Curiosidade que vale registrar: este caso passava na minha maquina e
-    // falhou no CI. A largura do Pixel 7 e a mesma nos dois; o que muda sao as
-    // FONTES do sistema, e no Linux os rotulos ficam alguns pixels mais
-    // largos. Foi o suficiente para estourar.
-    //
-    // Ou seja: o defeito ja existia aqui e a minha maquina o escondia.
-    test.skip(info.project.name === "celular", "Issue #17: os botoes estouram a largura no celular");
+  test("nenhuma tela rola na horizontal", async ({ page }) => {
 
 
     for (const caminho of ["/", "/pacientes", `/pacientes/${patientId}`, "/cuidadores"]) {

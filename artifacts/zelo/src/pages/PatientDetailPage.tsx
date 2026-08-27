@@ -278,7 +278,14 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
             <h2 className="text-2xl font-semibold">{patient?.name ?? "…"}</h2>
             <p className="text-muted-foreground text-[17px]">{patient?.timezone}</p>
           </div>
-          <div className="flex items-center gap-2">
+          {/* `flex-wrap` — Issue #17.
+              Sem ele, os quatro botoes ficavam numa linha so: no desktop
+              cabiam, num celular nao. E o resultado nao era so apertado — o
+              botao "Consultas" cobria o de "Tratamento" e interceptava o
+              toque, alem de fazer a pagina inteira rolar na horizontal.
+              Descoberto pelo Playwright no projeto `celular`, nao por
+              relato. */}
+          <div className="flex flex-wrap items-center gap-2">
             <Link href={`/pacientes/${params.id}/rotina`}>
               <Button variant="outline">Rotina</Button>
             </Link>
