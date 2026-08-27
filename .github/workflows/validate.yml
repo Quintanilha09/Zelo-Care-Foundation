@@ -109,5 +109,26 @@ jobs:
       - name: Run integration tests
         run: pnpm --filter @workspace/api-server test:all
 
+      # Playwright por ultimo: e o passo mais caro, e so faz sentido rodar se
+      # tudo o mais ja passou. Instala so o chromium — os outros navegadores
+      # triplicariam o tempo sem mudar nada do que este app precisa provar.
+      - name: Instalar navegador do Playwright
+        run: pnpm exec playwright install chromium --with-deps
+
+      - name: Teste de ponta a ponta (Playwright)
+        run: pnpm run test:e2e
+
+      # O rastro so existe quando algo falha, e e exatamente ai que ele vale:
+      # traz video, captura de tela e a linha do tempo do que aconteceu.
+      - name: Guardar o rastro das falhas
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-rastro
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
       - name: Build
         run: pnpm run build

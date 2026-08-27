@@ -57,6 +57,9 @@
     "thread-stream",
     "@biomejs/biome",
     "knip",
+    // Usado pelo playwright.config.ts e pelos specs em e2e/, que nao fazem
+    // parte de nenhum workspace do pnpm.
+    "@playwright/test",
 
     // ── Falsos positivos: o Knip nao le CSS ────────────────────────────────
     //

@@ -10,11 +10,14 @@
     "test:libs": "pnpm -r --filter \"./lib/**\" --if-present run test",
     "lint": "biome check",
     "lint:fix": "biome check --write",
-    "deadcode": "knip"
+    "deadcode": "knip",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
   },
   "private": true,
   "devDependencies": {
     "@biomejs/biome": "^2.5.10",
+    "@playwright/test": "^1.62.1",
     "knip": "^6.32.2",
     "typescript": "~5.9.3"
   }

@@ -72,6 +72,27 @@ export default defineConfig({
     fs: {
       strict: true,
     },
+    // ── Proxy de /api, SÓ quando API_PROXY_TARGET existe ──────────────────
+    //
+    // No Replit não há proxy aqui: a plataforma roteia `/api` para o backend
+    // por fora (`router = "application"`), e front e API compartilham uma
+    // origem só. Fora do Replit esse roteamento não existe, e o front não tem
+    // com quem falar — foi por isso que a interface nunca pôde ser aberta em
+    // nenhum lugar além do Replit.
+    //
+    // A variável é o interruptor: sem ela, esta configuração é byte a byte a
+    // mesma que o Replit sempre teve. Com ela (teste de ponta a ponta, Issue
+    // #7), o vite passa a fazer o papel que a plataforma faz lá.
+    ...(process.env.API_PROXY_TARGET
+      ? {
+          proxy: {
+            '/api': {
+              target: process.env.API_PROXY_TARGET,
+              changeOrigin: true,
+            },
+          },
+        }
+      : {}),
   },
   preview: {
     port,
