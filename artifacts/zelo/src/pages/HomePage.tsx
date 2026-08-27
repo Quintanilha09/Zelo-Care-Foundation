@@ -15,6 +15,7 @@ import { authFetch } from "@/lib/auth-client";
 import { subscribeToPatientEvents } from "@/lib/realtime-client";
 import { useAuth } from "@/context/AuthContext";
 import { AppHeader } from "@/components/app-header";
+import { AreaCarregando, Esqueleto } from "@/components/esqueleto";
 import { CampoNumero } from "@/components/campo-numero";
 import { DoseCard } from "@/components/dose-card";
 import { Button } from "@/components/ui/button";
@@ -65,13 +66,26 @@ function toDatetimeLocalValue(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/**
+ * Esqueleto da tela inicial — Issue #5.
+ *
+ * Trocado o `animate-pulse` do Tailwind pelo `.zelo-esqueleto`: pulse pisca a
+ * opacidade em laco infinito, e num app usado por gente com sensibilidade
+ * visual isso cansa. O brilho que atravessa comunica a mesma coisa sem piscar,
+ * e para de se mover — sem sumir — quando o sistema pede movimento reduzido.
+ *
+ * As alturas imitam o que vai chegar: cabecalho do paciente, cartao da proxima
+ * dose, resumo do dia. Assim a tela nao pula quando o conteudo entra.
+ */
 function HomeSkeleton() {
   return (
-    <div className="space-y-4 animate-pulse">
-      <div className="h-16 rounded-xl bg-muted" />
-      <div className="h-24 rounded-xl bg-muted" />
-      <div className="h-16 rounded-xl bg-muted" />
-    </div>
+    <AreaCarregando rotulo="Carregando o dia de hoje">
+      <div className="space-y-4">
+        <Esqueleto className="h-16" />
+        <Esqueleto className="h-24" />
+        <Esqueleto className="h-16" />
+      </div>
+    </AreaCarregando>
   );
 }
 

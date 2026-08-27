@@ -230,3 +230,130 @@ gmp-place-autocomplete::part(prediction-item-match) {
   font-weight: 600;
   color: hsl(var(--foreground));
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   MOVIMENTO — QUI/Issue #5
+   ══════════════════════════════════════════════════════════════════════════
+
+   Duas regras governam tudo o que vem abaixo, e as duas vêm do público deste
+   app, não de gosto:
+
+   1. **Cuidador apressado.** Ele abre o app para responder "a dose foi
+      tomada?" dezenas de vezes por dia. Movimento que atrasa a resposta é
+      movimento que atrapalha. Duração curta, ou nenhuma.
+
+   2. **Idoso com visão e motricidade reduzidas.** Nada aqui pode exigir
+      reflexo, nada pode se mover enquanto ele tenta acertar um alvo, e nada
+      pode piscar.
+
+   A frequência decide: o que se vê 100 vezes por dia não anima; o que se vê
+   uma vez por sessão pode ter uma transição curta.
+   ────────────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* Rápido o bastante para não atrasar, longo o bastante para o olho seguir.
+     150ms é o piso do perceptível; 220ms é onde entrada de conteúdo deixa de
+     parecer corte seco. */
+  --zelo-motion-rapido: 150ms;
+  --zelo-motion-padrao: 220ms;
+  /* Saída sempre mais rápida que entrada: quem mandou sair já decidiu, e
+     esperar a animação de saída é esperar por nada. */
+  --zelo-motion-saida: 120ms;
+  /* Desacelera no fim, sem passar do ponto. Nada de elástico: "bouncy springs
+     on utility actions" é ruído num app que registra remédio. */
+  --zelo-motion-curva: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/* ── Entrada de conteúdo ───────────────────────────────────────────────────
+   Deslocamento de 4px, não de 20. O suficiente para o olho perceber que algo
+   chegou; pouco o bastante para não puxar a atenção de quem está lendo. */
+@keyframes zelo-entrada {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.zelo-entra {
+  animation: zelo-entrada var(--zelo-motion-padrao) var(--zelo-motion-curva) both;
+}
+
+/* ── Esqueleto de carregamento ─────────────────────────────────────────────
+   NÃO usa `animate-pulse` do Tailwind de propósito. Pulse pisca opacidade
+   entre 1 e 0.5 em loop infinito — é "pulsing indicator", e num app usado por
+   quem tem sensibilidade visual isso cansa.
+
+   Aqui é um brilho que atravessa uma vez a cada 1,6s, com contraste baixo.
+   Comunica "estou carregando" sem competir com o conteúdo que vai chegar. */
+@keyframes zelo-brilho {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
+
+.zelo-esqueleto {
+  background-image: linear-gradient(
+    90deg,
+    hsl(var(--muted)) 0%,
+    hsl(var(--muted-foreground) / 0.08) 50%,
+    hsl(var(--muted)) 100%
+  );
+  background-size: 200% 100%;
+  animation: zelo-brilho 1.6s linear infinite;
+  border-radius: var(--radius);
+}
+
+/* ── Barra de progresso indeterminada ──────────────────────────────────────
+   Para envio de arquivo, onde o percentual real não está disponível. */
+@keyframes zelo-progresso {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(400%); }
+}
+
+.zelo-progresso-trilho {
+  overflow: hidden;
+  border-radius: 999px;
+  background: hsl(var(--muted));
+}
+
+.zelo-progresso-barra {
+  width: 25%;
+  height: 100%;
+  border-radius: 999px;
+  /* Verde do produto. Âmbar aqui daria a impressão de alerta, e enviar uma
+     foto não é alerta nenhum. Vermelho é proibido (invariante 5). */
+  background: var(--color-zelo-green-fg, hsl(var(--primary)));
+  animation: zelo-progresso 1.1s var(--zelo-motion-curva) infinite;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   prefers-reduced-motion — NÃO É OPCIONAL
+   ══════════════════════════════════════════════════════════════════════════
+
+   Quem desligou movimento no sistema desligou por um motivo: enjoo,
+   sensibilidade vestibular, dificuldade de foco. Parte do público deste app
+   tem exatamente esses quadros.
+
+   As animações somem; os ESTADOS FINAIS ficam. É isso que impede o layout de
+   quebrar — conteúdo que entrava com fade simplesmente aparece.
+
+   O esqueleto e a barra de progresso continuam VISÍVEIS, só param de se
+   mexer: eles informam "estou carregando", e essa informação não pode sumir
+   junto com a animação.
+   ────────────────────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .zelo-esqueleto {
+    background-image: none;
+    background-color: hsl(var(--muted));
+  }
+
+  .zelo-progresso-barra {
+    width: 100%;
+  }
+}
