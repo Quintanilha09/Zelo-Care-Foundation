@@ -14,6 +14,7 @@ import {
 } from "@/lib/plan-limits-client";
 import { useAuth } from "@/context/AuthContext";
 import { AppHeader } from "@/components/app-header";
+import { ActivityFeed } from "@/components/ActivityFeed";
 import { CaregiverBadge } from "@/components/caregiver-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -305,6 +306,15 @@ export default function CaregiversPage() {
             ))}
           </div>
         )}
+
+        {/* Atividade recente — Issue #13.
+            A rota e o componente existiam ha tempo e nenhuma tela os
+            renderizava. O lugar e aqui: "quem registrou a dose das 8h?" e
+            pergunta sobre PESSOAS da familia, e e nesta tela que se ve quem
+            sao.
+            O texto vem de templates fixos no servidor e nunca carrega nome de
+            medicamento — ha teste provando, inclusive no caminho de fallback. */}
+        <ActivityFeed limit={15} />
       </main>
     </div>
   );
