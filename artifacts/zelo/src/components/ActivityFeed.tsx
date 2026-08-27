@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react';
 import { authFetch } from '@/lib/auth-client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Esqueleto, AreaCarregando } from '@/components/esqueleto';
 
 interface ActivityItem {
   id: number;
@@ -69,17 +69,22 @@ export function ActivityFeed({ limit = 20 }: { limit?: number }) {
       </CardHeader>
       <CardContent>
         {loading && (
-          <div className="space-y-3">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="flex items-center gap-3">
-                <Skeleton className="h-8 w-8 rounded-full" />
-                <div className="space-y-1 flex-1">
-                  <Skeleton className="h-4 w-3/4" />
-                  <Skeleton className="h-3 w-1/4" />
+          // Esqueleto do projeto, não o `animate-pulse` do shadcn: aquele
+          // pisca a opacidade em laço infinito e cansa quem tem sensibilidade
+          // visual. Ver components/esqueleto.tsx (Issue #5).
+          <AreaCarregando rotulo="Carregando a atividade recente">
+            <div className="space-y-3">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-3">
+                  <Esqueleto className="h-8 w-8 rounded-full" />
+                  <div className="space-y-1 flex-1">
+                    <Esqueleto className="h-4 w-3/4" />
+                    <Esqueleto className="h-3 w-1/4" />
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          </AreaCarregando>
         )}
         {!loading && error && (
           <p className="text-sm text-muted-foreground">{error}</p>
