@@ -152,3 +152,51 @@ que venha acompanhado do número, que é o que este documento existe para dar.
 4. **Piloto de 30 dias só com interessado concreto**, e vendido como parte da negociação.
 5. **Ser explícito na apresentação** sobre o que ainda não foi medido. A honestidade sobre a taxa
    de entrega ausente é mais convincente que um silêncio que o comprador vai descobrir sozinho.
+
+
+---
+
+## Vídeo (QUI-9) — não será implementado antes da venda
+
+`Decisão do fundador, reafirmada em 26/08/2026.`
+
+> *"O upload de vídeo não foi implementado, certo? Pois não iremos implementar,
+> somente após apresentar isso ao comprador, caso ele queira."*
+
+**Correto, e a decisão está certa pelo motivo certo.** Vídeo é o único recurso
+cujo custo dispara com mudança de comportamento do usuário — um vídeo de 30 s
+pesa ~16× uma foto. Com zero usuários, esse custo seria pago sem nenhum dado
+que justifique.
+
+### O que já existe, e o que falta
+
+Isto importa na conversa com o comprador, porque a distância é menor do que
+parece:
+
+| | Estado |
+|---|---|
+| Armazenamento aceita vídeo | ✅ pronto |
+| `video/mp4` e `video/webm` na allowlist | ✅ pronto |
+| Teto de 8 MB por vídeo | ✅ pronto |
+| Link assinado, exclusão real, retenção de 90 dias | ✅ pronto — valem para qualquer mídia |
+| **Tela para escolher e enviar vídeo** | ❌ falta |
+| **Compressão no aparelho** (`MediaRecorder`, 720p) | ❌ falta |
+| Reprodução no mural sem baixar sozinho | ❌ falta |
+
+**Na prática: a porta do servidor já aceita vídeo; a tela não oferece.** O
+`<input type="file">` do mural aceita só `image/jpeg`, `image/png` e
+`image/webp`.
+
+Isso não é risco de segurança — quem chegasse à API por fora já seria cuidador
+autenticado, da família, com consentimento registrado. É só uma assimetria
+entre o que o backend suporta e o que a tela oferece, e ela é deliberada.
+
+### O que dizer ao comprador
+
+*"A fundação de mídia foi construída para vídeo desde o começo — armazenamento,
+limites, link assinado, exclusão e retenção já funcionam para ele. O que não
+construímos foi a tela, porque medimos o custo e decidimos esperar por demanda
+real. Ligar é um dia de trabalho, não uma reescrita."*
+
+Isso é mais forte que ter o recurso pronto e sem uso: mostra que a decisão foi
+tomada com número, não por falta de capacidade.
