@@ -25,7 +25,39 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
+import { AreaCarregando, Esqueleto } from "@/components/esqueleto";
 import { ArrowLeft, Plus, Pill, Package, Trash2, Smartphone, Tablet } from "lucide-react";
+
+/**
+ * Esqueleto da lista de tratamentos — Issue #5.
+ *
+ * Imita o cartão real: nome do medicamento em destaque, dose logo abaixo,
+ * etiqueta de status à direita e a linha de período no rodapé.
+ *
+ * Nenhum texto de exemplo aqui, e o motivo é sério: um esqueleto com nome de
+ * medicamento inventado, mesmo cinza, num app de saúde é o tipo de coisa que
+ * alguém lê rápido e acredita. Barra cinza não mente.
+ */
+function EsqueletoDeTratamentos() {
+  return (
+    <AreaCarregando rotulo="Carregando os tratamentos">
+      <div className="space-y-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="p-4 rounded-xl border space-y-2">
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-2 flex-1">
+                <Esqueleto className="h-5 w-2/5" />
+                <Esqueleto className="h-4 w-1/4" />
+              </div>
+              <Esqueleto className="h-6 w-20 rounded-full shrink-0" />
+            </div>
+            <Esqueleto className="h-3.5 w-3/5" />
+          </div>
+        ))}
+      </div>
+    </AreaCarregando>
+  );
+}
 
 interface Patient {
   id: number;
@@ -380,7 +412,7 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
           </div>
         )}
 
-        {isLoading && <p className="text-muted-foreground text-center py-12">Carregando…</p>}
+        {isLoading && <EsqueletoDeTratamentos />}
 
         {!isLoading && treatments?.length === 0 && (
           <div className="text-center py-16 border rounded-xl border-dashed">
@@ -393,7 +425,7 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
         {activeTreatments.length > 0 && (
           <h3 className="text-sm font-medium text-muted-foreground">Tratamentos</h3>
         )}
-        <div className="space-y-3">
+        <div className={`space-y-3 ${isLoading ? "" : "zelo-entra"}`}>
           {activeTreatments.map((t) => (
             <div key={t.id} className="p-4 rounded-xl border bg-card shadow-sm">
               <div className="flex items-start justify-between gap-3">

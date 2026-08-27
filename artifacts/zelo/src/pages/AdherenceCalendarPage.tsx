@@ -19,6 +19,7 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import { AreaCarregando, Esqueleto } from "@/components/esqueleto";
 import { ArrowLeft, ChevronLeft, ChevronRight, FileText, Copy, ExternalLink } from "lucide-react";
 
 interface DayStatus { date: string; status: "green" | "amber" | "gray" }
@@ -234,23 +235,39 @@ export default function AdherenceCalendarPage({ params }: { params: { id: string
               <div key={i} className="text-center text-xs text-muted-foreground">{w}</div>
             ))}
           </div>
-          <div className="grid grid-cols-7 gap-1">
-            {cells.map((cell, i) =>
-              cell ? (
-                <button
-                  key={cell.date}
-                  onClick={() => setSelectedDate(cell.date)}
-                  className="aspect-square rounded-md border hover:bg-muted/50 flex flex-col items-center justify-center gap-1"
-                >
-                  <span className="text-xs">{Number(cell.date.slice(8, 10))}</span>
-                  <StatusDot status={cell.status} />
-                </button>
-              ) : (
-                <div key={`blank-${i}`} />
-              )
-            )}
-          </div>
-          {isLoading && <p className="text-sm text-muted-foreground mt-3">Carregando…</p>}
+          {isLoading ? (
+            // Esqueleto no formato do MÊS, não uma linha de "Carregando…" —
+            // Issue #5. A grade de sete colunas já ocupa a altura final, então
+            // o resumo e o botão de relatório logo abaixo não saltam quando os
+            // dias chegam.
+            //
+            // 35 quadrados: cinco semanas, que é o que quase todo mês ocupa
+            // com os brancos do começo.
+            <AreaCarregando rotulo="Carregando o calendário de adesão">
+              <div className="grid grid-cols-7 gap-1">
+                {Array.from({ length: 35 }).map((_, i) => (
+                  <Esqueleto key={i} className="aspect-square rounded-md" />
+                ))}
+              </div>
+            </AreaCarregando>
+          ) : (
+            <div className="grid grid-cols-7 gap-1 zelo-entra">
+              {cells.map((cell, i) =>
+                cell ? (
+                  <button
+                    key={cell.date}
+                    onClick={() => setSelectedDate(cell.date)}
+                    className="aspect-square rounded-md border hover:bg-muted/50 flex flex-col items-center justify-center gap-1"
+                  >
+                    <span className="text-xs">{Number(cell.date.slice(8, 10))}</span>
+                    <StatusDot status={cell.status} />
+                  </button>
+                ) : (
+                  <div key={`blank-${i}`} />
+                )
+              )}
+            </div>
+          )}
         </div>
 
         {calendar && (
@@ -334,7 +351,24 @@ export default function AdherenceCalendarPage({ params }: { params: { id: string
             <DialogTitle className="capitalize">{selectedDate && formatDayLabel(selectedDate)}</DialogTitle>
           </DialogHeader>
           <div className="space-y-2">
-            {!dayDetail && <p className="text-sm text-muted-foreground">Carregando…</p>}
+            {!dayDetail && (
+              // Três linhas no formato da dose: medicamento e horário à
+              // esquerda, situação à direita. Sem isso a janela abria vazia e
+              // crescia de repente quando o dia chegava.
+              <AreaCarregando rotulo="Carregando as doses do dia">
+                <div className="space-y-2">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <div key={i} className="flex items-center justify-between gap-4 border-b pb-2 last:border-0">
+                      <div className="flex-1 space-y-1.5">
+                        <Esqueleto className="h-4 w-2/5" />
+                        <Esqueleto className="h-3 w-16" />
+                      </div>
+                      <Esqueleto className="h-4 w-20 shrink-0" />
+                    </div>
+                  ))}
+                </div>
+              </AreaCarregando>
+            )}
             {dayDetail?.doses.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma dose agendada neste dia.</p>}
             {dayDetail?.doses.map((d) => (
               <div key={d.id} className="flex items-center justify-between text-sm border-b pb-2 last:border-0">

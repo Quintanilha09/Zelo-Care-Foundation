@@ -82,6 +82,15 @@ function quando(iso: string, timezone: string): string {
   }).format(new Date(iso));
 }
 
+/**
+ * Quanto o item apagado leva para sumir — Issue #5.
+ *
+ * **Precisa bater com `--zelo-motion-saida` no index.css.** Se um dos dois
+ * mudar sozinho, ou o item some antes de terminar de sair (pisca), ou a lista
+ * fica um tempo parada com um buraco invisível no meio.
+ */
+const MS_DE_SAIDA = 120;
+
 export function MomentosCard({ patientId, patientName }: { patientId: number; patientName: string }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -92,6 +101,7 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
   const [legenda, setLegenda] = useState("");
   const [previa, setPrevia] = useState<{ url: string; arquivo: File } | null>(null);
   const [aApagar, setAApagar] = useState<Momento | null>(null);
+  const [saindo, setSaindo] = useState<number | null>(null);
   const [consentindo, setConsentindo] = useState(false);
 
   const { data: mural, isLoading } = useQuery({
@@ -181,7 +191,18 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
       toast({ title: corpo.error ?? "Não conseguimos apagar este momento.", variant: "destructive" });
       return;
     }
+
+    // A animação só começa DEPOIS de o servidor confirmar, e a ordem é
+    // deliberada. Animar antes seria a tela mentir: se o DELETE falhasse, a
+    // foto já teria sumido do olho de quem apagou, e voltaria do nada.
+    //
+    // Depois da saída, recarrega ANTES de limpar o `saindo`. Invertido, o
+    // item voltaria a aparecer inteiro por um quadro, entre o fim da animação
+    // e a chegada da lista nova — um pisco que parece defeito.
+    setSaindo(momento.id);
+    await new Promise((resolver) => setTimeout(resolver, MS_DE_SAIDA));
     await recarregar();
+    setSaindo(null);
   };
 
   const registrarConsentimento = async () => {
@@ -336,7 +357,10 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
             // inteira ("stagger") faz a ultima foto chegar meio segundo depois
             // da primeira, e quem abriu o mural quer ver tudo, nao assistir a
             // uma sequencia.
-            <li key={momento.id} className="space-y-2 zelo-entra">
+            <li
+              key={momento.id}
+              className={`space-y-2 ${momento.id === saindo ? "zelo-sai" : "zelo-entra"}`}
+            >
               {momento.kind === "audio" ? (
                 // Recado do paciente (QUI-8). `preload="none"` de propósito: um
                 // mural com vários recados não pode baixar todos ao abrir.
@@ -351,10 +375,25 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
                   src={apiUrl(momento.url)}
                   alt={momento.caption ?? `Momento de ${patientName}`}
                   loading="lazy"
+                  // Decodificar fora da thread principal: sem isto, uma foto
+                  // grande chegando trava a rolagem por alguns quadros.
+                  decoding="async"
+                  // `min-h` reserva o espaço ANTES de a foto chegar, e resolve
+                  // duas coisas de uma vez (Issue #5):
+                  //
+                  //   1. a lista para de pular. Sem altura reservada, o item
+                  //      tem 0px, e ao carregar salta para até 26rem —
+                  //      empurrando para baixo o que a pessoa estava lendo.
+                  //   2. **o `loading="lazy"` volta a funcionar de verdade.**
+                  //      Imagem sem altura fica toda dentro da primeira tela
+                  //      na conta do navegador, então ele baixa o mural
+                  //      inteiro de uma vez — exatamente o que a Issue #5
+                  //      queria evitar.
+                  //
                   // `max-h` com `object-contain`: sem teto, uma foto em pé
                   // ocupa a tela inteira e empurra autor e legenda para fora
                   // do campo de visão. Relatado pelo fundador em 25/08/2026.
-                  className="w-full max-h-[26rem] object-contain rounded-lg border bg-muted"
+                  className="w-full min-h-[10rem] max-h-[26rem] object-contain rounded-lg border bg-muted"
                 />
               )}
               {momento.caption && <p className="text-sm">{momento.caption}</p>}

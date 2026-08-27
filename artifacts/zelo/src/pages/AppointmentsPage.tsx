@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { AreaCarregando, Esqueleto } from "@/components/esqueleto";
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select";
@@ -304,10 +305,10 @@ export default function AppointmentsPage({ params }: { params: { id: string } })
           <Button onClick={handleNovaClick} className="gap-2"><Plus className="w-4 h-4" /> Nova</Button>
         </div>
 
-        {isLoading && <p className="text-sm text-muted-foreground">Carregando…</p>}
+        {isLoading && <EsqueletoDaAgenda />}
 
         {upcoming.length > 0 && (
-          <div className="space-y-2">
+          <div className="space-y-2 zelo-entra">
             <p className="text-xs text-muted-foreground uppercase tracking-wide">Próximas</p>
             {upcoming.map((a) => <AppointmentCard key={a.id} appointment={a} onClick={() => openDetail(a)} />)}
           </div>
@@ -318,7 +319,7 @@ export default function AppointmentsPage({ params }: { params: { id: string } })
         )}
 
         {past.length > 0 && (
-          <div className="space-y-2">
+          <div className="space-y-2 zelo-entra">
             <p className="text-xs text-muted-foreground uppercase tracking-wide">Anteriores</p>
             {past.map((a) => <AppointmentCard key={a.id} appointment={a} onClick={() => openDetail(a)} />)}
           </div>
@@ -427,6 +428,33 @@ export default function AppointmentsPage({ params }: { params: { id: string } })
 function formatLocalDate(dateISO: string): string {
   const [y, m, d] = dateISO.split("-");
   return `${d}/${m}/${y}`;
+}
+
+/**
+ * Esqueleto da agenda — Issue #5.
+ *
+ * Reproduz o cartão de consulta: ícone à esquerda, especialidade e data no
+ * meio, etiqueta de status à direita. Duas linhas sob o rótulo "Próximas",
+ * que é o bloco que quase sempre existe.
+ */
+function EsqueletoDaAgenda() {
+  return (
+    <AreaCarregando rotulo="Carregando as consultas">
+      <div className="space-y-2">
+        <Esqueleto className="h-3 w-20" />
+        {Array.from({ length: 2 }).map((_, i) => (
+          <div key={i} className="rounded-lg border p-3 flex items-center gap-3">
+            <Esqueleto className="w-4 h-4 rounded-sm shrink-0" />
+            <div className="flex-1 space-y-2">
+              <Esqueleto className="h-4 w-1/2" />
+              <Esqueleto className="h-3 w-2/3" />
+            </div>
+            <Esqueleto className="h-5 w-16 rounded-full shrink-0" />
+          </div>
+        ))}
+      </div>
+    </AreaCarregando>
+  );
 }
 
 function AppointmentCard({ appointment, onClick }: { appointment: Appointment; onClick: () => void }) {
