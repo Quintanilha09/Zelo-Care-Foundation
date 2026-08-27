@@ -23,6 +23,7 @@ import { db } from "@workspace/db";
 import { mediaAssetsTable } from "@workspace/db";
 import { obterArmazenamento, novaChaveDeObjeto, type TipoDeMidia } from "./media-storage.ts";
 import { exigeConsentimentoDeImagem, temConsentimentoDeImagem } from "./image-consent.ts";
+import { avisarMomentoNovo } from "./momento-aviso.ts";
 import { safeLog } from "./safe-logger.ts";
 
 /**
@@ -92,7 +93,25 @@ export interface PedidoDeMidia {
 }
 
 export type ResultadoDeMidia =
-  | { ok: true; id: number; tipo: TipoDeMidia; sizeBytes: number }
+  | {
+      ok: true;
+      id: number;
+      tipo: TipoDeMidia;
+      sizeBytes: number;
+      /**
+       * O aviso à família (QUI-10), **já em andamento e sem espera**.
+       *
+       * A rota não aguarda de propósito: avisar são chamadas HTTPS a serviços
+       * de push, uma por aparelho da família. Aguardar acrescentaria o tempo
+       * de todos eles à resposta de quem enviou a foto — e quem enviou já fez
+       * o que queria fazer, não está esperando por isso.
+       *
+       * A promessa vem no resultado só para que **o teste tenha onde
+       * esperar**. Teste que dorme meio segundo torcendo para o push já ter
+       * saído é teste instável, e teste instável ensina a ignorar vermelho.
+       */
+      avisoEnviado: Promise<unknown>;
+    }
   | { ok: false; status: number; error: string; code: string };
 
 /**
@@ -170,7 +189,18 @@ export async function guardarMidia(pedido: PedidoDeMidia): Promise<ResultadoDeMi
       })
       .returning({ id: mediaAssetsTable.id });
 
-    return { ok: true, id: asset.id, tipo, sizeBytes: pedido.arquivo.size };
+    // QUI-10 — a família fica sabendo que há algo novo.
+    //
+    // Aqui, e não em cada rota, pelo mesmo motivo que a validação está aqui:
+    // os dois portões de entrada precisam se comportar igual, e um deles é o
+    // aparelho do próprio paciente. Um recado gravado por ela é exatamente
+    // o caso em que ninguém pode ficar sem saber.
+    //
+    // `avisarMomentoNovo` nunca lança — se o push falhar, a mídia continua
+    // publicada, que é o que importa.
+    const avisoEnviado = avisarMomentoNovo(asset.id);
+
+    return { ok: true, id: asset.id, tipo, sizeBytes: pedido.arquivo.size, avisoEnviado };
   } catch (err) {
     await armazenamento.apagar(chave).catch(() => undefined);
     safeLog.error({ action: "media_catalog_failed", err }, "Falha ao catalogar midia; objeto removido");

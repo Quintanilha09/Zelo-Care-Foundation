@@ -37,41 +37,60 @@ Medido nesta data, nesta máquina:
 
 | Fato | Valor | Como foi medido |
 |---|---|---|
-| Tabelas no schema | **32** | `pgTable(...)` em `lib/db/src/schema/` — medido em 25/08/2026. `media_assets` (QUI-5) ainda NÃO está em `producao-schema-completo.sql` |
+| Tabelas no schema | **33** | `pgTable(...)` em `lib/db/src/schema/` — medido em 27/08/2026. `media_assets` (QUI-5) e `media_reactions` (QUI-10) ainda NÃO estão em `producao-schema-completo.sql` |
 | Arquivos de rota | **34** | `artifacts/api-server/src/routes/*.ts`, incluindo o `index.ts` |
-| Módulos em `lib/` | **32** | `artifacts/api-server/src/lib/*.ts` |
+| Módulos em `lib/` | **35** | `artifacts/api-server/src/lib/*.ts` |
 | Middlewares | **3** | `require-auth.ts`, `require-patient-access.ts` e `receber-arquivo.ts` |
-| Arquivos de teste | **41** | `src/tests/*.test.ts` |
-| Consistência da suíte | **limpa** | 41 referenciados no `test:all` = 41 no disco; nenhum órfão, nenhum fora |
+| Arquivos de teste | **43** | `src/tests/*.test.ts` |
+| Consistência da suíte | **limpa** | 43 referenciados no `test:all` = 43 no disco; nenhum órfão, nenhum fora |
+| Testes de ponta a ponta | **3 arquivos** | `e2e/*.spec.ts` — Playwright, Desktop Chrome e Pixel 7 |
 | Typecheck do monorepo | **exit 0** | `pnpm run typecheck` — 4 pacotes, todos limpos |
 | Modelo de visão | `claude-haiku-4-5-20251001` | `lib/vision.ts` |
 | Fila | **pg-boss** sobre o mesmo Postgres | `lib/queue.ts` |
 
-### Contagem de testes passando — medida em 25/08/2026
+### Contagem de testes passando — medida em 27/08/2026
 
-**513 testes, 511 passando, 2 pulados, zero falhas.** Executado localmente nesta máquina, contra o
-Postgres em Docker descrito em [runbooks/banco-de-teste-local.md](planning/runbooks/banco-de-teste-local.md),
-com `ADMIN_PANEL_SECRET` diferente do `SESSION_SECRET`. Duração: ~544 s.
+**Servidor: 545 testes, 543 passando, 2 pulados, zero falhas.** Executado localmente nesta máquina,
+contra o Postgres em Docker descrito em
+[runbooks/banco-de-teste-local.md](planning/runbooks/banco-de-teste-local.md), com
+`ADMIN_PANEL_SECRET` diferente do `SESSION_SECRET`. Duração: ~534 s.
 
-Antes disso a última execução verde conhecida era de 21/08/2026, no Replit: 395 de 397.
+**Tela: 42 testes de ponta a ponta**, Playwright, em Desktop Chrome e Pixel 7. Duração: ~2,7 min.
+
+Antes desta leva eram 513 no servidor (25/08/2026) e **zero na tela** — a suíte de interface nasceu
+na Issue #7, em 26/08/2026, e já pegou um defeito de celular que nenhuma pessoa tinha visto.
 
 **A suíte voltou a rodar localmente.** O bloqueio de 23/08 era o container `zelo-test-pg`
 parado e o `.env.local` apontando para uma URL sem senha. Resolvido subindo o Postgres com
 `POSTGRES_HOST_AUTH_METHOD=trust`, que é o que a URL do `.env.local` espera — o runbook tem
 os comandos.
 
-> `NÃO VERIFICADO`: `pnpm run build` na raiz continua falhando no `mockup-sandbox` por falta do
-> binário nativo do rollup, consequência conhecida do `pnpm-workspace.yaml` excluir binários
-> não-Linux. Não é regressão e não afeta a API: `pnpm --filter @workspace/api-server run build`
-> termina limpo.
+### O build da raiz passou a funcionar — 27/08/2026
+
+`pnpm run build` termina limpo nos três pacotes, `mockup-sandbox` incluído. A falha antiga era o
+binário nativo do rollup, que o `pnpm-workspace.yaml` excluía por não ser Linux; as quatro
+exclusões saíram junto com a Issue #7, quando o Playwright passou a exigir o app rodando nesta
+máquina.
+
+**Duas variáveis são obrigatórias**, e a ausência delas é erro de configuração, não defeito:
+
+```bash
+PORT=5000 BASE_PATH=/ pnpm run build
+```
+
+Sem elas o vite do `@workspace/zelo` para com *"PORT environment variable is required"*. Foi
+exatamente o que manteve a etapa de Build do CI vermelha até 26/08/2026.
 
 ---
 
 ## Onde está o desenvolvimento
 
-**41 histórias entregues.** O backlog codificável está **esgotado** — as histórias restantes
-dependem de decisão de fornecedor, de trabalho comercial/jurídico do fundador, ou de um gatilho
-que exige usuários reais em produção.
+**47 histórias entregues.** O projeto **ZELO — Momentos fechou em 27/08/2026**: QUI-5 a QUI-8,
+QUI-10 e QUI-11 entregues, QUI-9 (vídeo) cancelada por decisão do fundador.
+
+O backlog codificável voltou a ficar **esgotado**. As duas histórias restantes no Linear estão
+bloqueadas por coisas que não são código: a QUI-12 (assinatura) espera a escolha do PSP e o KYC do
+fundador; a QUI-13 (app nativo) espera um gatilho medido que exige usuários reais em produção.
 
 O trabalho disponível hoje é manutenção, correção, segurança e qualidade.
 

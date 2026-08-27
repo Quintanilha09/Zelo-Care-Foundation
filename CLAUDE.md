@@ -118,9 +118,10 @@ arquivo, e monitor de janela de contexto.
 
 ```bash
 pnpm --filter @workspace/api-server run test:all   # suíte completa (precisa de Postgres)
+pnpm run test:e2e                                  # Playwright: sobe API e front e usa navegador de verdade
 pnpm --filter @workspace/api-server run lint:clock # proíbe new Date() em domínio
 pnpm run typecheck                                 # todos os pacotes
-pnpm run build                                     # typecheck + build
+PORT=5000 BASE_PATH=/ pnpm run build               # typecheck + build (as duas variáveis são obrigatórias)
 pnpm --filter @workspace/db run push               # schema (dev)
 pnpm --filter @workspace/db run push:raw           # trigger de imutabilidade do audit_log
 pnpm --filter @workspace/db run plano -- --listar  # planos por família

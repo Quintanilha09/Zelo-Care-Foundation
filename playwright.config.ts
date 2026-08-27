@@ -50,6 +50,14 @@ const ambiente = {
   DATABASE_URL: process.env.DATABASE_URL ?? "",
   APP_URL: `http://localhost:${PORTA_FRONT}`,
   LOG_LEVEL: "silent",
+  // A suíte faz dezenas de logins legítimos da mesma máquina em poucos
+  // minutos, e passou a esbarrar no limitador quando cresceu. O sintoma era
+  // enganoso: teste de tela falhando por "elemento não encontrado", quando o
+  // login tinha respondido 429.
+  //
+  // Só tem efeito onde `allowsDevelopmentShortcuts()` já vale — em produção
+  // esta variável é ignorada por construção (ver lib/rate-limit.ts).
+  RATE_LIMIT_MULTIPLIER: "200",
 };
 
 export default defineConfig({

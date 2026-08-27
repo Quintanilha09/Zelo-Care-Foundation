@@ -37,10 +37,11 @@ o código em revisão. Corrigido na Issue #8.
 
 ## Posição
 
-**46 histórias entregues:** 38 das 42 do backlog original, mais ZELO-56, ZELO-57 e ZELO-58,
+**47 histórias entregues:** 38 das 42 do backlog original, mais ZELO-56, ZELO-57 e ZELO-58,
 criadas depois a partir de refinamento, mais **QUI-5** (fundação de mídia), **QUI-6**
 (consentimento de imagem), **QUI-7** (Momentos do paciente), **QUI-8** (recado em áudio) e
-**QUI-11** (retenção de 90 dias), as cinco em 25/08/2026.
+**QUI-11** (retenção de 90 dias), as cinco em 25/08/2026, e **QUI-10** (aviso de momento novo e
+o coração) em 27/08/2026 — que **fecha o projeto ZELO — Momentos**.
 
 | Fase | Situação |
 |---|---|
@@ -67,29 +68,36 @@ Ficou esgotado entre 19 e 24/08/2026, e isso foi verdade enquanto o backlog era 
 ponta: o cuidador publica uma foto com legenda e a família vê no mural, com autor e horário no
 fuso do paciente.
 
-**A QUI-9 (vídeo) foi ADIADA por decisão do fundador em 25/08/2026**, e o motivo está registrado:
-é o único recurso cujo custo dispara com mudança de comportamento do usuário — um vídeo pesa 16×
-uma foto. A fundação já aceita vídeo (teto de 8 MB, MIME na allowlist); falta só a tela e a
-compressão no aparelho. Ver [decisoes/CUSTOS-APIS.md](decisoes/CUSTOS-APIS.md).
+**A QUI-9 (vídeo) foi CANCELADA no Linear em 27/08/2026**, depois de ter sido adiada em 25/08.
+O motivo da primeira decisão: é o único recurso cujo custo dispara com mudança de comportamento do
+usuário — um vídeo pesa 16× uma foto, e o fundador declarou não haver orçamento. O motivo do
+cancelamento é outro: com o vídeo deliberadamente deixado para depois da venda, o projeto ficaria
+em 86% para sempre, e **quadro que mostra trabalho pendente que ninguém pretende fazer vira ruído**.
+A fundação já aceita vídeo (teto de 8 MB, MIME na allowlist); falta só a tela e a compressão no
+aparelho, se o comprador quiser. Ver [decisoes/CUSTOS-APIS.md](decisoes/CUSTOS-APIS.md).
 
-A próxima do projeto Momentos é a **QUI-10 — aviso de momento novo, e um coração**, que fecha o
-ciclo: hoje a família só vê se lembrar de abrir o app.
+**Com a QUI-10 entregue em 27/08/2026, o projeto ZELO — Momentos fecha:** tudo que foi decidido
+foi feito.
 
-### Trabalho aberto no GitHub, em 26/08/2026
+### Trabalho no GitHub — atualizado em 27/08/2026
+
+Todas as Issues da leva de padrões estão fechadas:
 
 | Issue | O quê | Estado |
 |---|---|---|
-| [#5](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/5) | Movimento na interface | **PR #12 aberto, esperando conferência visual** |
-| [#6](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/6) | Sentry desligado, com filtro de dado sensível | não começada |
-| [#7](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/7) | Playwright no CI | não começada |
-| [#10](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/10) | Limpar o código morto que o Knip achou | não começada |
+| [#5](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/5) | Movimento na interface | ✅ PR #12 e PR #23 |
+| [#7](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/7) | Playwright no CI | ✅ PR #18 |
+| [#10](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/10) | Código morto (Knip) | ✅ 11 dependências mortas → 0 |
+| [#13](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/13) | Feed de atividade órfão | ✅ PR #22 |
+| [#15](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/15) | Painel indisponível ≠ senha errada | ✅ PR #16 |
+| [#17](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/17) | Botões sobrepostos no celular | ✅ PR #19 — achado pelo Playwright, não por gente |
+| [#24](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/24) | Aviso de momento novo e coração (QUI-10) | em revisão |
 
-**O PR #12 é o único que não pode ser mergeado sem alguém olhar.** Os outros
-desta leva foram verificados por teste; aquele é sobre aparência, e o CI verde
-não prova que a tela ficou boa.
+Continua aberta e **não começada**:
 
-**Mas antes dela vem o bloco de padrões pedido pelo fundador em 25/08/2026** — fluxo de Issue e PR
-(já implantado), movimento de interface, observabilidade, lint e testes de ponta a ponta.
+| Issue | O quê | Por que está parada |
+|---|---|---|
+| [#6](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/6) | Sentry com filtro de dado sensível | Decidido em 25/08: Sentry no plano gratuito, **desligado até existir produção**. Ligar agora seria configurar observabilidade para um ambiente que ninguém usa |
 
 `NÃO VERIFICADO`: a compressão no aparelho (5 MB → menos de 500 KB) é critério de aceite da QUI-7
 e **só pode ser medida num navegador de verdade**. O componente escreve os dois números no console

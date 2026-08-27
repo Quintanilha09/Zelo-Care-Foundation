@@ -159,3 +159,50 @@ export async function naoRolaNaHorizontal(page: Page): Promise<void> {
   );
   expect(estouro, "a página não pode rolar na horizontal").toBeLessThanOrEqual(1);
 }
+
+/**
+ * PNG de 1×1 pixel, transparente.
+ *
+ * Serve porque o servidor valida o TIPO do arquivo, não o conteúdo — e um
+ * arquivo de verdade deixaria o teste dependendo de um binário guardado no
+ * repositório.
+ */
+export const PNG_1X1 = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64"
+);
+
+/**
+ * Consentimento de imagem + uma foto no mural, tudo pela API.
+ *
+ * Devolve o id do momento publicado — a rota do coração precisa dele.
+ */
+export async function publicarUmMomento(
+  request: APIRequestContext,
+  conta: ContaDeTeste,
+  alvo: number
+): Promise<number> {
+  const token = await tokenDaConta(request, conta);
+  const cabecalho = { Authorization: `Bearer ${token}` };
+
+  // Sem o consentimento de imagem a seção Momentos nem aparece — é o portão
+  // da QUI-6, e ele é separado do consentimento de dado de saúde de propósito.
+  const consentimento = await request.post(`/api/patients/${alvo}/image-consent`, {
+    headers: cabecalho,
+    data: { consentGiven: true, version: "v1.0", givenBy: "legal_representative" },
+  });
+  expect(
+    consentimento.ok(),
+    `consentimento de imagem falhou: ${await consentimento.text()}`
+  ).toBeTruthy();
+
+  const envio = await request.post("/api/media", {
+    headers: cabecalho,
+    multipart: {
+      patientId: String(alvo),
+      arquivo: { name: "momento.png", mimeType: "image/png", buffer: PNG_1X1 },
+    },
+  });
+  expect(envio.status(), `publicar momento falhou: ${await envio.text()}`).toBe(201);
+  return ((await envio.json()) as { id: number }).id;
+}

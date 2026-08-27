@@ -56,15 +56,23 @@ Se o portão abrir um dia, as histórias voltam do documento em uma tarde.
 **Linear**, time `Quintanilha` (prefixo `QUI`).
 Projeto **ZELO — Momentos**: <https://linear.app/quintanilha/project/zelo-momentos-12115e18244a>
 
-| Card | História | Prioridade |
-|---|---|---|
-| QUI-5 | Fundação de mídia: guardar arquivo fora do banco | Alta |
-| QUI-6 | Consentimento de imagem, separado e revogável | **Urgente** |
-| QUI-7 | Momentos do paciente: o cuidador publica, a família vê | Alta |
-| QUI-8 | Recado do paciente, em áudio | Alta |
-| QUI-9 | Vídeo curto, até 30 segundos | Média |
-| QUI-10 | Aviso de momento novo, e um coração | Média |
-| QUI-11 | Retenção de 90 dias, e o que a família quer guardar | Alta |
+**Projeto fechado em 27/08/2026** — tudo que foi decidido foi feito.
+
+| Card | História | Prioridade | Situação |
+|---|---|---|---|
+| QUI-5 | Fundação de mídia: guardar arquivo fora do banco | Alta | ✅ 25/08 |
+| QUI-6 | Consentimento de imagem, separado e revogável | **Urgente** | ✅ 25/08 |
+| QUI-7 | Momentos do paciente: o cuidador publica, a família vê | Alta | ✅ 25/08 |
+| QUI-8 | Recado do paciente, em áudio | Alta | ✅ 25/08 |
+| QUI-9 | Vídeo curto, até 30 segundos | Média | ❌ **cancelada** 27/08 |
+| QUI-10 | Aviso de momento novo, e um coração | Média | ✅ 27/08 |
+| QUI-11 | Retenção de 90 dias, e o que a família quer guardar | Alta | ✅ 25/08 |
+
+**Por que a QUI-9 foi cancelada e não deixada aberta.** O vídeo é o único recurso cujo custo dispara
+com mudança de comportamento do usuário — um vídeo pesa 16× uma foto — e o fundador decidiu em
+25/08/2026 só implementá-lo se o comprador pedir. Deixar o card aberto manteria o projeto em 86%
+para sempre, e **quadro que mostra trabalho pendente que ninguém pretende fazer vira ruído**. A
+fundação já aceita vídeo (teto de 8 MB, MIME na allowlist); falta a tela e a compressão no aparelho.
 
 Projeto **ZELO — Plataforma e Receita**: <https://linear.app/quintanilha/project/zelo-plataforma-e-receita-63df35b33b62>
 Os dois itens que atravessaram do Plane. Não é sobre o cuidado — é sobre como o produto **cobra** e

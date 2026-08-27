@@ -18,6 +18,12 @@ export const notificationCategoryEnum = pgEnum("notification_category", [
   "appointment", // appointment_reminder
   "stock", // low_stock
   "treatment", // treatment_ending, continuous_review
+  // QUI-10: aviso de momento novo no mural. É a única categoria que não é
+  // sobre segurança do paciente — dose, consulta, estoque e tratamento
+  // existem para nada passar batido. Esta existe para a família não perder
+  // uma foto, e é justamente por isso que ela PRECISA poder ser desligada:
+  // quem não quer o aviso não está abrindo mão de nada clínico.
+  "moment", // moment_new
 ]);
 
 // Padrão é sempre ativado — só existe linha aqui quando o cuidador

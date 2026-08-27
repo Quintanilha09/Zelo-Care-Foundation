@@ -25,6 +25,7 @@
 import { useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { authFetch, apiUrl } from "@/lib/auth-client";
+import { useAuth } from "@/context/AuthContext";
 import { comprimirFoto } from "@/lib/comprimir-imagem";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -34,7 +35,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Camera, Trash2, ImagePlus, Bookmark } from "lucide-react";
+import { Camera, Trash2, ImagePlus, Bookmark, Heart } from "lucide-react";
 import { AreaCarregando, EsqueletoDeMomento, BarraDeProgresso } from "@/components/esqueleto";
 
 interface Momento {
@@ -49,6 +50,15 @@ interface Momento {
   guardado: boolean;
   /** Nulo quando guardado. */
   expiraEm: string | null;
+  /**
+   * QUI-10 — os nomes de quem reagiu. **Nunca um número.**
+   *
+   * O servidor não manda total, e a tela não conta: escreve os nomes. É a
+   * diferença entre "a Ana e o Bruno viram" e um placar de curtidas — e é
+   * uma decisão de produto, não de layout (CON-012).
+   */
+  quemReagiu: string[];
+  euReagi: boolean;
 }
 
 interface RespostaDoMural {
@@ -91,9 +101,30 @@ function quando(iso: string, timezone: string): string {
  */
 const MS_DE_SAIDA = 120;
 
+/**
+ * "Ana mandou um coração", "Ana e Bruno", "Ana, Bruno e mais 2" — QUI-10.
+ *
+ * ── O "e mais 2" não é um contador ────────────────────────────────────────
+ *
+ * Parece contradição com a regra de nunca contar, e não é. A regra existe
+ * para impedir **placar entre momentos** — o número que se compara com o da
+ * foto de ontem. Aqui não há número nenhum abaixo de quatro pessoas, e acima
+ * disso a alternativa seria uma linha de nomes que estoura a tela do celular.
+ *
+ * O teto é do TEXTO, não do dado: os nomes todos vêm do servidor e a frase é
+ * que escolhe caber.
+ */
+function fraseDeQuemReagiu(nomes: string[]): string {
+  if (nomes.length === 1) return `${nomes[0]} mandou um coração`;
+  if (nomes.length === 2) return `${nomes[0]} e ${nomes[1]} mandaram um coração`;
+  if (nomes.length === 3) return `${nomes[0]}, ${nomes[1]} e ${nomes[2]} mandaram um coração`;
+  return `${nomes[0]}, ${nomes[1]} e mais ${nomes.length - 2} mandaram um coração`;
+}
+
 export function MomentosCard({ patientId, patientName }: { patientId: number; patientName: string }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { user } = useAuth();
   const inputArquivo = useRef<HTMLInputElement>(null);
 
   const [enviando, setEnviando] = useState(false);
@@ -169,6 +200,51 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
     } finally {
       setEnviando(false);
     }
+  };
+
+  /**
+   * O coração — QUI-10.
+   *
+   * ── Por que otimista ──────────────────────────────────────────────────
+   *
+   * Um coração que só preenche depois da resposta do servidor parece
+   * quebrado no celular: a pessoa toca, nada acontece, ela toca de novo. O
+   * estado vira na hora e o servidor confirma logo atrás.
+   *
+   * O nome próprio entra pelo `AuthContext` só para o instante otimista; a
+   * lista definitiva vem do servidor. Se dois cuidadores da família tiverem
+   * o mesmo nome, o palpite de qual remover pode errar por alguns
+   * milissegundos — e some na reconciliação da linha seguinte.
+   */
+  const alternarCoracao = async (momento: Momento) => {
+    const meuNome = user?.caregiver?.name ?? "Você";
+
+    const aplicar = (mudar: (m: Momento) => Momento) =>
+      queryClient.setQueryData<RespostaDoMural | null>(["momentos", patientId], (anterior) =>
+        anterior
+          ? { ...anterior, momentos: anterior.momentos.map((m) => (m.id === momento.id ? mudar(m) : m)) }
+          : anterior
+      );
+
+    aplicar((m) => ({
+      ...m,
+      euReagi: !m.euReagi,
+      quemReagiu: m.euReagi
+        ? m.quemReagiu.filter((n) => n !== meuNome)
+        : [...m.quemReagiu, meuNome],
+    }));
+
+    const res = await authFetch(`/api/media/${momento.id}/coracao`, { method: "POST" });
+    if (!res.ok) {
+      toast({ title: "Não conseguimos registrar isso agora.", variant: "destructive" });
+      await recarregar();
+      return;
+    }
+
+    // A resposta traz a lista de verdade. Sobrescrever em vez de confiar no
+    // palpite fecha a janela em que a tela e o banco discordam.
+    const corpo = (await res.json()) as { quemReagiu: string[]; euReagi: boolean };
+    aplicar((m) => ({ ...m, quemReagiu: corpo.quemReagiu, euReagi: corpo.euReagi }));
   };
 
   const alternarGuardado = async (momento: Momento) => {
@@ -403,6 +479,21 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
                   {momento.guardado && " · guardado"}
                 </p>
                 <div className="flex items-center gap-1 shrink-0">
+                  {/* QUI-10 — o coração.
+                      Cheio quando você reagiu, contorno quando não. Sem
+                      número ao lado: quem reagiu aparece por extenso logo
+                      abaixo, e essa é a diferença entre carinho e placar. */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className={momento.euReagi ? "text-zelo-green-fg" : "text-muted-foreground"}
+                    onClick={() => void alternarCoracao(momento)}
+                    aria-pressed={momento.euReagi}
+                    aria-label={momento.euReagi ? "Tirar seu coração" : "Mandar um coração"}
+                    title={momento.euReagi ? "Você mandou um coração" : "Mandar um coração"}
+                  >
+                    <Heart className="w-4 h-4" fill={momento.euReagi ? "currentColor" : "none"} />
+                  </Button>
                   {/* Guardar é de QUALQUER cuidador da família: decidir que uma
                       foto é importante não precisa de hierarquia. */}
                   <Button
@@ -428,6 +519,16 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
                   )}
                 </div>
               </div>
+              {/* QUI-10 — quem reagiu, por extenso.
+                  `quemReagiu.length` existe, mas ninguém o escreve na tela:
+                  o caminho fácil aqui é listar os nomes, e é assim que o
+                  mural não vira contagem de curtidas (CON-012). */}
+              {momento.quemReagiu.length > 0 && (
+                <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                  <Heart className="w-3 h-3 text-zelo-green-fg shrink-0" fill="currentColor" aria-hidden />
+                  {fraseDeQuemReagiu(momento.quemReagiu)}
+                </p>
+              )}
             </li>
           ))}
         </ul>

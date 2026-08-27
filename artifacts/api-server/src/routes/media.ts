@@ -7,6 +7,8 @@
  *   POST   /api/media                    envia um arquivo (autenticado)
  *   GET    /api/media/:id/link           gera um link curto de leitura
  *   GET    /api/media/content/:token     devolve os bytes (o token É a autenticação)
+ *   PATCH  /api/media/:id/guardar        marca para não expirar (QUI-11)
+ *   POST   /api/media/:id/coracao        alterna a reação (QUI-10)
  *   DELETE /api/media/:id                apaga o objeto E a linha
  *
  * O que NÃO está aqui, de propósito:
@@ -18,7 +20,7 @@
 import { Router } from "express";
 import { eq, and } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { mediaAssetsTable } from "@workspace/db";
+import { mediaAssetsTable, mediaReactionsTable } from "@workspace/db";
 import { requireAuth } from "../middleware/require-auth";
 import { receberArquivo } from "../middleware/receber-arquivo.ts";
 import { getAuth } from "../lib/auth-types.ts";
@@ -28,6 +30,7 @@ import { safeLog } from "../lib/safe-logger";
 import { audit } from "../lib/audit";
 import { obterArmazenamento } from "../lib/media-storage.ts";
 import { guardarMidia } from "../lib/media-upload.ts";
+import { lerCoracoes } from "../lib/coracoes.ts";
 import { gerarTokenDeMidia, lerTokenDeMidia } from "../lib/media-links.ts";
 import { Clock } from "../lib/clock.ts";
 
@@ -222,6 +225,72 @@ router.patch<{ id: string }>("/media/:id/guardar", requireAuth, async (req, res)
   });
 
   res.json({ id: asset.id, guardado: guardar });
+});
+
+// ── O coração ─────────────────────────────────────────────────────────────
+//
+// QUI-10. Uma reação, e alterna: tocar de novo desfaz.
+//
+// **A resposta não tem número em lugar nenhum.** Devolve quem reagiu, por
+// nome, e se você é um deles. Contar transformaria carinho em placar, e é
+// exatamente a linha que a CON-012 traça. Há teste que falha se qualquer
+// campo de total aparecer neste JSON.
+
+router.post<{ id: string }>("/media/:id/coracao", requireAuth, async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    res.status(404).json({ error: "Recurso não encontrado" });
+    return;
+  }
+
+  const auth = getAuth(req);
+
+  // Vínculo de família na mesma consulta: momento de outra família some —
+  // 404, nunca 403 (invariante 2).
+  const [asset] = await db
+    .select({ id: mediaAssetsTable.id })
+    .from(mediaAssetsTable)
+    .where(and(eq(mediaAssetsTable.id, id), eq(mediaAssetsTable.familyId, auth.familyId)))
+    .limit(1);
+
+  if (!asset) {
+    res.status(404).json({ error: "Recurso não encontrado" });
+    return;
+  }
+
+  // Reagir não exige papel nenhum, nem mesmo capacidade de registrar dose.
+  // O observador — o parente distante que só acompanha — é justamente quem
+  // mais precisa de um jeito de dizer "eu vi". Tirar isso dele esvaziaria o
+  // recurso para quem ele mais serve.
+  const existentes = await db
+    .select({ id: mediaReactionsTable.id })
+    .from(mediaReactionsTable)
+    .where(
+      and(
+        eq(mediaReactionsTable.mediaAssetId, asset.id),
+        eq(mediaReactionsTable.caregiverId, auth.caregiverId)
+      )
+    )
+    .limit(1);
+
+  const jaTinha = existentes.length > 0;
+  if (jaTinha) {
+    await db.delete(mediaReactionsTable).where(eq(mediaReactionsTable.id, existentes[0].id));
+  } else {
+    // `onConflictDoNothing` porque dois toques rápidos no mesmo botão chegam
+    // como duas requisições, e a segunda bateria na UNIQUE. Ignorar é o
+    // comportamento certo: o estado final é o mesmo.
+    await db
+      .insert(mediaReactionsTable)
+      .values({ mediaAssetId: asset.id, caregiverId: auth.caregiverId, createdAt: Clock.now() })
+      .onConflictDoNothing();
+  }
+
+  // Sem trilha de auditoria aqui, e é decisão consciente: o audit_log existe
+  // para o que tem consequência sobre o cuidado (dose, tratamento, acesso).
+  // Registrar quem curtiu qual foto seria vigilância de afeto, não trilha.
+
+  res.json({ id: asset.id, ...(await lerCoracoes(asset.id, auth.caregiverId)) });
 });
 
 // ── Apagar ────────────────────────────────────────────────────────────────

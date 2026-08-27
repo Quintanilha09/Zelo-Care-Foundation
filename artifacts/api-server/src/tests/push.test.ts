@@ -19,7 +19,7 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import { eq } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { usersTable, caregiversTable, familiesTable, patientsTable, pushSubscriptionsTable, notificationPreferencesTable } from "@workspace/db";
+import { usersTable, caregiversTable, familiesTable, patientsTable, pushSubscriptionsTable, notificationPreferencesTable, notificationCategoryEnum } from "@workspace/db";
 import webpush from "web-push";
 import { generateAccessToken } from "../lib/tokens.ts";
 import { hashPassword } from "../lib/password.ts";
@@ -257,8 +257,19 @@ describe("Preferências de notificação por paciente — ZELO-26", () => {
     const res = await api(token, "GET", `/patients/${patientId}/notification-preferences`);
     assert.equal(res.status, 200);
     const { preferences } = res.body as { preferences: Array<{ category: string; enabled: boolean }> };
-    assert.equal(preferences.length, 4);
-    assert.ok(preferences.every((p) => p.enabled === true));
+
+    // Comparado com o ENUM, não com o número 4.
+    //
+    // A versão anterior fixava a quantidade, e a QUI-10 a quebrou ao criar a
+    // categoria "moment" — falha correta, teste errado: o que importa aqui é
+    // que TODA categoria existente venha ativada, não que existam quatro.
+    // Assim, a próxima categoria não precisa passar por aqui.
+    assert.deepEqual(
+      preferences.map((p) => p.category).sort(),
+      [...notificationCategoryEnum.enumValues].sort(),
+      "a rota precisa devolver todas as categorias do enum"
+    );
+    assert.ok(preferences.every((p) => p.enabled === true), "o padrão é tudo ativado");
   });
 
   it("desligar uma categoria persiste e não afeta as outras", async () => {

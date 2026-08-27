@@ -118,10 +118,15 @@ async function handlePush(event) {
     // Botões só fazem sentido apontando pra UMA dose — ver o docblock do
     // módulo em dose-reminders.ts. Notificação agrupada abre o app ao
     // tocar no corpo, sem ação de um toque só.
-    actions: grouped ? [] : [
+    //
+    // A condição é `=== 1`, e não `!grouped`, por causa da QUI-10: o aviso
+    // de momento novo chega SEM dose nenhuma, e com a checagem antiga ele
+    // ganhava "✓ Tomou" e "Adiar 15 min". Oferecer registrar dose ao lado
+    // de uma foto da mãe é o tipo de erro que faz alguém tocar por reflexo.
+    actions: doseIds.length === 1 ? [
       { action: "taken", title: "✓ Tomou" },
       { action: "snooze", title: "Adiar 15 min" },
-    ],
+    ] : [],
   });
 
   // ZELO-29: a ÚNICA prova real de entrega que a web oferece — este beacon
