@@ -9,7 +9,7 @@
 > Se este arquivo voltar a passar de ~150 linhas, mova o excedente para `historico/` — foi
 > justamente por virar diário de 609 linhas que ele parou de ser lido.
 >
-> Última revisão: 26/08/2026.
+> Última revisão: 27/08/2026.
 
 ---
 
@@ -28,6 +28,7 @@ Ferramentas que passaram a existir:
 | **Biome** | revisor de código | **portão de CI** — falha o build |
 | **Knip** | detector de código morto | **relatório** — não falha o build |
 | `design-motion-principles` | skill de movimento | instalada em `.agents/skills/`, fora do git |
+| **Playwright** | teste de ponta a ponta na interface | **portão de CI** — 42 testes, Desktop Chrome e Pixel 7 |
 
 **O passo de Build do CI nunca tinha passado** antes de 26/08/2026 — faltavam
 `PORT` e `BASE_PATH` no ambiente do workflow, e a falha não tinha relação com
@@ -57,16 +58,17 @@ o coração) em 27/08/2026 — que **fecha o projeto ZELO — Momentos**.
 
 ---
 
-## O backlog codificável NÃO está mais esgotado — 25/08/2026
+## O backlog codificável voltou a se esgotar — 27/08/2026
 
-Ficou esgotado entre 19 e 24/08/2026, e isso foi verdade enquanto o backlog era só o do Plane.
-**Deixou de ser** quando o refinamento de Momentos
+Ficou esgotado entre 19 e 24/08/2026; **deixou de estar** quando o refinamento de Momentos
 ([refinamentos/momentos-fotos-e-videos.md](refinamentos/momentos-fotos-e-videos.md)) produziu
-7 histórias novas, hoje no Linear como QUI-5 a QUI-11.
+7 histórias novas, hoje no Linear como QUI-5 a QUI-11. Em 27/08/2026 **esgotou de novo**: as seis
+que seriam feitas foram feitas, e a sétima foi cancelada.
 
-**QUI-5, QUI-6 e QUI-7 estão entregues** — o recurso mínimo de Momentos já funciona ponta a
-ponta: o cuidador publica uma foto com legenda e a família vê no mural, com autor e horário no
-fuso do paciente.
+**O recurso de Momentos está completo, ponta a ponta:** o cuidador publica foto com legenda, o
+paciente grava recado do aparelho dele, a família vê no mural com autor e horário no fuso do
+paciente, recebe aviso quando há coisa nova, responde com um coração, guarda o que quer manter, e
+o resto some sozinho em 90 dias.
 
 **A QUI-9 (vídeo) foi CANCELADA no Linear em 27/08/2026**, depois de ter sido adiada em 25/08.
 O motivo da primeira decisão: é o único recurso cujo custo dispara com mudança de comportamento do
@@ -91,13 +93,15 @@ Todas as Issues da leva de padrões estão fechadas:
 | [#13](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/13) | Feed de atividade órfão | ✅ PR #22 |
 | [#15](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/15) | Painel indisponível ≠ senha errada | ✅ PR #16 |
 | [#17](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/17) | Botões sobrepostos no celular | ✅ PR #19 — achado pelo Playwright, não por gente |
-| [#24](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/24) | Aviso de momento novo e coração (QUI-10) | em revisão |
+| [#24](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/24) | Aviso de momento novo e coração (QUI-10) | ✅ PR #25 |
 
-Continua aberta e **não começada**:
+**Não há Issue aberta no GitHub** — verificado em 27/08/2026 com `gh issue list`.
 
-| Issue | O quê | Por que está parada |
+Uma delas foi fechada **por decisão, não por entrega**, e vale saber qual:
+
+| Issue | O quê | Por que foi fechada sem código |
 |---|---|---|
-| [#6](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/6) | Sentry com filtro de dado sensível | Decidido em 25/08: Sentry no plano gratuito, **desligado até existir produção**. Ligar agora seria configurar observabilidade para um ambiente que ninguém usa |
+| [#6](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/6) | Sentry com filtro de dado sensível | Ele não monitoraria nada: zero usuários, e a estratégia é ficar em dev até vender. O texto de fechamento guarda o plano pronto — inclusive o cuidado principal, que é o Sentry capturar contexto automático e **arrastar nome de medicamento para o servidor dele**, violando o invariante 3 |
 
 `NÃO VERIFICADO`: a compressão no aparelho (5 MB → menos de 500 KB) é critério de aceite da QUI-7
 e **só pode ser medida num navegador de verdade**. O componente escreve os dois números no console
@@ -112,8 +116,10 @@ Das antigas, as duas que atravessaram para o Linear continuam paradas pelos mesm
 | ZELO-31, ZELO-41 (SMS e ligação) | Fora do v1 desde 24/08/2026 — viraram trabalho do comprador. Não migradas para o Linear |
 | ZELO-43 a ZELO-55 (trilha institucional) | Não migradas. Os dois portões são pré-condição de negócio, não código; as 11 de implementação estão atrás deles. Desenho preservado em [referencia/EXTENSAO-B2B.md](referencia/EXTENSAO-B2B.md) |
 
-**Consequência prática:** há história nova para escrever de novo, e a ordem é a do refinamento —
-QUI-6 antes de qualquer tela de foto. Não force uma história bloqueada só para ter o que fazer.
+**Consequência prática, em 27/08/2026:** não há história pronta para pegar. As duas do Linear estão
+bloqueadas por decisão do fundador ou por gatilho que exige produção, e não há Issue aberta no
+GitHub. **Não force uma história bloqueada só para ter o que fazer** — o trabalho legítimo agora é
+manutenção, correção, segurança e qualidade, ou escrever refinamento novo.
 
 **E esse trabalho agora tem nome.** A auditoria §10 do GSD
 ([auditorias/2026-08-23-gsd-secao-10.md](auditorias/2026-08-23-gsd-secao-10.md)) produziu um plano de
@@ -145,7 +151,9 @@ Checar tudo de uma vez no Replit:
 
 1. `git pull`
 2. `pnpm install` na raiz
-3. `pnpm --filter @workspace/db run push` — schema acumulado de ZELO-26 em diante
+3. `pnpm --filter @workspace/db run push` — schema acumulado de ZELO-26 em diante. Da leva de
+   Momentos: `media_assets` e `kept_at` (QUI-5/QUI-11), a tabela `media_reactions` e os valores
+   `moment` em `notification_category` e `moment_new` em `notification_type` (QUI-10)
 4. `pnpm --filter @workspace/db run push:raw` — trigger de imutabilidade (idempotente)
 5. **`ADMIN_PANEL_SECRET` — o fundador informou em 25/08/2026 que já está configurado** no Replit.
    `NÃO VERIFICADO`: falta abrir `/admin` e confirmar que a senha entra. Estava **confirmado ausente
