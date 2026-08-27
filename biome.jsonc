@@ -19,6 +19,12 @@
       "artifacts/zelo/src/**/*.tsx",
       "lib/**/*.ts",
       "scripts/**/*.ts",
+      // A suite de ponta a ponta nasceu depois desta configuracao e ficou de
+      // fora por esquecimento — o linter passava por `e2e/` e olhava ZERO
+      // arquivos. Teste sem revisor apodrece igual a qualquer codigo, e mais
+      // rapido, porque ninguem le teste que esta passando.
+      "e2e/**/*.ts",
+      "playwright.config.ts",
       "!**/dist/**",
       "!**/node_modules/**",
       // Componentes do shadcn/ui são código de terceiro copiado para dentro do
