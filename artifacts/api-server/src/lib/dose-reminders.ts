@@ -29,7 +29,7 @@
  *   2 (T+30) → transmite pra TODOS os cuidadores com capacidade de
  *              registrar — a não ser que o perfil de escalonamento do
  *              tratamento ou o silêncio noturno da família digam o
- *              contrário (ver escalationProfile/isQuietHoursNow).
+ *              contrário (ver escalationProfile/estaEmSilencioNoturno).
  *   3 (T+60) → marca a dose como "late" (perdida — continua registrável
  *              retroativamente, nunca fecha a porta) e avisa de novo o(s)
  *              principal(is).
@@ -44,8 +44,8 @@ import {
   treatmentsTable, medicationsTable,
   notificationPreferencesTable, notificationsTable,
 } from "@workspace/db";
-import { toLocalDateTime } from "@workspace/scheduling";
 import { Clock } from "./clock.ts";
+import { estaEmSilencioNoturno, type JanelaDeSilencio } from "./silencio-noturno.ts";
 import { sendPushToUser, type PushPayload } from "./push.ts";
 import { boss, QUEUE_DELIVERY_CHECK } from "./queue.ts";
 import { hasCapability, type CaregiverRole } from "./capabilities.ts";
@@ -76,21 +76,11 @@ interface PatientContext {
   timezone: string;
   showMedicationInPush: boolean;
 }
-interface FamilyQuietHours {
-  quietHoursEnabled: boolean;
-  quietHoursStart: string;
-  quietHoursEnd: string;
-}
+// A janela de silêncio mudou de arquivo (QUI-10) porque o aviso de momento
+// novo passou a precisar da mesma conta. Mesmo comportamento, um dono só —
+// ver lib/silencio-noturno.ts.
+type FamilyQuietHours = JanelaDeSilencio;
 type EscalationProfile = "silent" | "standard" | "critical";
-
-/** "HH:mm" (mesmo formato de scheduled_local_time) comparado como string — cruza meia-noite quando start > end (ex: 22:00-07:00). */
-function isQuietHoursNow(patientTimezone: string, family: FamilyQuietHours): boolean {
-  if (!family.quietHoursEnabled || family.quietHoursStart === family.quietHoursEnd) return false;
-  const nowLocal = toLocalDateTime(Clock.now(), patientTimezone).localTime;
-  const { quietHoursStart: start, quietHoursEnd: end } = family;
-  if (start < end) return nowLocal >= start && nowLocal < end;
-  return nowLocal >= start || nowLocal < end;
-}
 
 /** Texto sempre neutro — nunca atribui a falta de registro a uma pessoa (revisado item a item). */
 function buildBody(level: number, dose: DoseContext, patient: PatientContext, medicationName: string | null): string {
@@ -299,7 +289,7 @@ export async function sendDoseReminder(scheduledDoseId: number, level: number = 
     const shouldBroadcast =
       escalationProfile === "critical" ? true :
       escalationProfile === "silent" ? false :
-      !isQuietHoursNow(patient.timezone, family);
+      !estaEmSilencioNoturno(patient.timezone, family);
     if (!shouldBroadcast) return;
 
     const recipients = await resolveRecipients(patient.familyId, patient.id, "capable");

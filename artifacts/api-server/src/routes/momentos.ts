@@ -39,6 +39,7 @@ import { getAuth } from "../lib/auth-types.ts";
 import { gerarTokenDeMidia } from "../lib/media-links.ts";
 import { lerEstadoDoConsentimento } from "../lib/image-consent.ts";
 import { DIAS_DE_RETENCAO } from "../lib/media-cleanup.ts";
+import { lerCoracoesEmLote } from "../lib/coracoes.ts";
 
 const router = Router();
 
@@ -112,6 +113,12 @@ router.get<{ patientId: string }>("/patients/:patientId/momentos", requireAuth, 
     : [];
   const nomePorId = new Map(autores.map((a) => [a.id, a.name]));
 
+  // QUI-10 — quem reagiu, numa consulta só para o mural inteiro.
+  //
+  // Nomes, nunca total. Ver lib/coracoes.ts para o porquê, e o teste que
+  // falha se algum campo de contagem aparecer nesta resposta.
+  const coracoesPorMomento = await lerCoracoesEmLote(linhas.map((l) => l.id), auth.caregiverId);
+
   res.json({
     consentido: true,
     podeDecidirConsentimento: auth.role === "primary_caregiver",
@@ -141,6 +148,8 @@ router.get<{ patientId: string }>("/patients/:patientId/momentos", requireAuth, 
       // servidor confere de novo no DELETE: frontend não é fronteira de
       // segurança.
       podeApagar: auth.role === "primary_caregiver" || linha.autorId === auth.caregiverId,
+      // QUI-10: nomes de quem reagiu, e se eu sou um deles. Nunca quantos.
+      ...(coracoesPorMomento.get(linha.id) ?? { quemReagiu: [], euReagi: false }),
     })),
   });
 });

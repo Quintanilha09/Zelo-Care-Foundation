@@ -8,7 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Bell } from "lucide-react";
 
-type Category = "dose" | "appointment" | "stock" | "treatment";
+type Category = "dose" | "appointment" | "stock" | "treatment" | "moment";
 interface Preference { category: Category; enabled: boolean }
 
 const LABELS: Record<Category, string> = {
@@ -16,9 +16,13 @@ const LABELS: Record<Category, string> = {
   appointment: "Lembretes de consulta",
   stock: "Estoque baixo",
   treatment: "Avisos de tratamento",
+  // QUI-10. Por último de propósito: as quatro de cima existem para nada
+  // passar batido no cuidado. Esta existe para a família não perder uma foto,
+  // e é a única que dá para desligar sem abrir mão de nada clínico.
+  moment: "Momentos novos",
 };
 
-const ORDER: Category[] = ["dose", "appointment", "stock", "treatment"];
+const ORDER: Category[] = ["dose", "appointment", "stock", "treatment", "moment"];
 
 async function fetchPreferences(patientId: number): Promise<Preference[]> {
   const res = await authFetch(`/api/patients/${patientId}/notification-preferences`);

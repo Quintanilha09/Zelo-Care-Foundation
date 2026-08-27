@@ -41,6 +41,11 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   // ZELO-20: lembrete periódico (6 meses) para tratamento contínuo — "vale
   // conferir a receita", nunca uma recomendação clínica.
   "continuous_review",
+  // QUI-10: alguém publicou um momento no mural. O `body` desta linha, como
+  // o de todas as outras, é o texto que FOI enviado — e por isso ele nunca
+  // pode conter a legenda da foto nem o conteúdo do recado. Ver
+  // lib/momento-aviso.ts.
+  "moment_new",
 ]);
 
 // Timestamps separados por intenção:

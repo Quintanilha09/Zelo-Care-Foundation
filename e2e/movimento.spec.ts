@@ -1,5 +1,5 @@
-import { test, expect, type Page, type APIRequestContext } from "@playwright/test";
-import { criarConta, entrar, criarPaciente, tokenDaConta, type ContaDeTeste } from "./apoio";
+import { test, expect, type Page } from "@playwright/test";
+import { criarConta, entrar, criarPaciente, publicarUmMomento, type ContaDeTeste } from "./apoio";
 
 /**
  * Esqueleto de carregamento em toda tela — Issue #5.
@@ -137,47 +137,6 @@ test.describe("Toda tela que carrega mostra esqueleto", () => {
     }
   });
 });
-
-/**
- * PNG de 1×1 pixel, transparente.
- *
- * Serve porque o servidor valida o TIPO, não o conteúdo — e um arquivo de
- * verdade deixaria o teste dependendo de um binário guardado no repositório.
- */
-const PNG_1X1 = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
-  "base64"
-);
-
-/** Consentimento de imagem + uma foto no mural, tudo pela API. */
-async function publicarUmMomento(
-  request: APIRequestContext,
-  conta: ContaDeTeste,
-  alvo: number
-): Promise<void> {
-  const token = await tokenDaConta(request, conta);
-  const cabecalho = { Authorization: `Bearer ${token}` };
-
-  // Sem o consentimento de imagem a seção Momentos nem aparece — é o portão
-  // da QUI-6, e ele é separado do consentimento de dado de saúde de propósito.
-  const consentimento = await request.post(`/api/patients/${alvo}/image-consent`, {
-    headers: cabecalho,
-    data: { consentGiven: true, version: "v1.0", givenBy: "legal_representative" },
-  });
-  expect(
-    consentimento.ok(),
-    `consentimento de imagem falhou: ${await consentimento.text()}`
-  ).toBeTruthy();
-
-  const envio = await request.post("/api/media", {
-    headers: cabecalho,
-    multipart: {
-      patientId: String(alvo),
-      arquivo: { name: "momento.png", mimeType: "image/png", buffer: PNG_1X1 },
-    },
-  });
-  expect(envio.status(), `publicar momento falhou: ${await envio.text()}`).toBe(201);
-}
 
 test.describe("Apagar um momento sai animado", () => {
   test("o item some encolhendo, e só depois a lista fecha o buraco", async ({ page, request }) => {
