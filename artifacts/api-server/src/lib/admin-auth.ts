@@ -55,6 +55,39 @@ function getAdminSecret(): string | null {
   return secret;
 }
 
+/**
+ * Por que o painel esta indisponivel, ou `null` quando esta tudo certo.
+ *
+ * Existe porque `verifyAdminPassword` devolvia `false` em TRES situacoes
+ * diferentes — senha errada, Secret ausente, e Secret colidindo com o
+ * SESSION_SECRET — e a rota respondia "Senha incorreta" para as tres.
+ *
+ * O caso da colisao e o mais cruel: o painel esta fazendo exatamente o que
+ * deve (se desabilitando por seguranca), e a unica pista disso ia para o log
+ * do servidor, que ninguem esta olhando enquanto tenta entrar.
+ *
+ * O texto NUNCA revela valor de Secret — so diz o que esta errado e o que
+ * fazer. Mesmo padrao de /auth/email/status e /config/maps: capacidade que
+ * pode faltar e declarada, nao suposta.
+ */
+export function motivoDoPainelIndisponivel(): string | null {
+  const secret = process.env.ADMIN_PANEL_SECRET;
+
+  if (!secret || secret.length === 0) {
+    return "O painel operacional nao esta configurado neste ambiente: falta o Secret ADMIN_PANEL_SECRET.";
+  }
+
+  if (secret === process.env.SESSION_SECRET) {
+    return (
+      "O painel esta desabilitado por seguranca: ADMIN_PANEL_SECRET e SESSION_SECRET estao com o MESMO valor, " +
+      "e isso fundiria o painel operacional com a sessao de cuidador num unico dominio de confianca. " +
+      "Gere um valor novo e diferente para o ADMIN_PANEL_SECRET e reinicie o servidor."
+    );
+  }
+
+  return null;
+}
+
 /** Comparação em tempo constante — a senha do painel não pode vazar por timing attack. */
 function safeEquals(a: string, b: string): boolean {
   const bufA = Buffer.from(a);

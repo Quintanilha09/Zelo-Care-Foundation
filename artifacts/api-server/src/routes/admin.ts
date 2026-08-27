@@ -14,13 +14,27 @@ import { Router } from "express";
 import { sql, eq, and, gte, isNull, desc } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { notificationsTable, scheduledDosesTable, pushSubscriptionsTable, operationalAlertsTable } from "@workspace/db";
-import { requireAdminAuth, verifyAdminPassword, generateAdminToken } from "../lib/admin-auth.ts";
+import { requireAdminAuth, verifyAdminPassword, generateAdminToken, motivoDoPainelIndisponivel } from "../lib/admin-auth.ts";
 import { Clock } from "../lib/clock.ts";
 import { adminLoginLimiter } from "../lib/rate-limit";
 
 const router = Router();
 
 router.post("/admin/login", adminLoginLimiter, (req, res): void => {
+  // Painel indisponivel != senha errada, e a tela precisa saber a diferenca.
+  //
+  // Antes as duas coisas devolviam "Senha incorreta", e um operador com a
+  // senha CERTA ficava preso numa mensagem falsa — sem jeito de descobrir que
+  // o painel tinha se desabilitado sozinho por colisao de segredos.
+  //
+  // Dizer "o painel esta indisponivel" nao ajuda atacante nenhum: ele descobre
+  // que NAO ha acesso, nao como obte-lo.
+  const indisponivel = motivoDoPainelIndisponivel();
+  if (indisponivel) {
+    res.status(503).json({ error: indisponivel, code: "ADMIN_PANEL_UNAVAILABLE" });
+    return;
+  }
+
   const password = typeof req.body?.password === "string" ? req.body.password : "";
   if (!verifyAdminPassword(password)) {
     res.status(401).json({ error: "Senha incorreta" });

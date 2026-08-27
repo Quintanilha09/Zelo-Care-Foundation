@@ -409,3 +409,45 @@ describe("Monitor operacional — detecção e resolução de alerta", () => {
     await clearAlerts("delivery_rate");
   });
 });
+
+describe("Painel indisponivel != senha errada — Issue #15", () => {
+  it("sem ADMIN_PANEL_SECRET, responde 503 com motivo, nao 401", async () => {
+    const original = process.env.ADMIN_PANEL_SECRET;
+    delete process.env.ADMIN_PANEL_SECRET;
+    try {
+      const r = await api("POST", "/admin/login", { password: "qualquer" }, null);
+      assert.equal(r.status, 503, "painel sem Secret nao pode dizer que a SENHA esta errada");
+      assert.equal((r.body as { code: string }).code, "ADMIN_PANEL_UNAVAILABLE");
+      assert.match((r.body as { error: string }).error, /ADMIN_PANEL_SECRET/);
+    } finally {
+      if (original === undefined) delete process.env.ADMIN_PANEL_SECRET;
+      else process.env.ADMIN_PANEL_SECRET = original;
+    }
+  });
+
+  it("com ADMIN_PANEL_SECRET IGUAL ao SESSION_SECRET, responde 503 explicando", async () => {
+    const original = process.env.ADMIN_PANEL_SECRET;
+    process.env.ADMIN_PANEL_SECRET = process.env.SESSION_SECRET;
+    try {
+      // Este e o caso que prendeu o fundador em 26/08/2026: a senha estava
+      // certa, o painel tinha se desabilitado sozinho por seguranca, e a tela
+      // dizia "Senha incorreta".
+      const r = await api("POST", "/admin/login", { password: process.env.SESSION_SECRET }, null);
+      assert.equal(r.status, 503);
+      assert.match((r.body as { error: string }).error, /MESMO valor/);
+      assert.ok(
+        !(r.body as { error: string }).error.includes(process.env.SESSION_SECRET ?? " "),
+        "a mensagem NUNCA pode conter o valor do Secret"
+      );
+    } finally {
+      if (original === undefined) delete process.env.ADMIN_PANEL_SECRET;
+      else process.env.ADMIN_PANEL_SECRET = original;
+    }
+  });
+
+  it("com o painel configurado, senha errada continua sendo 401", async () => {
+    const r = await api("POST", "/admin/login", { password: "senha-errada-de-proposito" }, null);
+    assert.equal(r.status, 401);
+    assert.equal((r.body as { error: string }).error, "Senha incorreta");
+  });
+});
