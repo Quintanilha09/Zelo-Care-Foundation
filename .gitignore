@@ -66,3 +66,10 @@ Thumbs.db
 # skills-lock.json: ele registra QUAL skill e em que versao, e isso e decisao
 # do projeto, nao configuracao de maquina.
 .agents/skills/
+
+# Saida do Playwright — rastro, video e captura de falha. Regerado a cada
+# execucao, e no CI vai como artefato do job.
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
