@@ -89,6 +89,15 @@ interface ScheduledDose {
   scheduledLocalTime: string;
   status: "pending" | "taken" | "skipped" | "late";
   dose: string | null;
+  // Issue #26 — a API sempre devolveu estes dois; era o TIPO que os omitia,
+  // e por isso não dava para passá-los ao cartão sem erro de compilação. O
+  // resultado na tela era "às  por", com as preposições sozinhas.
+  //
+  // `registeredByCaregiverName` já vem com o nome do PACIENTE quando o
+  // registro veio do modo idoso (ZELO-40) — o servidor troca o rótulo, e a
+  // tela só exibe.
+  registeredAt: string | null;
+  registeredByCaregiverName: string | null;
 }
 
 interface StockEntry {
@@ -100,6 +109,49 @@ interface StockEntry {
   prescriptionExpiresAt: string | null;
   effectiveDaysRemaining: number | null;
   isLow: boolean;
+}
+
+/**
+ * A hora em que a dose foi registrada, no fuso DO PACIENTE — Issue #26.
+ *
+ * O servidor manda o instante em ISO; quem formata é a tela. E precisa ser o
+ * fuso do paciente, não o de quem está olhando: um filho em Portugal vendo
+ * "12:14" quando a mãe tomou o remédio às 08:14 em São Paulo é a tela
+ * mentindo sobre o cuidado.
+ *
+ * Devolve `null` quando não há registro — e `frasePartida`, no cartão, sabe
+ * montar a frase sem essa metade em vez de deixar um "às" sozinho.
+ */
+function horaDoRegistro(iso: string | null, timezone: string | undefined): string | null {
+  if (!iso) return null;
+  const instante = new Date(iso);
+  if (Number.isNaN(instante.getTime())) return null;
+  return new Intl.DateTimeFormat("pt-BR", {
+    timeZone: timezone,
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(instante);
+}
+
+/**
+ * Uma data sem hora ("2026-08-27") em pt-BR, **sem perder um dia** — Issue #26.
+ *
+ * ── O defeito que isto conserta ───────────────────────────────────────────
+ *
+ * A tela chamava `toLocaleDateString("pt-BR")` direto sobre a data crua. O
+ * navegador lê "2026-08-27" como **meia-noite UTC**, e depois imprime no fuso
+ * de quem está olhando: no Brasil, três horas antes — ou seja, **26/08**.
+ *
+ * Um tratamento cadastrado hoje aparecia começando ontem. Foi visto num teste
+ * de tela desta issue: a data dizia "desde 26/08/2026" numa linha criada em
+ * 27/08.
+ *
+ * O `Z` explícito e o `timeZone: "UTC"` mantêm a data como ela foi escrita —
+ * é o mesmo par que o calendário de adesão já usava e por isso nunca errou.
+ */
+function dataCurta(iso: string | null | undefined): string {
+  if (!iso) return "";
+  return new Date(`${iso}T00:00:00Z`).toLocaleDateString("pt-BR", { timeZone: "UTC" });
 }
 
 const SCHEDULE_LABELS: Record<string, string> = {
@@ -394,7 +446,14 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
                     medicationName={med?.name ?? "Medicamento"}
                     dosage={med?.dose ?? d.dose ?? ""}
                     time={time}
-                    status={d.status === "taken" ? "taken" : "pending"}
+                    // Issue #26 — `late` continua caindo em "pending" de
+                    // propósito: dose atrasada AINDA PODE ser registrada, e
+                    // é âmbar pelo invariante 5. `skipped` é que não podia
+                    // continuar ali: já foi resolvida, e aparecia "Pendente"
+                    // sem botão nenhum, como se a tela tivesse travado.
+                    status={d.status === "taken" ? "taken" : d.status === "skipped" ? "skipped" : "pending"}
+                    takenAt={horaDoRegistro(d.registeredAt, patient?.timezone)}
+                    takenBy={d.registeredByCaregiverName}
                   />
                   {d.status === "pending" && (
                     <div className="flex gap-2 px-1">
@@ -448,8 +507,8 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
                 </div>
               </div>
               <p className="text-sm text-muted-foreground mt-2">
-                {SCHEDULE_LABELS[t.scheduleType] ?? t.scheduleType} · desde {new Date(t.startDate).toLocaleDateString("pt-BR")}
-                {t.endDate ? ` até ${new Date(t.endDate).toLocaleDateString("pt-BR")}` : " · uso contínuo"}
+                {SCHEDULE_LABELS[t.scheduleType] ?? t.scheduleType} · desde {dataCurta(t.startDate)}
+                {t.endDate ? ` até ${dataCurta(t.endDate)}` : " · uso contínuo"}
               </p>
             </div>
           ))}
@@ -473,8 +532,8 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
                     </span>
                   </div>
                   <p className="text-sm text-muted-foreground mt-2">
-                    {SCHEDULE_LABELS[t.scheduleType] ?? t.scheduleType} · desde {new Date(t.startDate).toLocaleDateString("pt-BR")}
-                    {t.endDate && ` até ${new Date(t.endDate).toLocaleDateString("pt-BR")}`}
+                    {SCHEDULE_LABELS[t.scheduleType] ?? t.scheduleType} · desde {dataCurta(t.startDate)}
+                    {t.endDate && ` até ${dataCurta(t.endDate)}`}
                   </p>
 
                   {t.status === "finished" && reactivatingId !== t.id && (
@@ -519,7 +578,7 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
                       {s.effectiveDaysRemaining !== null && ` · cerca de ${Math.round(s.effectiveDaysRemaining)} dia(s) restantes`}
                     </p>
                     {s.prescriptionExpiresAt && (
-                      <p className="text-xs text-muted-foreground">Receita válida até {new Date(`${s.prescriptionExpiresAt}T00:00:00`).toLocaleDateString("pt-BR")}</p>
+                      <p className="text-xs text-muted-foreground">Receita válida até {dataCurta(s.prescriptionExpiresAt)}</p>
                     )}
                   </div>
                   {adjustingMedicationId !== s.medicationId && (
