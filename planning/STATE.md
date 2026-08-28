@@ -116,10 +116,18 @@ Das antigas, as duas que atravessaram para o Linear continuam paradas pelos mesm
 | ZELO-31, ZELO-41 (SMS e ligação) | Fora do v1 desde 24/08/2026 — viraram trabalho do comprador. Não migradas para o Linear |
 | ZELO-43 a ZELO-55 (trilha institucional) | Não migradas. Os dois portões são pré-condição de negócio, não código; as 11 de implementação estão atrás deles. Desenho preservado em [referencia/EXTENSAO-B2B.md](referencia/EXTENSAO-B2B.md) |
 
-**Consequência prática, em 27/08/2026:** não há história pronta para pegar. As duas do Linear estão
-bloqueadas por decisão do fundador ou por gatilho que exige produção, e não há Issue aberta no
-GitHub. **Não force uma história bloqueada só para ter o que fazer** — o trabalho legítimo agora é
-manutenção, correção, segurança e qualidade, ou escrever refinamento novo.
+**Consequência prática:** o esgotamento durou poucas horas. Na mesma noite de 27/08/2026 o fundador
+mandou capturas de tela do app publicado, e a revisão delas produziu **seis histórias novas** — o
+projeto **ZELO — Interface e Conta**, QUI-14 a QUI-19. Detalhe e justificativa de cada uma em
+[BACKLOG.md](BACKLOG.md).
+
+**A próxima é a QUI-14**, e é de dez linhas: a dose já registrada mostra `às  por`, sem hora e sem
+nome, porque `dose-card.tsx:51` escreve `às {takenAt} por {takenBy}` e `PatientDetailPage.tsx:393`
+não passa nenhum dos dois. Está quebrada exatamente no que o produto vende.
+
+As duas histórias do Linear que continuam paradas (QUI-12 e QUI-13) seguem bloqueadas por decisão
+do fundador ou por gatilho que exige produção. **Não force uma história bloqueada só para ter o que
+fazer.**
 
 **E esse trabalho agora tem nome.** A auditoria §10 do GSD
 ([auditorias/2026-08-23-gsd-secao-10.md](auditorias/2026-08-23-gsd-secao-10.md)) produziu um plano de

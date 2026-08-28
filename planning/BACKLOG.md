@@ -83,10 +83,42 @@ como ele **chega ao aparelho**.
 | [QUI-12](https://linear.app/quintanilha/issue/QUI-12) | Assinatura pela web, fora da comissão das lojas | Alta | ZELO-39 |
 | [QUI-13](https://linear.app/quintanilha/issue/QUI-13) | App nativo com push FCM e APNs | Baixa | ZELO-42 |
 
+Projeto **ZELO — Interface e Conta**: <https://linear.app/quintanilha/project/zelo-interface-e-conta-988225ce527b>
+Criado em 27/08/2026, a partir de uma revisão feita sobre **capturas de tela do app publicado**.
+Os dois projetos acima são sobre *o que o produto faz*; este é sobre **o que a pessoa toca** — e é
+o que uma empresa compradora abre primeiro.
+
+| Card | História | Prioridade | Escopo |
+|---|---|---|---|
+| [QUI-14](https://linear.app/quintanilha/issue/QUI-14) | A dose tomada mostra "às  por", sem hora e sem quem | **Urgente** | XS |
+| [QUI-15](https://linear.app/quintanilha/issue/QUI-15) | Cabeçalho da ficha quebra com nome longo e empilha no celular | Alta | S |
+| [QUI-16](https://linear.app/quintanilha/issue/QUI-16) | Concluir, pausar e cancelar tratamento pela tela | Alta | S |
+| [QUI-17](https://linear.app/quintanilha/issue/QUI-17) | Seus dados: exportar e excluir a conta pela tela (LGPD) | Alta | S |
+| [QUI-18](https://linear.app/quintanilha/issue/QUI-18) | Mural de Momentos em grade, com visualizador e cursor | Média | M |
+| [QUI-19](https://linear.app/quintanilha/issue/QUI-19) | Ajustes em quatro seções, com Conta e Ajuda | Baixa | S |
+
+**A QUI-14 é urgente porque é de dez linhas e está quebrada no que o produto vende.** `dose-card.tsx`
+escreve `às {takenAt} por {takenBy}` e a ficha do paciente não passa nenhum dos dois — sobram as
+preposições, na tela onde "quem deu o remédio, a que horas" é o diferencial inteiro.
+
+**A QUI-17 é obrigação legal, não conveniência.** `POST /api/export` e
+`POST /api/account/deletion/request` existem, funcionam e têm teste — e **nenhuma tela os chama**.
+São portabilidade e eliminação da LGPD. Mesmo padrão da Issue #13 no GitHub: rota viva sem tela.
+
+**Metade da QUI-16 já está pronta no servidor** desde a ZELO-20, com teste. Falta só o botão.
+
+### Duas coisas ficaram de fora por decisão, em 27/08/2026
+
+| O que o fundador pediu | Por que não entrou como pedido |
+|---|---|
+| Excluir tratamento permanentemente | Destruiria os `dose_records` e deixaria o `audit_log` — imutável por gatilho de banco — apontando para uma entidade que sumiu. "Cancelado" já faz o serviço e preserva o que aconteceu. A exclusão entra **só** para tratamento com zero doses registradas |
+| Telefone de ouvidoria | Canal de ouvidoria é compromisso de **responder**. Sem empresa constituída, sem plantão e sem usuário em produção, um número que ninguém atende é pior que nenhum — e aparece justamente para quem já está insatisfeito. E-mail de suporte agora |
+
 QUI-1 a QUI-4 são os itens de boas-vindas do próprio Linear, não trabalho do projeto.
 
-O consentimento (QUI-6) é o único **urgente**: nenhuma foto pode existir antes dele. A retenção
-(QUI-11) é alta apesar de ser a última — é a única história que fica *mais cara* quanto mais se adia.
+O consentimento (QUI-6) foi o único **urgente** do projeto Momentos: nenhuma foto podia existir
+antes dele. A retenção (QUI-11) era alta apesar de ser a última — era a única história que ficava
+*mais cara* quanto mais se adiasse.
 
 ### O que passa a ser trabalho de verdade
 
