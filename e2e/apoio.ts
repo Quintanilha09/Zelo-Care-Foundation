@@ -206,3 +206,74 @@ export async function publicarUmMomento(
   expect(envio.status(), `publicar momento falhou: ${await envio.text()}`).toBe(201);
   return ((await envio.json()) as { id: number }).id;
 }
+
+/**
+ * Um tratamento com dose HOJE, e a primeira dose registrada — Issue #26.
+ *
+ * Existe para os testes que precisam de uma dose **já resolvida** na tela.
+ * Sem isto não dá para provar nada sobre o cartão de dose tomada: a ficha
+ * recém-criada só tem dose pendente.
+ *
+ * ── Por que os horários são "00:01" e "23:59" ─────────────────────────────
+ *
+ * `generateDosesForTreatment` só cria dose **do agora para a frente** — a
+ * janela começa em `Clock.now()`. Um horário já passado hoje simplesmente
+ * não gera nada, e a primeira versão deste auxiliar falhou por isso.
+ *
+ * Com os dois horários há sempre ao menos uma dose futura dentro do dia
+ * civil do paciente, a qualquer hora — **exceto no último minuto do dia**,
+ * a mesma janela que a suíte de servidor aceita desde sempre.
+ */
+export async function registrarUmaDoseHoje(
+  request: APIRequestContext,
+  conta: ContaDeTeste,
+  alvo: number,
+  desfecho: "taken" | "skipped" = "taken"
+): Promise<{ medicamento: string; horaAgendada: string }> {
+  const token = await tokenDaConta(request, conta);
+  const cabecalho = { Authorization: `Bearer ${token}` };
+  const medicamento = "Remedio Ficticio (ficticio)";
+
+  const med = await request.post("/api/medications", {
+    headers: cabecalho,
+    data: { name: medicamento, form: "tablet" },
+  });
+  expect(med.status(), `criar medicamento falhou: ${await med.text()}`).toBe(201);
+  const medicationId = ((await med.json()) as { id: number }).id;
+
+  // A data tem que ser HOJE no fuso do paciente, não no do processo.
+  const hoje = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(new Date());
+
+  const tratamento = await request.post(`/api/patients/${alvo}/treatments`, {
+    headers: cabecalho,
+    data: {
+      medicationId,
+      dose: "1 comprimido",
+      scheduleConfig: { scheduleType: "times_per_day", times: ["00:01", "23:59"] },
+      startDate: hoje,
+    },
+  });
+  expect(tratamento.status(), `criar tratamento falhou: ${await tratamento.text()}`).toBe(201);
+
+  const hojeRes = await request.get(`/api/patients/${alvo}/today-doses`, { headers: cabecalho });
+  expect(hojeRes.ok(), `today-doses falhou: ${await hojeRes.text()}`).toBeTruthy();
+  const corpo = (await hojeRes.json()) as { doses: Array<{ id: number; scheduledLocalTime: string }> };
+  const dose = corpo.doses[0];
+  expect(
+    dose,
+    "o tratamento precisa ter gerado ao menos uma dose hoje — se isto falhar, " +
+      "confira se a geração só cria dose futura (lib/dose-generation.ts) e se " +
+      "não são 23:59 em São Paulo"
+  ).toBeTruthy();
+
+  const registro = await request.post(`/api/patients/${alvo}/dose-records`, {
+    headers: cabecalho,
+    data: { scheduledDoseId: dose.id, outcome: desfecho },
+  });
+  expect(registro.ok(), `registrar dose falhou: ${await registro.text()}`).toBeTruthy();
+
+  return { medicamento, horaAgendada: dose.scheduledLocalTime };
+}
