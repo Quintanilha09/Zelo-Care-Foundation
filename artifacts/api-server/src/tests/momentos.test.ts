@@ -442,7 +442,14 @@ describe("Paginação do mural — QUI-18", () => {
     };
   }
 
-  before(async () => {
+  // `beforeEach`, e não `before`: o hook global deste arquivo APAGA o
+  // consentimento antes de cada teste (linha ~182), justamente para que cada
+  // caso declare o que precisa. Dar consentimento uma vez só no `before`
+  // deixava todos os testes daqui lendo um mural sem consentimento — que
+  // responde 200 com lista vazia, e por isso falhava com "0 momentos" em vez
+  // de dizer o que estava errado. Os hooks aninhados rodam de fora para
+  // dentro, então este vem depois da limpeza.
+  beforeEach(async () => {
     await darConsentimento();
   });
 
