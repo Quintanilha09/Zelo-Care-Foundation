@@ -57,16 +57,21 @@ Das 10 fases do backlog original só sobraram três buracos, todos deixados de p
 
 ## Onde o desenvolvimento parou
 
-**Aberto no GitHub** — verificado em 31/08/2026 com `gh`:
+**Aberto no GitHub** — verificado em 31/08/2026, 16h, com `gh`. Este bloco envelhece rápido: se a
+sessão for depois disso, meça de novo antes de confiar.
 
-| | O quê | Estado |
+| Issue · PR | O quê | Estado |
 |---|---|---|
-| Issue [#38](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/38) | O typecheck não cobre a pasta `e2e` | aberta |
-| PR [#39](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/39) | O typecheck passa a cobrir a pasta `e2e` | aberto, **em conflito com o `main`**, check do CI **vermelho** (execução `33351822697`) |
+| [#38](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/38) · [#39](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/39) | O typecheck passa a cobrir a pasta `e2e` | `MERGEABLE`, CI verde (execução `33409635698`) |
+| [#43](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/43) · [#44](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/44) | Três testes e2e reprovam no último minuto do dia em São Paulo | `MERGEABLE` |
 
-É o único trabalho de código em andamento e **não está pronto para merge**: precisa de rebase e de
-uma execução verde. Falta também **tornar o check obrigatório e proteger o `main`**, depois de uma
-execução verde e revisada — o PR #1, que registrava isso, foi fechado sem merge em 26/08/2026.
+Os dois estão prontos para merge. Falta também **tornar o check obrigatório e proteger o `main`**,
+depois de uma execução verde e revisada — o PR #1, que registrava isso, foi fechado sem merge em
+26/08/2026.
+
+> **Há sessões em paralelo.** `git worktree list` mostra três worktrees ativos além desta cópia.
+> Vale a regra do [CLAUDE.md](../CLAUDE.md): **uma sessão por vez no `main`** — havendo outra ativa,
+> trabalhe em branch. Confira antes de commitar, não depois de o push ser recusado.
 
 **O trabalho nomeado é a fase 11 — correção pós-auditoria**
 ([phases/11-correcao-pos-auditoria/](phases/11-correcao-pos-auditoria/), plano em
