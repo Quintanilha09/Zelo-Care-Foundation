@@ -89,6 +89,30 @@ export async function entrar(page: Page, conta: ContaDeTeste): Promise<void> {
 }
 
 /**
+ * Fecha a sessão do NAVEGADOR, para poder entrar com outra conta.
+ *
+ * ── O erro que isto conserta ──────────────────────────────────────────────
+ *
+ * Um teste que compara duas contas na mesma `page` chama `entrar` duas vezes.
+ * A segunda chamada fazia `goto("/")` **já autenticado** — o app abre direto
+ * na tela inicial, o formulário de login não existe, e o `fill` do campo de
+ * e-mail ficava esperando por um elemento que nunca ia aparecer. O teste
+ * morria em timeout de 30s, com uma mensagem que não dizia nada sobre a causa.
+ *
+ * O access token vive só em memória; o refresh token, no `localStorage` (ver
+ * `lib/auth-client.ts`). Limpar o armazenamento é o que de fato encerra a
+ * sessão do lado do navegador.
+ */
+export async function sair(page: Page): Promise<void> {
+  await page.goto("/");
+  await page.evaluate(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+  });
+  await page.context().clearCookies();
+}
+
+/**
  * Um access token novo, numa sessão de API separada da do navegador.
  *
  * **Nunca leia o token do `localStorage` do app para reaproveitar aqui.** Ver
