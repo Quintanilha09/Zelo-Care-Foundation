@@ -93,7 +93,27 @@ export function ActivityFeed({ limit = 20 }: { limit?: number }) {
           <p className="text-sm text-muted-foreground">Nenhuma atividade registrada ainda.</p>
         )}
         {!loading && !error && items.length > 0 && (
-          <ul className="space-y-3">
+          // Teto de altura com rolagem propria.
+          //
+          // O relato foi "a lista cresce infinitamente". Ela nao cresce: o
+          // limite e 15 (CaregiversPage) e o servidor corta em 100. O
+          // incomodo e de ALTURA, nao de quantidade — 15 itens de tres linhas
+          // empurram o fim da pagina para longe. Por isso teto, e nao
+          // paginacao: paginacao resolveria um problema que nao existe.
+          //
+          // `max-h` e nao `h`: com poucos itens a lista fica do tamanho
+          // natural, sem caixa vazia embaixo. So passa a rolar quando
+          // precisa.
+          //
+          // `tabIndex` e `role` nao sao enfeite: regiao que rola precisa ser
+          // alcancavel por teclado, senao quem nao usa mouse nao chega no que
+          // esta cortado.
+          <ul
+            className="space-y-3 max-h-[50vh] overflow-y-auto pr-1"
+            tabIndex={0}
+            role="region"
+            aria-label="Atividade recente da família"
+          >
             {items.map((item) => (
               <li key={item.id} className="flex items-start gap-3">
                 <span className="text-xl leading-none mt-0.5" aria-hidden>
