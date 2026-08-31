@@ -2,7 +2,12 @@
 
 > Registro durável, extraído do `STATE.md` em 23/08/2026 quando o contexto foi consolidado no repositório.
 > Aqui fica **o que foi construído** e com qual commit. O estado atual do projeto está em [STATE.md](STATE.md);
-> o diário cronológico de incidentes está em [historico/DIARIO-ate-2026-08-23.md](historico/DIARIO-ate-2026-08-23.md).
+> o diário cronológico de incidentes está em [historico/](historico/) — em
+> [DIARIO-ate-2026-08-23.md](historico/DIARIO-ate-2026-08-23.md) (16/08 a 23/08) e em
+> [DIARIO-2026-08-24-a-2026-08-31.md](historico/DIARIO-2026-08-24-a-2026-08-31.md) (24/08 a 31/08).
+>
+> **As histórias QUI-14 a QUI-19 ainda não têm seção aqui.** Foram entregues entre 27 e 31/08/2026 e
+> estão registradas por enquanto só nas Issues e PRs, listados no diário de 24 a 31/08.
 
 ---
 

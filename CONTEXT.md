@@ -113,7 +113,10 @@ fundador; a QUI-13 (app nativo) espera um gatilho medido que exige usuários rea
 
 O trabalho disponível hoje é manutenção, correção, segurança e qualidade.
 
-Detalhamento, fases, pendências de deploy e decisões em aberto: [`planning/STATE.md`](planning/STATE.md).
+Onde o desenvolvimento parou, pendências de deploy e decisões em aberto:
+[`planning/STATE.md`](planning/STATE.md). O que cada história entregou e a tabela por fase:
+[`planning/HISTORIAS.md`](planning/HISTORIAS.md). O que aconteceu, em ordem:
+[`planning/historico/`](planning/historico/).
 
 ## Ambiente
 
