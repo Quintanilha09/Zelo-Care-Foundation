@@ -289,6 +289,47 @@ router.patch("/families/me/settings", requireAuth, requirePrimaryCaregiver, asyn
   res.json(updated);
 });
 
+// ── Estado do pedido de exclusão ──────────────────────────────────────────
+//
+// QUI-17: as três rotas de exclusão existiam e eram testadas, mas **nenhuma
+// tela as chamava** — e não dava para construir a tela sem esta: sem saber se
+// já há pedido pendente, a página não teria como escolher entre oferecer
+// "solicitar", "cancelar" ou "excluir agora".
+//
+// `requireAuth`, e não `requirePrimaryCaregiver`: qualquer cuidador da
+// família tem o direito de SABER que a conta está marcada para exclusão em
+// sete dias. Só o principal é que pode pedir, cancelar e executar.
+
+router.get("/account/deletion", requireAuth, async (req, res): Promise<void> => {
+  const [pendente] = await db
+    .select({
+      id: deletionRequestsTable.id,
+      scheduledDeletionAt: deletionRequestsTable.scheduledDeletionAt,
+      requestedAt: deletionRequestsTable.requestedAt,
+    })
+    .from(deletionRequestsTable)
+    .where(
+      and(
+        eq(deletionRequestsTable.familyId, getAuth(req).familyId),
+        eq(deletionRequestsTable.status, "pending")
+      )
+    )
+    .limit(1);
+
+  if (!pendente) { res.json({ pending: null }); return; }
+
+  res.json({
+    pending: {
+      scheduledDeletionAt: pendente.scheduledDeletionAt,
+      requestedAt: pendente.requestedAt,
+      // Quem decide se a janela fechou é o relógio do SERVIDOR — o mesmo que
+      // a rota de execução vai consultar. Deixar a tela calcular pelo relógio
+      // do aparelho ofereceria o botão cedo demais num celular adiantado.
+      canExecuteNow: pendente.scheduledDeletionAt <= Clock.now(),
+    },
+  });
+});
+
 // ── Solicitar exclusão ────────────────────────────────────────────────────
 
 router.post("/account/deletion/request", requirePrimaryCaregiver, async (req, res): Promise<void> => {

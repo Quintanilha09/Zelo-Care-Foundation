@@ -18,6 +18,7 @@ import CaregiversPage from '@/pages/CaregiversPage';
 import SettingsPage from '@/pages/SettingsPage';
 import SettingsNotificationsPage from '@/pages/SettingsNotificationsPage';
 import SettingsRetroactivePage from '@/pages/SettingsRetroactivePage';
+import SettingsDataPage from '@/pages/SettingsDataPage';
 import PlansPage from '@/pages/PlansPage';
 import IOSInstallGuidePage from '@/pages/IOSInstallGuidePage';
 import AdminPage from '@/pages/AdminPage';
@@ -149,6 +150,7 @@ function Router() {
         <Route path="/ajustes" component={SettingsPage} />
         <Route path="/ajustes/notificacoes" component={SettingsNotificationsPage} />
         <Route path="/ajustes/registro-retroativo" component={SettingsRetroactivePage} />
+        <Route path="/ajustes/seus-dados" component={SettingsDataPage} />
         <Route path="/planos" component={PlansPage} />
         <Route path="/notificacoes/ios" component={IOSInstallGuidePage} />
         <Route path="/design" component={DesignReference} />
