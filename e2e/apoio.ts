@@ -1,5 +1,5 @@
 import type { Page, APIRequestContext } from "@playwright/test";
-import { expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 /**
  * Apoio para os testes de ponta a ponta — Issue #7.
@@ -252,6 +252,67 @@ export async function abrirPrimeiroMomento(page: Page): Promise<void> {
   await expect(page.getByRole("dialog")).toBeVisible();
 }
 
+/** O fuso em que todo paciente de teste vive. Igual ao do `playwright.config.ts`. */
+const TZ_PACIENTE = "America/Sao_Paulo";
+
+/**
+ * Margem mínima de dia civil que um bloco de testes precisa ter pela frente.
+ *
+ * 90s e não 60s: a janela morta de verdade são os últimos ~60 segundos (ver
+ * `esperarAViradaDoDiaSePreciso`), mas o tratamento nasce no `beforeAll` e as
+ * asserções rodam depois. Se o dia virar NO MEIO do bloco, a dose criada
+ * ontem sai da janela de `today-doses` e a tela fica vazia — falha diferente,
+ * mesma causa. A margem cobre o bloco inteiro, não só a criação.
+ */
+const MARGEM_MINIMA_DE_DIA_S = 90;
+
+/** Folga depois da virada, para não encostar no limite pelo outro lado. */
+const FOLGA_DEPOIS_DA_VIRADA_MS = 5_000;
+
+/** Quantos segundos faltam para o próximo dia civil no fuso dado. */
+function segundosAteAViradaDoDia(tz: string): number {
+  const partes = new Intl.DateTimeFormat("en-GB", {
+    timeZone: tz,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23", // sem isto, a meia-noite sai como "24" em algumas versões do ICU
+  }).format(new Date());
+  const [h, m, s] = partes.split(":").map(Number);
+  return 86_400 - (h * 3_600 + m * 60 + s);
+}
+
+/**
+ * Espera a virada do dia quando falta pouco — Issue #43.
+ *
+ * ── Por que esperar, e não congelar o relógio ─────────────────────────────
+ *
+ * A Issue #41 resolveu a mesma classe de problema no teste de integração com
+ * `Clock.freezeAt`, e ali era o certo: teste e servidor no MESMO processo.
+ * Aqui não são. O Playwright fala com uma API que roda em outro processo, e
+ * o navegador tem um terceiro relógio, o real. Congelar o relógio do servidor
+ * (`POST /api/dev/clock/freeze`, que existe e está montado no e2e) seria
+ * mexer em estado global compartilhado por 102 testes, atravessando
+ * `beforeAll` e corpo de teste em dois arquivos, com risco de vazar congelado
+ * se um teste quebrar no meio. Trocaria uma falha de um minuto por dia por
+ * uma classe de falha pior e mais difícil de enxergar.
+ *
+ * Esperar custa, no pior caso, ~95 segundos, no máximo uma vez por dia, e só
+ * quando a execução cai nos últimos 90 segundos do dia. Não esconde
+ * instabilidade — é determinístico: ou há dia civil sobrando, ou espera até
+ * haver.
+ */
+async function esperarAViradaDoDiaSePreciso(): Promise<void> {
+  const faltam = segundosAteAViradaDoDia(TZ_PACIENTE);
+  if (faltam > MARGEM_MINIMA_DE_DIA_S) return;
+
+  const esperaMs = faltam * 1_000 + FOLGA_DEPOIS_DA_VIRADA_MS;
+  // O teto padrão é 30s (playwright.config.ts) e a espera pode passar disso.
+  // Só neste ramo raro — nos outros o teto continua valendo inteiro.
+  test.setTimeout(180_000);
+  await new Promise((resolve) => setTimeout(resolve, esperaMs));
+}
+
 /**
  * Um tratamento com dose HOJE, ainda sem nenhum registro — Issue #26, QUI-16.
  *
@@ -262,8 +323,12 @@ export async function abrirPrimeiroMomento(page: Page): Promise<void> {
  * não gera nada, e a primeira versão deste auxiliar falhou por isso.
  *
  * Com os dois horários há sempre ao menos uma dose futura dentro do dia
- * civil do paciente, a qualquer hora — **exceto no último minuto do dia**,
- * a mesma janela que a suíte de servidor aceita desde sempre.
+ * civil do paciente, a qualquer hora — **exceto no último minuto do dia**.
+ * Essa exceção era conhecida e aceita, e cobrou o preço em 31/08/2026
+ * (Issue #43): quem começa às 23:59 não tem horário futuro nenhum sobrando
+ * hoje, a geração não cria nada, e três testes reprovam acusando a tela de
+ * um defeito que é do dado de teste. Quem fecha essa janela agora é
+ * `esperarAViradaDoDiaSePreciso`, logo abaixo.
  *
  * `sufixo` existe porque o plano Grátis cuida de **3 medicamentos**: um teste
  * que precisa de dois tratamentos precisa de dois nomes distintos.
@@ -274,6 +339,9 @@ export async function criarTratamentoHoje(
   alvo: number,
   sufixo = ""
 ): Promise<{ tratamentoId: number; medicamento: string; doseId: number; horaAgendada: string }> {
+  // Antes de qualquer coisa: garantir que há dia civil sobrando (Issue #43).
+  await esperarAViradaDoDiaSePreciso();
+
   const token = await tokenDaConta(request, conta);
   const cabecalho = { Authorization: `Bearer ${token}` };
   const medicamento = `Remedio Ficticio${sufixo ? ` ${sufixo}` : ""} (ficticio)`;
@@ -287,7 +355,7 @@ export async function criarTratamentoHoje(
 
   // A data tem que ser HOJE no fuso do paciente, não no do processo.
   const hoje = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Sao_Paulo",
+    timeZone: TZ_PACIENTE,
     year: "numeric", month: "2-digit", day: "2-digit",
   }).format(new Date());
 
@@ -311,9 +379,11 @@ export async function criarTratamentoHoje(
   const dose = corpo.doses.find((d) => d.treatmentId === tratamentoId);
   expect(
     dose,
-    "o tratamento precisa ter gerado ao menos uma dose hoje — se isto falhar, " +
-      "confira se a geração só cria dose futura (lib/dose-generation.ts) e se " +
-      "não são 23:59 em São Paulo"
+    "o tratamento precisa ter gerado ao menos uma dose hoje — a geração só " +
+      "cria dose do agora para a frente (lib/dose-generation.ts), então " +
+      "confira se a posologia daqui ainda tem horário futuro sobrando hoje. " +
+      "A borda da meia-noite não é mais explicação: esperarAViradaDoDiaSePreciso " +
+      "cobre os últimos 90 segundos do dia (Issue #43)"
   ).toBeTruthy();
 
   return { tratamentoId, medicamento, doseId: dose!.id, horaAgendada: dose!.scheduledLocalTime };
