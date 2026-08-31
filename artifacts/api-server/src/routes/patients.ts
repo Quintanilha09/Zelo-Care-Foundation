@@ -16,6 +16,7 @@ import { audit } from "../lib/audit";
 import { Clock } from "../lib/clock";
 import { clearFuturePendingDoses, generateDosesForTreatment } from "../lib/dose-generation.ts";
 import { checkPatientLimit } from "../lib/plan-limits.ts";
+import { nomeDePaciente } from "../lib/nome-de-paciente.ts";
 
 const router = Router();
 
@@ -23,7 +24,7 @@ const router = Router();
 // pode ser diferente a cada paciente cadastrado (o próprio idoso, ou um filho
 // consentindo como representante legal quando ele não decide mais sozinho).
 const CreatePatientBody = z.object({
-  name: z.string().min(1).max(200),
+  name: nomeDePaciente,
   birthDate: z.string().optional().nullable(),
   timezone: z.string().default("America/Sao_Paulo"),
   notes: z.string().optional().nullable(),
@@ -37,7 +38,7 @@ const CreatePatientBody = z.object({
 });
 
 const UpdatePatientBody = z.object({
-  name: z.string().min(1).max(200).optional(),
+  name: nomeDePaciente.optional(),
   birthDate: z.string().optional().nullable(),
   timezone: z.string().optional(),
   notes: z.string().optional().nullable(),

@@ -73,14 +73,21 @@ export function PatientForm({ onCreated, onCancel, onPaywall }: PatientFormProps
     <form onSubmit={handleSubmit} className="space-y-5">
       <div className="space-y-2">
         <CampoLabel htmlFor="patient-name" obrigatorio>Nome</CampoLabel>
+        {/* `maxLength` acompanha o teto do servidor (`lib/nome-de-paciente.ts`,
+            Issue #56). O cliente NAO e fronteira: quem valida de verdade e o
+            servidor. Isto existe para o erro chegar na hora de digitar, e nao
+            depois de preencher o formulario todo — que foi exatamente a
+            reclamacao da Issue #17 sobre o aviso de plano. */}
         <Input
           id="patient-name"
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Nome de quem você cuida"
+          maxLength={60}
           required
           autoFocus
         />
+        <p className="text-xs text-muted-foreground">Nome e sobrenome, até 60 letras.</p>
       </div>
 
       <div className="space-y-2">
