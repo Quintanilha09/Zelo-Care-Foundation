@@ -44,7 +44,7 @@ Medido nesta data, nesta máquina:
 | Arquivos de teste | **43** | `src/tests/*.test.ts` |
 | Consistência da suíte | **limpa** | 43 referenciados no `test:all` = 43 no disco; nenhum órfão, nenhum fora |
 | Testes de ponta a ponta | **10 arquivos, 102 casos** | `e2e/*.spec.ts` — Playwright, Desktop Chrome e Pixel 7. O `apoio.ts` é auxiliar e não conta. 102 = 51 casos × 2 navegadores. Medido nesta máquina em 31/08/2026, no commit 4e3ca3e, com `pnpm exec playwright test --list` |
-| Typecheck do monorepo | **exit 0** | `pnpm run typecheck` — 4 pacotes, todos limpos |
+| Typecheck do monorepo | **exit 0** | `pnpm run typecheck` — 4 pacotes mais o projeto `e2e/`, todos limpos. A pasta `e2e/` passou a ser coberta na Issue #38; antes dela o `tsc` nao abria um arquivo ali. Medido em 31/08/2026 |
 | Modelo de visão | `claude-haiku-4-5-20251001` | `lib/vision.ts` |
 | Fila | **pg-boss** sobre o mesmo Postgres | `lib/queue.ts` |
 
