@@ -1,5 +1,8 @@
 import { test, expect } from "@playwright/test";
-import { criarConta, entrar, criarPaciente, publicarUmMomento, type ContaDeTeste } from "./apoio";
+import {
+  criarConta, entrar, criarPaciente, publicarUmMomento, abrirPrimeiroMomento,
+  type ContaDeTeste,
+} from "./apoio";
 
 /**
  * O coração do mural — QUI-10 (Issue #24).
@@ -28,13 +31,14 @@ test.describe("Mandar um coração", () => {
   test.beforeEach(async ({ page }) => {
     await entrar(page, conta);
     await page.goto(`/pacientes/${patientId}`);
+    // QUI-18 — o mural virou grade: o coração mora no visualizador agora,
+    // e não embaixo de cada foto.
+    await abrirPrimeiroMomento(page);
   });
 
   test("o coração alterna, e quem reagiu aparece por NOME", async ({ page }) => {
     const botao = page.getByRole("button", { name: "Mandar um coração" });
-    await expect(botao, "o momento publicado precisa aparecer com o botão").toBeVisible({
-      timeout: 15_000,
-    });
+    await expect(botao, "o visualizador precisa oferecer o coração").toBeVisible();
 
     // Antes de reagir não existe linha de quem reagiu — mural sem reação é
     // mural sem reação, e está tudo bem (CON-011: nada cobra ninguém).
@@ -60,7 +64,7 @@ test.describe("Mandar um coração", () => {
 
   test("nenhum número aparece perto do coração", async ({ page }) => {
     const botao = page.getByRole("button", { name: /coração/ });
-    await expect(botao).toBeVisible({ timeout: 15_000 });
+    await expect(botao).toBeVisible();
 
     // Garante o estado com reação — é nele que um contador apareceria.
     if (await page.getByRole("button", { name: "Mandar um coração" }).count()) {
@@ -88,7 +92,7 @@ test.describe("Mandar um coração", () => {
 
   test("o coração não usa vermelho", async ({ page }) => {
     const botao = page.getByRole("button", { name: /coração/ });
-    await expect(botao).toBeVisible({ timeout: 15_000 });
+    await expect(botao).toBeVisible();
 
     // Invariante 5 do produto. Vermelho neste app é ação destrutiva, e um
     // coração de carinho ao lado do botão de apagar não pode ter a mesma cor
