@@ -13,7 +13,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   usersTable, caregiversTable, familiesTable, patientsTable,
-  medicationsTable, treatmentsTable, scheduledDosesTable, notificationsTable,
+  medicationsTable, treatmentsTable, scheduledDosesTable, notificationsTable, doseRecordsTable,
 } from "@workspace/db";
 import { tomorrowInTimezone } from "@workspace/scheduling";
 import { generateAccessToken } from "../lib/tokens.ts";
@@ -318,6 +318,188 @@ describe("Reativar tratamento encerrado — ZELO-20", () => {
 
     Clock.reset();
     await db.delete(treatmentsTable).where(eq(treatmentsTable.id, treatmentId));
+    await db.delete(patientsTable).where(eq(patientsTable.id, patientId));
+  });
+});
+
+/**
+ * O ciclo de vida que a TELA usa — QUI-16.
+ *
+ * Os testes acima cobrem o encerramento AUTOMÁTICO (por data de fim vencida).
+ * Estes cobrem o encerramento DELIBERADO: alguém decidiu que acabou, ou que
+ * pausa, ou que aquele tratamento nunca deveria ter sido cadastrado.
+ *
+ * A rota PATCH já aceitava `status` desde a ZELO-20 — mas nenhuma tela
+ * chamava com ele, e o que nenhuma tela chama ninguém percebe quando quebra.
+ */
+describe("Concluir, pausar e retomar pela rota — QUI-16", () => {
+  it("concluir para de gerar dose futura e não apaga o que já aconteceu", async () => {
+    const patientId = await createPatient("Paciente Concluído");
+    const treatmentId = await createTreatment(patientId, null);
+
+    const antes = await db.select().from(scheduledDosesTable).where(eq(scheduledDosesTable.treatmentId, treatmentId));
+    assert.ok(antes.some((d) => d.status === "pending"), "o tratamento precisa nascer com dose pendente");
+
+    // Uma dose registrada ANTES de concluir. É ela que prova que concluir
+    // não é apagar: o histórico do que de fato aconteceu fica de pé.
+    const pendente = antes.find((d) => d.status === "pending")!;
+    const registro = await api("POST", `/patients/${patientId}/dose-records`, {
+      scheduledDoseId: pendente.id,
+      outcome: "taken",
+    });
+    assert.equal(registro.status, 201, `registrar dose falhou: ${JSON.stringify(registro.body)}`);
+
+    const res = await api("PATCH", `/treatments/${treatmentId}`, { status: "finished" });
+    assert.equal(res.status, 200);
+    assert.equal((res.body as { status: string }).status, "finished");
+
+    const depois = await db.select().from(scheduledDosesTable).where(eq(scheduledDosesTable.treatmentId, treatmentId));
+    assert.equal(
+      depois.filter((d) => d.status === "pending").length,
+      0,
+      "concluir precisa limpar as doses pendentes — senão o lembrete continua para sempre"
+    );
+    assert.ok(
+      depois.some((d) => d.id === pendente.id && d.status === "taken"),
+      "a dose já registrada não pode ser tocada por concluir"
+    );
+
+    await db.delete(treatmentsTable).where(eq(treatmentsTable.id, treatmentId));
+    await db.delete(patientsTable).where(eq(patientsTable.id, patientId));
+  });
+
+  it("pausar limpa as pendentes e retomar as traz de volta", async () => {
+    const patientId = await createPatient("Paciente Pausado");
+    const treatmentId = await createTreatment(patientId, null);
+
+    const pausar = await api("PATCH", `/treatments/${treatmentId}`, { status: "paused" });
+    assert.equal(pausar.status, 200);
+    const pausado = await db.select().from(scheduledDosesTable).where(eq(scheduledDosesTable.treatmentId, treatmentId));
+    assert.equal(
+      pausado.filter((d) => d.status === "pending").length,
+      0,
+      "pausar precisa parar o lembrete — pausa que continua avisando não é pausa"
+    );
+
+    const retomar = await api("PATCH", `/treatments/${treatmentId}`, { status: "active" });
+    assert.equal(retomar.status, 200);
+    const retomado = await db.select().from(scheduledDosesTable).where(eq(scheduledDosesTable.treatmentId, treatmentId));
+    assert.ok(
+      retomado.some((d) => d.status === "pending"),
+      "retomar precisa regenerar a dose pendente"
+    );
+
+    await db.delete(treatmentsTable).where(eq(treatmentsTable.id, treatmentId));
+    await db.delete(patientsTable).where(eq(patientsTable.id, patientId));
+  });
+});
+
+/**
+ * Excluir tratamento — e a recusa que protege o histórico (QUI-16).
+ *
+ * `scheduled_doses.treatment_id` e `dose_records.scheduled_dose_id` são
+ * ambos ON DELETE CASCADE. Um DELETE inocente levaria junto todas as doses
+ * tomadas, sem erro nenhum. Estes testes existem para que essa porta
+ * continue trancada.
+ */
+describe("DELETE /treatments/:id — QUI-16", () => {
+  it("apaga um tratamento que nunca teve dose registrada", async () => {
+    const patientId = await createPatient("Paciente Engano");
+    const treatmentId = await createTreatment(patientId, null);
+
+    const res = await api("DELETE", `/treatments/${treatmentId}`);
+    assert.equal(res.status, 204);
+
+    const sobrou = await db.select().from(treatmentsTable).where(eq(treatmentsTable.id, treatmentId));
+    assert.equal(sobrou.length, 0, "o tratamento cadastrado por engano precisa sumir de verdade");
+
+    await db.delete(patientsTable).where(eq(patientsTable.id, patientId));
+  });
+
+  it("recusa com 409 e não apaga nada quando já existe dose registrada", async () => {
+    const patientId = await createPatient("Paciente Com Histórico");
+    const treatmentId = await createTreatment(patientId, null);
+
+    const doses = await db.select().from(scheduledDosesTable).where(eq(scheduledDosesTable.treatmentId, treatmentId));
+    const pendente = doses.find((d) => d.status === "pending")!;
+    const registro = await api("POST", `/patients/${patientId}/dose-records`, {
+      scheduledDoseId: pendente.id,
+      outcome: "taken",
+    });
+    assert.equal(registro.status, 201, `registrar dose falhou: ${JSON.stringify(registro.body)}`);
+
+    const res = await api("DELETE", `/treatments/${treatmentId}`);
+    assert.equal(res.status, 409);
+    assert.equal((res.body as { code: string }).code, "TREATMENT_HAS_HISTORY");
+    // A mensagem tem que APONTAR A SAÍDA. Recusar sem dizer o que fazer no
+    // lugar é um beco sem saída educado.
+    assert.match((res.body as { error: string }).error, /[Cc]ancele/);
+
+    const sobrou = await db.select().from(treatmentsTable).where(eq(treatmentsTable.id, treatmentId));
+    assert.equal(sobrou.length, 1, "o tratamento com histórico não pode ser apagado");
+    const registrosDepois = await db.select().from(doseRecordsTable).where(eq(doseRecordsTable.patientId, patientId));
+    assert.equal(registrosDepois.length, 1, "e a dose registrada tem que continuar lá");
+
+    await db.delete(treatmentsTable).where(eq(treatmentsTable.id, treatmentId));
+    await db.delete(patientsTable).where(eq(patientsTable.id, patientId));
+  });
+
+  it("responde 404 — nunca 403 — para tratamento de outra família", async () => {
+    const [outraFamilia] = await db
+      .insert(familiesTable)
+      .values({ name: "Outra Família Ciclo", slug: `lifecycle-outra-${Date.now()}` })
+      .returning();
+    const [outroPaciente] = await db
+      .insert(patientsTable)
+      .values({ familyId: outraFamilia.id, name: "Paciente de Outra Família", timezone: "America/Sao_Paulo" })
+      .returning();
+    const [outroRemedio] = await db
+      .insert(medicationsTable)
+      .values({ familyId: outraFamilia.id, name: "Medicamento de Outra Família" })
+      .returning();
+    const [outroTratamento] = await db
+      .insert(treatmentsTable)
+      .values({
+        patientId: outroPaciente.id,
+        medicationId: outroRemedio.id,
+        scheduleType: "times_per_day",
+        scheduleConfig: { scheduleType: "times_per_day", times: ["08:00"] },
+        startDate: Clock.todayInTimezone("America/Sao_Paulo"),
+        status: "active",
+      })
+      .returning();
+
+    const res = await api("DELETE", `/treatments/${outroTratamento.id}`);
+    // 403 diria "existe, mas não é seu" — e isso já entrega que aquele id
+    // existe em alguma família. O produto inteiro responde 404 aqui.
+    assert.equal(res.status, 404, "vazamento de existência entre famílias");
+
+    const sobrou = await db.select().from(treatmentsTable).where(eq(treatmentsTable.id, outroTratamento.id));
+    assert.equal(sobrou.length, 1, "e obviamente não pode ter apagado");
+
+    await db.delete(familiesTable).where(eq(familiesTable.id, outraFamilia.id));
+  });
+
+  it("a lista de tratamentos diz quais já têm dose registrada", async () => {
+    const patientId = await createPatient("Paciente Da Lista");
+    const semRegistro = await createTreatment(patientId, null);
+    const comRegistro = await createTreatment(patientId, null);
+
+    const doses = await db.select().from(scheduledDosesTable).where(eq(scheduledDosesTable.treatmentId, comRegistro));
+    const pendente = doses.find((d) => d.status === "pending")!;
+    await api("POST", `/patients/${patientId}/dose-records`, { scheduledDoseId: pendente.id, outcome: "taken" });
+
+    const lista = await api("GET", `/patients/${patientId}/treatments`);
+    assert.equal(lista.status, 200);
+    const porId = new Map(
+      (lista.body as Array<{ id: number; hasDoseRecords: boolean }>).map((t) => [t.id, t.hasDoseRecords])
+    );
+    // É este campo que decide se a tela mostra o botão de excluir. Sem ele a
+    // tela ofereceria uma ação que o servidor já sabe que vai negar.
+    assert.equal(porId.get(semRegistro), false);
+    assert.equal(porId.get(comRegistro), true);
+
+    await db.delete(treatmentsTable).where(eq(treatmentsTable.patientId, patientId));
     await db.delete(patientsTable).where(eq(patientsTable.id, patientId));
   });
 });
