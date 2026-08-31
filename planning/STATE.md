@@ -53,11 +53,21 @@ Das 10 fases do backlog original só sobraram três buracos, todos deixados de p
 
 ## Onde o desenvolvimento parou
 
-**Nada aberto no GitHub** — zero Issues e zero PRs, verificado em 31/08/2026, 17h, com `gh`. Este
-bloco envelhece rápido: se a sessão for depois disso, meça de novo antes de confiar.
+**Doze Issues abertas, nenhum PR** — verificado em 31/08/2026, 18h, com `gh`. Este bloco envelhece
+rápido: se a sessão for depois disso, meça de novo antes de confiar.
 
-As duas últimas entraram nesta tarde, e as duas nasceram de defeito na **rede de proteção**, não no
-produto:
+As doze (**#45 a #56**) são a leva que saiu do **primeiro teste feito no aparelho**, com o app
+publicado e o deploy do Replit aplicado. Refinamento, plano em quatro ondas e as discordâncias
+registradas: [refinamentos/interface-apos-teste-real.md](refinamentos/interface-apos-teste-real.md).
+
+**Comece pela onda 1**, que é onde está o custo real:
+
+| Issue | Por que primeiro |
+|---|---|
+| [#53](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/53) | Publicar foto no celular recarrega o app e **perde a imagem** — o único item da leva que destrói trabalho. **Reproduzir antes de editar** |
+| [#48](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/48) | A exportação diz cumprir a LGPD e **não inclui conta, cuidadores, consentimentos nem momentos**. Risco jurídico, não acabamento |
+
+Duas entraram nesta tarde, e as duas nasceram de defeito na **rede de proteção**, não no produto:
 
 | Issue · PR | O quê | Entrou |
 |---|---|---|
