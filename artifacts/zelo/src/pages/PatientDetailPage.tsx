@@ -26,7 +26,12 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
 import { AreaCarregando, Esqueleto } from "@/components/esqueleto";
-import { ArrowLeft, Plus, Pill, Package, Trash2, Smartphone, Tablet } from "lucide-react";
+import { ArrowLeft, Plus, Pill, Package, Trash2, Smartphone, Tablet, Pause, Play, CheckCircle2 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 /**
  * Esqueleto da lista de tratamentos — Issue #5.
@@ -80,6 +85,11 @@ interface Treatment {
   scheduleConfig: unknown;
   instructions: string | null;
   escalationProfile: string | null;
+  // QUI-16 — o servidor diz se este tratamento já teve dose registrada. É
+  // o que decide se a tela oferece "Excluir": com histórico o DELETE é
+  // recusado com 409, porque o cascade do banco levaria as doses tomadas
+  // junto e o relatório de adesão passaria a mentir sobre o período.
+  hasDoseRecords: boolean;
 }
 
 interface ScheduledDose {
@@ -212,6 +222,10 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
   const [deleteError, setDeleteError] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [reactivatingId, setReactivatingId] = useState<number | null>(null);
+  // QUI-16: o tratamento que está prestes a ser apagado, e o erro que o
+  // servidor devolveu se ele recusar. `null` = ninguém.
+  const [excluindoTratamento, setExcluindoTratamento] = useState<Treatment | null>(null);
+  const [erroDoCiclo, setErroDoCiclo] = useState("");
   const [reactivateEndDate, setReactivateEndDate] = useState("");
   const [pushPromptTrigger, setPushPromptTrigger] = useState(0);
   const queryClient = useQueryClient();
@@ -287,6 +301,55 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
       setReactivateEndDate("");
       void queryClient.invalidateQueries({ queryKey: ["treatments", params.id] });
     }
+  };
+
+  /**
+   * Concluir, pausar, retomar ou cancelar — QUI-16.
+   *
+   * A rota aceita os quatro estados desde a ZELO-20 e cuida do resto: sair de
+   * `active` limpa as doses pendentes (o lembrete para), voltar para `active`
+   * as regenera. A tela só precisa dizer qual é o novo estado.
+   *
+   * As duas listas são invalidadas juntas de propósito: sem a de hoje, a dose
+   * de um tratamento recém-pausado continuaria na tela com botão de registrar,
+   * e o cuidador registraria uma dose de um tratamento que já parou.
+   */
+  const mudarStatus = async (treatmentId: number, status: Treatment["status"]) => {
+    setErroDoCiclo("");
+    const res = await authFetch(`/api/treatments/${treatmentId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      setErroDoCiclo(data.error ?? "Não foi possível mudar o estado do tratamento.");
+      return;
+    }
+    void queryClient.invalidateQueries({ queryKey: ["treatments", params.id] });
+    void queryClient.invalidateQueries({ queryKey: ["today-doses", params.id] });
+  };
+
+  /**
+   * Apagar de vez — só serve para o que foi cadastrado por engano.
+   *
+   * O servidor recusa com 409 quando já existe dose registrada, e a tela nem
+   * chega a oferecer o botão nesse caso (`hasDoseRecords`). O tratamento do
+   * erro continua aqui porque as duas coisas podem divergir: outro cuidador
+   * pode ter registrado a dose entre o carregamento da lista e o clique.
+   */
+  const excluirTratamento = async (treatmentId: number) => {
+    setErroDoCiclo("");
+    const res = await authFetch(`/api/treatments/${treatmentId}`, { method: "DELETE" });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      setErroDoCiclo(data.error ?? "Não foi possível excluir o tratamento.");
+      setExcluindoTratamento(null);
+      return;
+    }
+    setExcluindoTratamento(null);
+    void queryClient.invalidateQueries({ queryKey: ["treatments", params.id] });
+    void queryClient.invalidateQueries({ queryKey: ["today-doses", params.id] });
+    void queryClient.invalidateQueries({ queryKey: ["stock", params.id] });
   };
 
   // ZELO-40: liga/desliga é só permissão ("este paciente PODE usar o modo
@@ -510,35 +573,119 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
         {activeTreatments.length > 0 && (
           <h3 className="text-sm font-medium text-muted-foreground">Tratamentos</h3>
         )}
+
+        {/* QUI-16 — antes de existir isto, mudar o estado de um tratamento
+            falhava em silêncio: o cartão simplesmente não mudava, e ninguém
+            sabia se era lentidão ou recusa (plano em modo leitura, por
+            exemplo). Mesmo defeito que o modo idoso já tinha tido. */}
+        {erroDoCiclo && (
+          <Alert variant="destructive"><AlertDescription>{erroDoCiclo}</AlertDescription></Alert>
+        )}
         <div className={`space-y-3 ${isLoading ? "" : "zelo-entra"}`}>
           {activeTreatments.map((t) => (
             <div key={t.id} className="p-4 rounded-xl border bg-card shadow-sm">
               <div className="flex items-start justify-between gap-3">
-                <div>
+                <div className="min-w-0">
                   <h3 className="text-[18px] font-semibold">{t.medicationName}</h3>
                   {t.dose && <p className="text-muted-foreground text-[17px]">{t.dose}</p>}
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <span className="text-xs px-2.5 py-1 rounded-full bg-muted text-muted-foreground">
-                    {STATUS_LABELS[t.status] ?? t.status}
-                  </span>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="gap-1.5 h-8"
-                    onClick={() => setEditandoTratamento(t)}
-                  >
-                    <Pencil className="w-3.5 h-3.5" /> Editar
-                  </Button>
-                </div>
+                {/* O cabeçalho do cartão diz só O QUE É e EM QUE ESTADO.
+                    "Editar" saiu daqui e foi para a linha de ações — misturar
+                    identidade com comando deixava a etiqueta de estado
+                    parecendo mais um botão. */}
+                <span className={cn(
+                  "text-xs px-2.5 py-1 rounded-full shrink-0",
+                  t.status === "paused"
+                    ? "bg-zelo-amber/20 text-zelo-amber-fg"
+                    : "bg-muted text-muted-foreground"
+                )}>
+                  {STATUS_LABELS[t.status] ?? t.status}
+                </span>
               </div>
               <p className="text-sm text-muted-foreground mt-2">
                 {SCHEDULE_LABELS[t.scheduleType] ?? t.scheduleType} · desde {dataCurta(t.startDate)}
                 {t.endDate ? ` até ${dataCurta(t.endDate)}` : " · uso contínuo"}
               </p>
+
+              {/* ── Ciclo de vida — QUI-16 ────────────────────────────────
+                  Até aqui um tratamento só sabia nascer e ser editado. Quem
+                  terminava um antibiótico de sete dias sem ter cadastrado
+                  data de fim continuava recebendo lembrete para sempre, e a
+                  única saída era editar o tratamento e inventar uma data no
+                  passado.
+
+                  O servidor já aceitava os quatro estados desde a ZELO-20 —
+                  era a tela que nunca chamava com `status`. */}
+              <div className="flex flex-wrap items-center gap-1 mt-3 pt-3 border-t">
+                <Button size="sm" variant="ghost" className="gap-1.5 h-8" onClick={() => setEditandoTratamento(t)}>
+                  <Pencil className="w-3.5 h-3.5" /> Editar
+                </Button>
+
+                {t.status === "active" ? (
+                  <Button size="sm" variant="ghost" className="gap-1.5 h-8" onClick={() => void mudarStatus(t.id, "paused")}>
+                    <Pause className="w-3.5 h-3.5" /> Pausar
+                  </Button>
+                ) : (
+                  <Button size="sm" variant="ghost" className="gap-1.5 h-8" onClick={() => void mudarStatus(t.id, "active")}>
+                    <Play className="w-3.5 h-3.5" /> Retomar
+                  </Button>
+                )}
+
+                <Button size="sm" variant="ghost" className="gap-1.5 h-8" onClick={() => void mudarStatus(t.id, "finished")}>
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Concluir
+                </Button>
+
+                {/* "Cancelar tratamento", e não "Cancelar": num app cheio de
+                    janelas, "Cancelar" sozinho lê como "deixa pra lá". */}
+                <Button size="sm" variant="ghost" className="h-8" onClick={() => void mudarStatus(t.id, "cancelled")}>
+                  Cancelar tratamento
+                </Button>
+
+                {/* Excluir só aparece enquanto NUNCA houve dose registrada —
+                    o servidor recusa com 409 nos outros casos, e oferecer um
+                    botão que ele já sabe que vai negar é enganar quem olha. */}
+                {!t.hasDoseRecords && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="gap-1.5 h-8 text-destructive hover:text-destructive"
+                    onClick={() => setExcluindoTratamento(t)}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> Excluir
+                  </Button>
+                )}
+              </div>
             </div>
           ))}
         </div>
+
+        {/* Excluir é a única ação do ciclo que não dá para desfazer — as
+            outras três têm "Reativar" logo ali embaixo. Por isso é a única
+            que pergunta antes. */}
+        <AlertDialog
+          open={excluindoTratamento !== null}
+          onOpenChange={(aberto) => { if (!aberto) setExcluindoTratamento(null); }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Excluir {excluindoTratamento?.medicationName}?</AlertDialogTitle>
+              <AlertDialogDescription>
+                O tratamento some da ficha e não fica no histórico. Serve para o que
+                foi cadastrado por engano — se ele chegou a ser usado de verdade,
+                cancele em vez de excluir.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Manter</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={() => excluindoTratamento && void excluirTratamento(excluindoTratamento.id)}
+              >
+                Excluir
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {pastTreatments.length > 0 && (
           <details className="pt-2">

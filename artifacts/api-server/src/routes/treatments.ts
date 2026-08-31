@@ -8,7 +8,7 @@ import { getAuth } from "../lib/auth-types.ts";
 import { Router } from "express";
 import { eq, and } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { treatmentsTable, patientsTable, medicationsTable, stockEntriesTable } from "@workspace/db";
+import { treatmentsTable, patientsTable, medicationsTable, stockEntriesTable, scheduledDosesTable, doseRecordsTable } from "@workspace/db";
 import { z } from "zod";
 import { expandSchedule } from "@workspace/scheduling";
 import type { ScheduleConfig } from "@workspace/scheduling";
@@ -130,7 +130,21 @@ router.get("/patients/:patientId/treatments", requireAuth, async (req, res): Pro
     .where(eq(treatmentsTable.patientId, patientId))
     .orderBy(treatmentsTable.createdAt);
 
-  res.json(treatments);
+  // QUI-16: quais destes tratamentos já têm dose registrada.
+  //
+  // A tela precisa saber ANTES de desenhar o botão: excluir um tratamento
+  // que já tem histórico é recusado com 409 (ver o DELETE mais abaixo), e
+  // oferecer um botão que o servidor vai negar é enganar quem olha.
+  //
+  // Uma consulta só para a lista inteira, não uma por tratamento.
+  const comRegistro = await db
+    .selectDistinct({ treatmentId: scheduledDosesTable.treatmentId })
+    .from(doseRecordsTable)
+    .innerJoin(scheduledDosesTable, eq(doseRecordsTable.scheduledDoseId, scheduledDosesTable.id))
+    .where(eq(doseRecordsTable.patientId, patientId));
+  const registrados = new Set(comRegistro.map((r) => r.treatmentId));
+
+  res.json(treatments.map((t) => ({ ...t, hasDoseRecords: registrados.has(t.id) })));
 });
 
 // ── Pré-visualizar próximas doses, sem salvar nada ────────────────────────
@@ -347,6 +361,86 @@ router.patch("/treatments/:treatmentId", requireAuth, async (req, res): Promise<
   publishPatientEvent(updated.patientId, { type: "treatment_changed", treatmentId });
 
   res.json(updated);
+});
+
+// ── Excluir tratamento ─────────────────────────────────────────────────────
+//
+// ── Por que esta rota recusa em vez de apagar — QUI-16 ─────────────────────
+//
+// Concluir e cancelar guardam o tratamento no histórico, que é o certo na
+// esmagadora maioria dos casos. Mas quem cadastrou o remédio ERRADO não quer
+// isso guardado para sempre numa lista de encerrados: quer que suma.
+//
+// O que essa rota NÃO pode fazer é apagar história de cuidado. E o risco aqui
+// é silencioso: `scheduled_doses.treatment_id` e `dose_records
+// .scheduled_dose_id` são ambos ON DELETE CASCADE. Um DELETE inocente no
+// tratamento levaria junto **todas as doses tomadas**, sem erro nenhum, sem
+// aviso nenhum — e o relatório de adesão passaria a mentir sobre um período
+// que de fato aconteceu.
+//
+// Então a regra é simples e verificável: **teve dose registrada, não apaga.**
+// A resposta 409 diz o que fazer no lugar, porque recusar sem apontar a saída
+// é só um beco sem saída educado.
+
+router.delete("/treatments/:treatmentId", requireAuth, async (req, res): Promise<void> => {
+  const treatmentId = Number(req.params.treatmentId);
+  if (isNaN(treatmentId)) { res.status(400).json({ error: "ID inválido" }); return; }
+
+  const [existing] = await db
+    .select({ treatment: treatmentsTable, patientFamilyId: patientsTable.familyId })
+    .from(treatmentsTable)
+    .innerJoin(patientsTable, eq(treatmentsTable.patientId, patientsTable.id))
+    .where(eq(treatmentsTable.id, treatmentId))
+    .limit(1);
+
+  // 404, nunca 403: responder "existe, mas não é seu" já entrega que aquele
+  // id existe em alguma família. É a mesma regra do resto do produto.
+  if (!existing || existing.patientFamilyId !== getAuth(req).familyId) {
+    res.status(404).json({ error: "Tratamento não encontrado" });
+    return;
+  }
+
+  // Sem portão de plano aqui, de propósito. `isPatientEditable` existe para
+  // barrar CRESCIMENTO quando a família passou do limite — e apagar é o
+  // contrário de crescer. Bloquear a limpeza de um cadastro errado por causa
+  // de plano seria cobrar pelo direito de corrigir um engano. O PATCH também
+  // não tem portão, pela mesma família de razões: parar um tratamento é
+  // segurança do paciente (invariante 6).
+
+  const [registro] = await db
+    .select({ id: doseRecordsTable.id })
+    .from(doseRecordsTable)
+    .innerJoin(scheduledDosesTable, eq(doseRecordsTable.scheduledDoseId, scheduledDosesTable.id))
+    .where(eq(scheduledDosesTable.treatmentId, treatmentId))
+    .limit(1);
+
+  if (registro) {
+    res.status(409).json({
+      error:
+        "Este tratamento já tem dose registrada, e o histórico precisa continuar existindo. " +
+        "Cancele o tratamento: ele para de gerar lembrete e sai da lista de ativos.",
+      code: "TREATMENT_HAS_HISTORY",
+    });
+    return;
+  }
+
+  await db.delete(treatmentsTable).where(eq(treatmentsTable.id, treatmentId));
+
+  await audit({
+    familyId: getAuth(req).familyId,
+    entityType: "treatment",
+    entityId: String(treatmentId),
+    action: "deleted",
+    actorId: String(getAuth(req).caregiverId),
+    actorType: "caregiver",
+    ipAddress: req.ip,
+  });
+
+  // A tela do paciente precisa recarregar: o cartão sumiu, e as doses
+  // pendentes que o cascade levou junto também.
+  publishPatientEvent(existing.treatment.patientId, { type: "treatment_changed", treatmentId });
+
+  res.status(204).end();
 });
 
 export default router;

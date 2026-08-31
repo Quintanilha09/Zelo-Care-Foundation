@@ -232,11 +232,7 @@ export async function publicarUmMomento(
 }
 
 /**
- * Um tratamento com dose HOJE, e a primeira dose registrada — Issue #26.
- *
- * Existe para os testes que precisam de uma dose **já resolvida** na tela.
- * Sem isto não dá para provar nada sobre o cartão de dose tomada: a ficha
- * recém-criada só tem dose pendente.
+ * Um tratamento com dose HOJE, ainda sem nenhum registro — Issue #26, QUI-16.
  *
  * ── Por que os horários são "00:01" e "23:59" ─────────────────────────────
  *
@@ -247,16 +243,19 @@ export async function publicarUmMomento(
  * Com os dois horários há sempre ao menos uma dose futura dentro do dia
  * civil do paciente, a qualquer hora — **exceto no último minuto do dia**,
  * a mesma janela que a suíte de servidor aceita desde sempre.
+ *
+ * `sufixo` existe porque o plano Grátis cuida de **3 medicamentos**: um teste
+ * que precisa de dois tratamentos precisa de dois nomes distintos.
  */
-export async function registrarUmaDoseHoje(
+export async function criarTratamentoHoje(
   request: APIRequestContext,
   conta: ContaDeTeste,
   alvo: number,
-  desfecho: "taken" | "skipped" = "taken"
-): Promise<{ medicamento: string; horaAgendada: string }> {
+  sufixo = ""
+): Promise<{ tratamentoId: number; medicamento: string; doseId: number; horaAgendada: string }> {
   const token = await tokenDaConta(request, conta);
   const cabecalho = { Authorization: `Bearer ${token}` };
-  const medicamento = "Remedio Ficticio (ficticio)";
+  const medicamento = `Remedio Ficticio${sufixo ? ` ${sufixo}` : ""} (ficticio)`;
 
   const med = await request.post("/api/medications", {
     headers: cabecalho,
@@ -281,11 +280,14 @@ export async function registrarUmaDoseHoje(
     },
   });
   expect(tratamento.status(), `criar tratamento falhou: ${await tratamento.text()}`).toBe(201);
+  const tratamentoId = ((await tratamento.json()) as { id: number }).id;
 
   const hojeRes = await request.get(`/api/patients/${alvo}/today-doses`, { headers: cabecalho });
   expect(hojeRes.ok(), `today-doses falhou: ${await hojeRes.text()}`).toBeTruthy();
-  const corpo = (await hojeRes.json()) as { doses: Array<{ id: number; scheduledLocalTime: string }> };
-  const dose = corpo.doses[0];
+  const corpo = (await hojeRes.json()) as {
+    doses: Array<{ id: number; treatmentId: number; scheduledLocalTime: string }>;
+  };
+  const dose = corpo.doses.find((d) => d.treatmentId === tratamentoId);
   expect(
     dose,
     "o tratamento precisa ter gerado ao menos uma dose hoje — se isto falhar, " +
@@ -293,11 +295,30 @@ export async function registrarUmaDoseHoje(
       "não são 23:59 em São Paulo"
   ).toBeTruthy();
 
+  return { tratamentoId, medicamento, doseId: dose!.id, horaAgendada: dose!.scheduledLocalTime };
+}
+
+/**
+ * O mesmo tratamento acima, com a primeira dose **já registrada** — Issue #26.
+ *
+ * Existe para os testes que precisam de uma dose **já resolvida** na tela.
+ * Sem isto não dá para provar nada sobre o cartão de dose tomada: a ficha
+ * recém-criada só tem dose pendente.
+ */
+export async function registrarUmaDoseHoje(
+  request: APIRequestContext,
+  conta: ContaDeTeste,
+  alvo: number,
+  desfecho: "taken" | "skipped" = "taken"
+): Promise<{ medicamento: string; horaAgendada: string }> {
+  const token = await tokenDaConta(request, conta);
+  const { medicamento, doseId, horaAgendada } = await criarTratamentoHoje(request, conta, alvo);
+
   const registro = await request.post(`/api/patients/${alvo}/dose-records`, {
-    headers: cabecalho,
-    data: { scheduledDoseId: dose.id, outcome: desfecho },
+    headers: { Authorization: `Bearer ${token}` },
+    data: { scheduledDoseId: doseId, outcome: desfecho },
   });
   expect(registro.ok(), `registrar dose falhou: ${await registro.text()}`).toBeTruthy();
 
-  return { medicamento, horaAgendada: dose.scheduledLocalTime };
+  return { medicamento, horaAgendada };
 }
