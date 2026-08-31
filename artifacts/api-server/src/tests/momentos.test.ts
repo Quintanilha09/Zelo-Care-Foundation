@@ -465,6 +465,11 @@ describe("Paginação do mural — QUI-18", () => {
   });
 
   it("entrega a página pedida e um cursor para a seguinte", async () => {
+    // Sem `instante` fixo: cada linha nasce com o `now()` do Postgres, em
+    // MICROSSEGUNDOS. É este teste que pegou o defeito de arredondamento —
+    // o `Date` do JavaScript só tem milissegundos, o driver arredonda para
+    // cima, e o cursor passava a apontar DEPOIS da linha que marcava. As
+    // páginas devolviam 3, 3 e 3 de um mural de 7, repetindo para sempre.
     await semear(7);
 
     const primeira = await pagina(null, 3);

@@ -62,22 +62,54 @@ const TAMANHO_DA_PAGINA = 24;
 const TETO_DA_PAGINA = 60;
 
 /**
+ * O instante do momento com a precisão que o Postgres realmente guarda.
+ *
+ * ── Por que não dá para usar o `Date` do JavaScript aqui ──────────────────
+ *
+ * `timestamptz` guarda MICROSSEGUNDOS. `Date` do JavaScript só tem
+ * milissegundos — e o driver do Postgres, ao converter, **arredonda**:
+ * `02:49:50.101567` vira `02:49:50.102`.
+ *
+ * Arredondar para cima joga o cursor **depois** da linha que ele deveria
+ * marcar. A página seguinte então pede "tudo que veio antes de .102", e a
+ * linha de .101567 entra de novo — e de novo, e de novo. O mural repetia a
+ * mesma foto a cada "ver mais".
+ *
+ * Foi assim que o defeito apareceu no CI: sete momentos paginados de três em
+ * três devolviam 3, 3 e 3 em vez de 3, 3 e 1. E o teste do "mesmo instante"
+ * passava, porque lá os instantes são idênticos de propósito e o desempate
+ * cai todo no id — que é exato.
+ *
+ * O `to_char` abaixo mantém os seis dígitos. A comparação continua sendo
+ * feita sobre a coluna crua, então o índice de `created_at` segue valendo.
+ */
+const INSTANTE_COM_MICROSSEGUNDOS = sql<string>`to_char(${mediaAssetsTable.createdAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
+
+/** O formato exato que `INSTANTE_COM_MICROSSEGUNDOS` produz. Nada mais passa. */
+const FORMATO_DO_INSTANTE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/;
+
+/**
  * O cursor: o instante e o id do último momento já entregue.
  *
- * Precisa dos dois. Só `createdAt` perderia (ou repetiria) momentos
- * publicados no mesmo instante — o que acontece de verdade quando alguém
- * envia três fotos de uma vez —, e é o mesmo par que já ordena a consulta.
+ * Precisa dos dois. Só o instante perderia (ou repetiria) momentos publicados
+ * no mesmo microssegundo — o que acontece de verdade quando alguém envia três
+ * fotos de uma vez —, e é o mesmo par que já ordena a consulta.
  *
- * Formato `<iso>|<id>`. Legível de propósito: cursor opaco esconde de quem
- * depura, e não há nada aqui que valha esconder — quem tem o cursor já tem
- * a resposta que o continha.
+ * Formato `<instante>|<id>`. Legível de propósito: cursor opaco esconde de
+ * quem depura, e não há nada aqui que valha esconder — quem tem o cursor já
+ * tem a resposta que o continha.
+ *
+ * O instante volta como TEXTO, e vai para o SQL como parâmetro vinculado
+ * (`::timestamptz`). O formato é validado antes: sem isso, um cursor
+ * malformado viraria erro de conversão do Postgres na cara de quem só clicou
+ * em "ver mais".
  */
-function lerCursor(bruto: unknown): { instante: Date; id: number } | null {
+function lerCursor(bruto: unknown): { instante: string; id: number } | null {
   if (typeof bruto !== "string" || bruto.length === 0) return null;
-  const [iso, id] = bruto.split("|");
-  const instante = new Date(iso ?? "");
+  const [instante, id] = bruto.split("|");
   const numero = Number(id);
-  if (Number.isNaN(instante.getTime()) || !Number.isSafeInteger(numero) || numero <= 0) return null;
+  if (!instante || !FORMATO_DO_INSTANTE.test(instante)) return null;
+  if (!Number.isSafeInteger(numero) || numero <= 0) return null;
   return { instante, id: numero };
 }
 
@@ -136,6 +168,10 @@ router.get<{ patientId: string }>("/patients/:patientId/momentos", requireAuth, 
       kind: mediaAssetsTable.kind,
       caption: mediaAssetsTable.caption,
       createdAt: mediaAssetsTable.createdAt,
+      // Só para montar o cursor. Ver o comentário longo em
+      // INSTANTE_COM_MICROSSEGUNDOS: o `createdAt` acima já chega arredondado
+      // ao milissegundo, e um cursor arredondado repete linhas para sempre.
+      instanteExato: INSTANTE_COM_MICROSSEGUNDOS,
       keptAt: mediaAssetsTable.keptAt,
       autorId: mediaAssetsTable.uploadedByCaregiverId,
     })
@@ -148,10 +184,16 @@ router.get<{ patientId: string }>("/patients/:patientId/momentos", requireAuth, 
         // Comparar só o instante perderia — ou repetiria — os momentos
         // enviados no mesmo segundo, que é o caso real de quem manda três
         // fotos de uma vez.
+        // A comparação é feita sobre a COLUNA CRUA, com o instante exato
+        // vinculado como parâmetro — o índice de `created_at` continua
+        // valendo, e nenhum microssegundo se perde no caminho.
         cursor
           ? or(
-              lt(mediaAssetsTable.createdAt, cursor.instante),
-              and(eq(mediaAssetsTable.createdAt, cursor.instante), lt(mediaAssetsTable.id, cursor.id))
+              sql`${mediaAssetsTable.createdAt} < ${cursor.instante}::timestamptz`,
+              and(
+                sql`${mediaAssetsTable.createdAt} = ${cursor.instante}::timestamptz`,
+                lt(mediaAssetsTable.id, cursor.id)
+              )
             )
           : sql`true`
       )
@@ -163,9 +205,7 @@ router.get<{ patientId: string }>("/patients/:patientId/momentos", requireAuth, 
   if (temMais) linhas.pop();
 
   const ultimo = linhas[linhas.length - 1];
-  const proximoCursor = temMais && ultimo
-    ? `${ultimo.createdAt.toISOString()}|${ultimo.id}`
-    : null;
+  const proximoCursor = temMais && ultimo ? `${ultimo.instanteExato}|${ultimo.id}` : null;
 
   // Nomes dos autores numa consulta só. Sem isto seriam N consultas para um
   // mural de 100 fotos.
