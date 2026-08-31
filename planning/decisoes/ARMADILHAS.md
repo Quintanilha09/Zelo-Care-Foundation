@@ -78,6 +78,34 @@ servidor". Horário explícito até 5 minutos no futuro é tratado como dessincr
 "agora"; futuro real (dose de amanhã) segue recusado. Registro **retroativo** continua mandando
 instante explícito, que é o caso em que a intenção sobre o horário importa de fato.
 
+### Dado de teste ancorado no relógio real quebra na borda do dia civil
+
+Mordeu duas vezes em 31/08/2026, em camadas diferentes, e nas duas o teste acusou o produto de
+um defeito que era do **dado de teste**:
+
+- **Issue #41** (integração, `plan-tiers.test.ts`): montava a dose "sem registro" em
+  `agora - 1 hora`. Rodando às 00:09 de Brasília, isso é 23:09 de **ontem** — sai da janela do dia
+  civil que o painel filtra, a paciente perde o `missedDoses` e a ordenação reprova.
+- **Issue #43** (ponta a ponta, `e2e/apoio.ts`): o tratamento nasce com posologia `["00:01","23:59"]`
+  e exige uma dose **hoje**. A partir de 23:59:00 em São Paulo os dois horários já passaram, e
+  `generateDosesForTreatment` só cria dose do **agora para a frente** (`windowStart = Clock.now()`) —
+  logo não cria nada, e três testes reprovam.
+
+Em ambos o produto estava certo. Regra prática: **todo dado de teste com hora precisa nascer longe
+das duas bordas do dia civil do paciente**, e "longe" quer dizer com margem para o bloco inteiro,
+não só para a linha que cria o dado.
+
+Como resolver depende da camada, e a diferença importa:
+
+| Camada | Teste e servidor | Saída |
+|---|---|---|
+| Integração | mesmo processo | `Clock.freezeAt(meio-dia)` + `Clock.reset()` no fim |
+| Ponta a ponta | processos separados (+ o relógio do navegador) | esperar a virada quando falta pouco — `esperarAViradaDoDiaSePreciso` em `e2e/apoio.ts` |
+
+No e2e, congelar o relógio do servidor por `POST /api/dev/clock/freeze` **parece** a resposta e não
+é: mexe em estado global compartilhado por toda a suíte, atravessa `beforeAll` e corpo de teste, e
+vaza congelado se um teste quebrar no meio.
+
 ---
 
 ## Testes
