@@ -1,0 +1,50 @@
+{
+  // ── Por que este arquivo existe ───────────────────────────────────────────
+  //
+  // Ate 31/08/2026 a pasta `e2e/` nao estava em NENHUM tsconfig do repositorio.
+  // O `tsconfig.json` da raiz tem `"files": []` e so referencia as libs; os de
+  // `artifacts/*` cobrem apenas o `src` de cada pacote. O resultado e que
+  // `pnpm run typecheck` compilava quatro projetos e passava por `e2e/` sem
+  // abrir um arquivo.
+  //
+  // O custo apareceu em 30/08/2026, em `cabecalho-da-ficha.spec.ts`:
+  // `getByRole("heading", { name })` usava o atalho de objeto quando a variavel
+  // em escopo se chamava `nome`. As duas medicoes de altura procuravam o mesmo
+  // titulo — o teste media a coisa errada e passava. Quem pegou foi o Biome, e
+  // por OUTRO motivo (parametro nao usado). Foi sorte, nao rede. Ver a Issue #38
+  // e o commit 0db14f0.
+  //
+  // E a mesma historia do `biome.jsonc`, que tambem deixou `e2e/` de fora por
+  // esquecimento. Teste sem revisor apodrece igual a qualquer codigo, e mais
+  // rapido, porque ninguem le teste que esta passando.
+  //
+  // ── Como isto entra no portao ─────────────────────────────────────────────
+  //
+  // Como *project reference* na raiz, que e o padrao que o repositorio ja usa
+  // para as libs: `tsconfig.json` ganhou `{ "path": "./e2e" }` e o
+  // `tsc --build` do `typecheck:libs` passa a cobrir. Sem script novo e sem
+  // passo novo no CI — o workflow ja roda `pnpm run typecheck`.
+  //
+  // Por isso o `composite: true`: `tsc --build` so aceita projeto referenciado
+  // se ele for composite. Combinar com `noEmit` e valido no TypeScript 5.9
+  // (a versao fixada aqui), e e o que se quer — isto e portao de tipo, nao
+  // etapa de build. O `.tsbuildinfo` gerado ao lado ja cai no `.gitignore`.
+
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "noEmit": true,
+    // `dom` e `dom.iterable` sao obrigatorios: o corpo de `page.evaluate()`
+    // roda no navegador e usa `document`, `window` e `getComputedStyle` — sao
+    // 14 ocorrencias em 8 arquivos.
+    "lib": ["es2022", "dom", "dom.iterable"],
+    // `tsconfig.base.json` zera `types` de proposito. Aqui `node` precisa
+    // voltar: o `playwright.config.ts` le `process.env` nove vezes e o
+    // `apoio.ts` monta um PNG com `Buffer`.
+    "types": ["node"]
+  },
+  // O `playwright.config.ts` entra junto de proposito. Ele mora na raiz, e a
+  // raiz nao compila nada (`"files": []`) — entao ele estava tao descoberto
+  // quanto os specs, e e o arquivo que define a suite inteira.
+  "include": ["**/*.ts", "../playwright.config.ts"]
+}
