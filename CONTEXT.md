@@ -104,7 +104,8 @@ exatamente o que manteve a etapa de Build do CI vermelha até 26/08/2026.
 
 ## Onde está o desenvolvimento
 
-**47 histórias entregues.** O projeto **ZELO — Momentos fechou em 27/08/2026**: QUI-5 a QUI-8,
+**53 histórias entregues** (medido em 31/08/2026; ver [`planning/STATE.md`](planning/STATE.md#posição)).
+O projeto **ZELO — Momentos fechou em 27/08/2026**: QUI-5 a QUI-8,
 QUI-10 e QUI-11 entregues, QUI-9 (vídeo) cancelada por decisão do fundador.
 
 O backlog codificável voltou a ficar **esgotado**. As duas histórias restantes no Linear estão

@@ -28,10 +28,6 @@ Das 10 fases do backlog original só sobraram três buracos, todos deixados de p
 (SMS) na fase 06, **ZELO-39** (assinatura) na 09, e a **fase 10 em 1/4**. A tabela por fase vive em
 [HISTORIAS.md](HISTORIAS.md#fases) — não duplicar aqui.
 
-> **A contagem passou de 52 para 53 em 31/08/2026:** a QUI-14 nunca tinha entrado, embora entregue
-> em 27/08 (Issue #26, PR #27, commit `610f4d3`). O `CONTEXT.md` ainda diz 47 — certo quando foi
-> escrito, defasado desde então.
-
 ---
 
 ## Ambiente
@@ -57,17 +53,19 @@ Das 10 fases do backlog original só sobraram três buracos, todos deixados de p
 
 ## Onde o desenvolvimento parou
 
-**Aberto no GitHub** — verificado em 31/08/2026, 16h, com `gh`. Este bloco envelhece rápido: se a
-sessão for depois disso, meça de novo antes de confiar.
+**Nada aberto no GitHub** — zero Issues e zero PRs, verificado em 31/08/2026, 17h, com `gh`. Este
+bloco envelhece rápido: se a sessão for depois disso, meça de novo antes de confiar.
 
-| Issue · PR | O quê | Estado |
+As duas últimas entraram nesta tarde, e as duas nasceram de defeito na **rede de proteção**, não no
+produto:
+
+| Issue · PR | O quê | Entrou |
 |---|---|---|
-| [#38](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/38) · [#39](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/39) | O typecheck passa a cobrir a pasta `e2e` | `MERGEABLE`, CI verde (execução `33409635698`) |
-| [#43](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/43) · [#44](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/44) | Três testes e2e reprovam no último minuto do dia em São Paulo | `MERGEABLE` |
+| [#38](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/38) · [#39](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/39) | O `typecheck` passa a cobrir a pasta `e2e` — ela não estava em tsconfig nenhum | 16h18, commit `d95c7ee` |
+| [#43](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/43) · [#44](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/44) | Três testes e2e reprovavam no último minuto do dia em São Paulo | 16h23, commit `2024369` |
 
-Os dois estão prontos para merge. Falta também **tornar o check obrigatório e proteger o `main`**,
-depois de uma execução verde e revisada — o PR #1, que registrava isso, foi fechado sem merge em
-26/08/2026.
+Falta **tornar o check obrigatório e proteger o `main`**, depois de uma execução verde e revisada —
+o PR #1, que registrava isso, foi fechado sem merge em 26/08/2026.
 
 > **Há sessões em paralelo.** `git worktree list` mostra três worktrees ativos além desta cópia.
 > Vale a regra do [CLAUDE.md](../CLAUDE.md): **uma sessão por vez no `main`** — havendo outra ativa,
@@ -78,7 +76,23 @@ depois de uma execução verde e revisada — o PR #1, que registrava isso, foi 
 [auditorias/2026-08-23-gsd-secao-10.md](auditorias/2026-08-23-gsd-secao-10.md)). O item mais grave:
 **o cadastro por e-mail e senha não funciona em produção** — nenhum e-mail é enviado e o login exige
 e-mail verificado. Só o Google entra. Fora isso, o disponível é manutenção, correção, segurança e
-qualidade. **Não force uma história bloqueada só para ter o que fazer:**
+qualidade.
+
+**Onde a fase 11 está** — medido em 31/08/2026 contra o código, não copiado da auditoria:
+
+| | Estado |
+|---|---|
+| 11.1a destravar o cadastro · 11.2 rede de proteção · 11.3 tipografia | ✅ 23/08/2026 |
+| 11.1b integrar provedor de e-mail | 🔒 bloqueada: conta no Resend e **domínio verificado** |
+| **11.5 testes de contrato do frontend** | ▶️ **destravada** — era "a UI não abre aqui", e o Playwright roda no CI desde 26/08 |
+| 11.4 fechar a auditoria | depende da 11.5 |
+| 11.6 papel por paciente | ⏸️ `ADIÁVEL` de propósito, sem caso de uso real |
+
+Há ainda a **fase 12** ([phases/12-feedback-de-uso/](phases/12-feedback-de-uso/)), nascida de uso
+real e não de auditoria: 10 itens abertos, o mais grave sendo o `12-01` — **Consultas e Tratamento
+não mostram o paywall**, então o app *parece quebrado* em vez de convidar a assinar.
+
+**Não force uma história bloqueada só para ter o que fazer:**
 
 | História | Por que está parada |
 |---|---|
@@ -132,15 +146,24 @@ cada foto escolhida, e falta o fundador abrir o console no Replit e ler.
 
 ## Gaps conhecidos, registrados de propósito
 
-| Gap | Onde está documentado |
+> **Esta tabela foi remedida linha a linha em 31/08/2026, contra o código.** Três entradas eram
+> falsas e uma estava pela metade: tinham sido corrigidas pelas fases 11.2 e 11.3, em 23/08, e
+> ninguém voltou aqui para apagá-las. O que sobrou abaixo foi verificado nesta data, e cada linha
+> diz onde a verificação pode ser refeita. **Gap que já não existe é pior que gap não registrado:**
+> este arquivo mandou trabalho já feito para o topo da fila.
+
+| Gap | Como confirmei em 31/08/2026 |
 |---|---|
-| **Papel é por família, não por paciente.** A spec pede "cuidador do pai, observador da mãe, mesma conta". Exigiria tabela de junção e mudar o modelo de autorização do JWT | Cabeçalho de `artifacts/api-server/src/lib/capabilities.ts` |
-| **Refresh token em `localStorage`.** `RISCO POTENCIAL` aceito; a alternativa é cookie `httpOnly`, que muda o fluxo de autenticação inteiro. **Avaliar antes de haver usuário real** | [decisoes/PLATFORM_DECISIONS.md](decisoes/PLATFORM_DECISIONS.md) §9 |
-| **Artefatos de fase param na 04** enquanto o projeto está na 10. Nenhum `NN-VERIFICATION.md` foi criado, apesar de o `config.json` exigir. A fase 11 nasce já sob o padrão | [phases/](phases/) e [config.json](config.json) |
-| **REQ-F03 — não existe tipografia base.** O `body` não define `font-size` e herda 16px do navegador; os tamanhos são 72 classes à mão em 18 arquivos, a mais comum sendo `text-[15px]`, num app para idosos | [auditorias/2026-08-23-gsd-secao-10.md](auditorias/2026-08-23-gsd-secao-10.md) |
-| **Os 33 testes do motor de recorrência não rodam no CI.** Existem, passam, e nunca são exercidos — o workflow nunca chama `test:libs` | idem |
-| **Frontend sem teste unitário.** O Playwright é a única cobertura de tela, e os defeitos mais caros da última leva foram todos de frontend | idem |
-| **`admin.test.ts` depende de variável de ambiente externa** — falha sozinho sem `ADMIN_PANEL_SECRET`. Apontado pelo Codex; merece mudança separada e testada | `artifacts/api-server/src/tests/admin.test.ts` |
+| **Papel é por família, não por paciente.** A spec pede "cuidador do pai, observador da mãe, mesma conta". Exigiria tabela de junção caregiver×patient e mudar o modelo de autorização do JWT, que hoje carrega um `role` único por sessão | O cabeçalho de `artifacts/api-server/src/lib/capabilities.ts` descreve o gap e ele continua lá. É a fase **11.6**, `ADIÁVEL` de propósito — não fazer sem caso de uso real |
+| **Refresh token em `localStorage`.** `RISCO POTENCIAL` aceito; a alternativa é cookie `httpOnly`, que muda o fluxo de autenticação inteiro. **Avaliar antes de haver usuário real** | `artifacts/zelo/src/lib/auth-client.ts:30` — `localStorage.setItem(REFRESH_TOKEN_KEY, …)`. O access token já fica só em memória, e o próprio arquivo explica a divisão |
+| **Nenhum `NN-VERIFICATION.md` existe**, apesar de o `config.json` exigir. E o `NN-PLAN.md` só existe na fase 01 (cinco arquivos) | `find planning/phases -name "*VERIFICATION*"` não devolve nada. **A parte antiga desta linha era falsa:** os artefatos não param mais na 04 — as fases 11 e 12 têm `CONTEXT.md` |
+| **Frontend sem teste unitário.** O Playwright é a única cobertura de tela, e os defeitos mais caros da última leva foram todos de frontend | Não há nenhum `.test.ts`/`.test.tsx` em `artifacts/zelo/src`. É a fase **11.5**, que deixou de estar bloqueada quando o Playwright passou a rodar no CI |
+
+**Três saíram daqui, resolvidas em 23/08/2026 pelas fases 11.2 e 11.3** e verificadas de novo hoje:
+os 33 testes do motor de recorrência **rodam** (`validate.yml:107` chama `test:libs`; a execução
+`33409635698` registra 33/33), a **tipografia base existe** (`artifacts/zelo/src/index.css:157`,
+`font-size: 18px` no `body`), e o **`admin.test.ts` é autossuficiente** (linhas 54–55 geram segredo
+efêmero com `crypto.randomBytes`). O registro de cada uma está na auditoria.
 
 ---
 
