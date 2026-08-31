@@ -12,7 +12,7 @@ import { getAuth } from "../lib/auth-types.ts";
  */
 
 import { Router } from "express";
-import { eq, and, gt } from "drizzle-orm";
+import { eq, and, gt, inArray } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   exportTokensTable,
@@ -46,15 +46,28 @@ router.post("/export", requireAuth, async (req, res): Promise<void> => {
 
   const patientIds = patients.map((p) => p.id);
 
-  // Busca todos os dados relacionados (inAny) — retorna vazio se não há pacientes
-  const pid0 = patientIds[0] ?? -1; // -1 nunca vai existir → retorna []
+  // ── O defeito que ficou aqui até a QUI-17 ────────────────────────────────
+  //
+  // Isto era `eq(..., pid0)`, com `pid0 = patientIds[0]`. O comentário
+  // original até dizia "inAny" — a intenção estava escrita, a implementação
+  // não. Numa família com mais de um paciente, **só o primeiro saía com
+  // dados**: os demais vinham com `treatments: []`, `doseRecords: []`, e por
+  // aí. E como a exportação é o direito do titular de levar os próprios
+  // dados embora, ela mentia calada.
+  //
+  // Não dava para ver pela tela porque não havia tela: a rota existia,
+  // testada, e nada no app a chamava.
+  //
+  // O `-1` continua sendo necessário — `inArray` com lista vazia não gera
+  // SQL válido, e uma família sem paciente é um caso real (conta nova).
+  const alvos = patientIds.length > 0 ? patientIds : [-1];
   const [treatments, doses, records, appointments, measurements, medications] =
     await Promise.all([
-      db.select().from(treatmentsTable).where(eq(treatmentsTable.patientId, pid0)),
-      db.select().from(scheduledDosesTable).where(eq(scheduledDosesTable.patientId, pid0)),
-      db.select().from(doseRecordsTable).where(eq(doseRecordsTable.patientId, pid0)),
-      db.select().from(appointmentsTable).where(eq(appointmentsTable.patientId, pid0)),
-      db.select().from(healthMeasurementsTable).where(eq(healthMeasurementsTable.patientId, pid0)),
+      db.select().from(treatmentsTable).where(inArray(treatmentsTable.patientId, alvos)),
+      db.select().from(scheduledDosesTable).where(inArray(scheduledDosesTable.patientId, alvos)),
+      db.select().from(doseRecordsTable).where(inArray(doseRecordsTable.patientId, alvos)),
+      db.select().from(appointmentsTable).where(inArray(appointmentsTable.patientId, alvos)),
+      db.select().from(healthMeasurementsTable).where(inArray(healthMeasurementsTable.patientId, alvos)),
       db.select().from(medicationsTable).where(eq(medicationsTable.familyId, familyId)),
     ]);
 
