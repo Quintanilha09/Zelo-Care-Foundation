@@ -53,8 +53,22 @@ Das 10 fases do backlog original só sobraram três buracos, todos deixados de p
 
 ## Onde o desenvolvimento parou
 
-**Doze Issues abertas, nenhum PR** — verificado em 31/08/2026, 18h, com `gh`. Este bloco envelhece
-rápido: se a sessão for depois disso, meça de novo antes de confiar.
+**Doze Issues abertas e seis PRs, todos verdes e esperando revisão** — verificado em 31/08/2026,
+20h, com `gh`. Este bloco envelhece rápido: se a sessão for depois disso, meça de novo.
+
+| PR | Issue | Estado |
+|---|---|---|
+| [#57](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/57) | #47 convites pendentes | `CLEAN` |
+| [#58](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/58) | #50 setas do visualizador | `CLEAN` |
+| [#59](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/59) | #55 botão Enviar acesso | `CLEAN` |
+| [#60](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/60) | #56 nome do paciente | `CLEAN` — **tem decisão do fundador dentro** |
+| [#61](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/61) | #54 atividade recente | `CLEAN` |
+| [#62](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/62) | #52 grade de Momentos | `CLEAN` |
+
+São as ondas 2 e 3 do plano em [refinamentos/interface-apos-teste-real.md](refinamentos/interface-apos-teste-real.md).
+**Nenhum foi mesclado** — o fundador pediu para aprovar. Números da última execução verde
+(`33448419049`): servidor **580 testes, 568 passando, 12 pulados, 0 falhas**; tela **102 passando**
+em 4,8 min; `lib/scheduling` 33/33.
 
 As doze (**#45 a #56**) são a leva que saiu do **primeiro teste feito no aparelho**, com o app
 publicado e o deploy do Replit aplicado. Refinamento, plano em quatro ondas e as discordâncias
