@@ -8,7 +8,7 @@
 import { Link } from "wouter";
 import { useAuth } from "@/context/AuthContext";
 import { AppHeader } from "@/components/app-header";
-import { CreditCard, Bell, History, ChevronRight } from "lucide-react";
+import { CreditCard, Bell, History, ChevronRight, ShieldCheck } from "lucide-react";
 
 function SettingsRow({
   href, icon: Icon, title, description,
@@ -59,6 +59,15 @@ export default function SettingsPage() {
             icon={History}
             title="Registro retroativo"
             description="Prazo pra registrar uma dose passada sem pedir justificativa"
+          />
+          {/* QUI-17 — as duas metades da LGPD moravam só no servidor: a rota
+              existia, testada, e nenhuma tela chamava. Direito que exige
+              `curl` para ser exercido não é direito do titular. */}
+          <SettingsRow
+            href="/ajustes/seus-dados"
+            icon={ShieldCheck}
+            title="Seus dados"
+            description="Baixar uma cópia de tudo, ou excluir a conta e os dados"
           />
         </div>
       </main>

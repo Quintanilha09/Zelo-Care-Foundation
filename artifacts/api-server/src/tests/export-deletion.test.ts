@@ -298,4 +298,132 @@ describe("Exportação e exclusão de dados — ZELO", () => {
       } catch { /* ignora — família pode já ter sido excluída pelo teste */ }
     });
   });
+
+  /**
+   * QUI-17 — o defeito que a exportação carregava calada.
+   *
+   * A consulta filtrava por `patientIds[0]`, não pela lista. Numa família
+   * com mais de um paciente, só o primeiro saía com dados; os demais vinham
+   * com `treatments: []`, `doseRecords: []` e por aí.
+   *
+   * E como não havia tela chamando a rota, ninguém tinha como perceber: a
+   * exportação é justamente o direito do titular de levar os próprios dados
+   * embora, e ela mentia sem dar erro nenhum.
+   */
+  describe("Exportação com mais de um paciente — QUI-17", () => {
+    let familia: TestFamily;
+    let segundoPacienteId: number;
+
+    before(async () => {
+      familia = await createCompleteFamily("export-multi@zelo.test");
+
+      const [segundo] = await db
+        .insert(patientsTable)
+        .values({ familyId: familia.familyId, name: "Segundo Paciente ExportDel", timezone: "America/Sao_Paulo" })
+        .returning();
+      segundoPacienteId = segundo.id;
+
+      const [remedio] = await db
+        .insert(medicationsTable)
+        .values({ familyId: familia.familyId, name: "Segundo Medicamento ExportDel (fictício)" })
+        .returning();
+      await db.insert(treatmentsTable).values({
+        patientId: segundo.id,
+        medicationId: remedio.id,
+        dose: "2cp",
+        scheduleType: "times_per_day",
+        scheduleConfig: { timesPerDay: 1, times: ["20:00"] },
+        startDate: "2025-01-01",
+      });
+    });
+
+    after(async () => {
+      await db.delete(usersTable).where(eq(usersTable.email, "export-multi@zelo.test"));
+      await db.delete(familiesTable).where(eq(familiesTable.id, familia.familyId));
+    });
+
+    it("traz os dados de TODOS os pacientes, não só do primeiro", async () => {
+      const criado = await api(familia.token, "POST", "/export");
+      assert.equal(criado.status, 200);
+      const { downloadUrl, patientCount } = criado.body as { downloadUrl: string; patientCount: number };
+      assert.equal(patientCount, 2);
+
+      const baixado = await rawGet(downloadUrl.replace(/^\/api/, ""));
+      assert.equal(baixado.status, 200);
+      const dados = JSON.parse(baixado.body) as {
+        patients: Array<{ id: number; treatments: Array<unknown> }>;
+      };
+
+      assert.equal(dados.patients.length, 2, "os dois pacientes precisam aparecer");
+      for (const paciente of dados.patients) {
+        assert.ok(
+          paciente.treatments.length > 0,
+          `o paciente ${paciente.id} saiu sem tratamento — era o defeito: a consulta filtrava por patientIds[0]`
+        );
+      }
+      assert.ok(
+        dados.patients.some((p) => p.id === segundoPacienteId),
+        "o segundo paciente precisa estar no arquivo"
+      );
+    });
+  });
+
+  /**
+   * GET /account/deletion — QUI-17.
+   *
+   * Sem esta rota não dá para construir a tela: ela é quem diz se a página
+   * deve oferecer "solicitar", "cancelar" ou "excluir agora".
+   */
+  describe("Estado do pedido de exclusão — QUI-17", () => {
+    let familia: TestFamily;
+
+    before(async () => {
+      familia = await createCompleteFamily("deletion-state@zelo.test");
+    });
+
+    after(async () => {
+      Clock.reset();
+      await db.delete(usersTable).where(eq(usersTable.email, "deletion-state@zelo.test"));
+      await db.delete(familiesTable).where(eq(familiesTable.id, familia.familyId));
+    });
+
+    it("sem pedido nenhum, responde pending: null", async () => {
+      const res = await api(familia.token, "GET", "/account/deletion");
+      assert.equal(res.status, 200);
+      assert.equal((res.body as { pending: unknown }).pending, null);
+    });
+
+    it("com pedido aberto, devolve a data e diz que ainda NÃO pode executar", async () => {
+      const pedido = await api(familia.token, "POST", "/account/deletion/request");
+      assert.equal(pedido.status, 201);
+
+      const res = await api(familia.token, "GET", "/account/deletion");
+      const pendente = (res.body as { pending: { scheduledDeletionAt: string; canExecuteNow: boolean } }).pending;
+      assert.ok(pendente, "o pedido recém-criado precisa aparecer");
+      assert.equal(
+        pendente.canExecuteNow,
+        false,
+        "a janela de sete dias mal começou — oferecer o botão aqui seria apagar antes da hora"
+      );
+    });
+
+    it("passados os sete dias, diz que pode executar", async () => {
+      // Quem decide é o relógio do SERVIDOR — a tela não calcula isso pelo
+      // relógio do aparelho, que pode estar adiantado.
+      Clock.advance(8 * 24 * 60 * 60 * 1000);
+      const res = await api(familia.token, "GET", "/account/deletion");
+      Clock.reset();
+
+      const pendente = (res.body as { pending: { canExecuteNow: boolean } }).pending;
+      assert.equal(pendente.canExecuteNow, true);
+    });
+
+    it("cancelado, volta a responder pending: null", async () => {
+      const cancelou = await api(familia.token, "POST", "/account/deletion/cancel");
+      assert.equal(cancelou.status, 200);
+
+      const res = await api(familia.token, "GET", "/account/deletion");
+      assert.equal((res.body as { pending: unknown }).pending, null);
+    });
+  });
 });
