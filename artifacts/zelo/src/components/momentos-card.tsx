@@ -619,14 +619,25 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
                   Seu navegador não consegue tocar áudio.
                 </audio>
               ) : (
-                <img
-                  src={apiUrl(momentoAberto.url)}
-                  alt={momentoAberto.caption ?? `Momento de ${patientName}`}
-                  // `max-h` com `object-contain`: sem teto, uma foto em pé
-                  // ocupa a tela inteira e empurra autor e legenda para fora
-                  // do campo de visão. Relatado pelo fundador em 25/08/2026.
-                  className="w-full max-h-[60vh] object-contain rounded-lg bg-muted"
-                />
+                // Caixa de altura FIXA, e a foto se ajusta dentro dela.
+                //
+                // Era `max-h-[60vh]` na própria imagem, o que resolvia o
+                // problema de 25/08/2026 (foto em pé ocupando a tela toda) e
+                // criava outro: a altura renderizada passava a variar com a
+                // proporção de cada foto. Uma paisagem ocupa pouco, um
+                // retrato ocupa 60vh — e as setas, que vêm depois no fluxo,
+                // subiam e desciam a cada troca. No celular o dedo já está
+                // onde a seta estava, e a seta se moveu (Issue #50).
+                //
+                // Com a caixa fixa, a foto muda de tamanho e o resto não sai
+                // do lugar.
+                <div className="flex h-[60vh] w-full items-center justify-center rounded-lg bg-muted">
+                  <img
+                    src={apiUrl(momentoAberto.url)}
+                    alt={momentoAberto.caption ?? `Momento de ${patientName}`}
+                    className="max-h-full max-w-full object-contain"
+                  />
+                </div>
               )}
 
               {momentoAberto.caption && <p className="text-sm">{momentoAberto.caption}</p>}
