@@ -43,7 +43,7 @@ Medido nesta data, nesta máquina:
 | Middlewares | **3** | `require-auth.ts`, `require-patient-access.ts` e `receber-arquivo.ts` |
 | Arquivos de teste | **43** | `src/tests/*.test.ts` |
 | Consistência da suíte | **limpa** | 43 referenciados no `test:all` = 43 no disco; nenhum órfão, nenhum fora |
-| Testes de ponta a ponta | **10 arquivos** | `e2e/*.spec.ts` — Playwright, Desktop Chrome e Pixel 7. Medido em 31/08/2026 |
+| Testes de ponta a ponta | **10 arquivos, 102 casos** | `e2e/*.spec.ts` — Playwright, Desktop Chrome e Pixel 7. O `apoio.ts` é auxiliar e não conta. 102 = 51 casos × 2 navegadores. Medido nesta máquina em 31/08/2026, no commit 4e3ca3e, com `pnpm exec playwright test --list` |
 | Typecheck do monorepo | **exit 0** | `pnpm run typecheck` — 4 pacotes, todos limpos |
 | Modelo de visão | `claude-haiku-4-5-20251001` | `lib/vision.ts` |
 | Fila | **pg-boss** sobre o mesmo Postgres | `lib/queue.ts` |
@@ -53,8 +53,11 @@ Medido nesta data, nesta máquina:
 **Servidor: 562 testes, 550 passando, 12 pulados, zero falhas.**
 **Tela: 102 testes de ponta a ponta**, Playwright, em Desktop Chrome e Pixel 7. Duração: 4,8 min.
 
-Medido na execução de CI `33354663972` (a do PR #37, verde de ponta a ponta) — **não** nesta
-máquina. Ver o aviso logo abaixo.
+O número de casos que **passam** vem da execução de CI `33354663972` (a do PR #37, verde de
+ponta a ponta) — **não** desta máquina. Ver o aviso logo abaixo. Já a **contagem** de 102 casos
+em 10 arquivos foi conferida aqui em 31/08/2026, no commit 4e3ca3e, com
+`pnpm exec playwright test --list` — enumerar teste não sobe a API, então isso ainda roda nesta
+máquina apesar do bloqueio descrito adiante. Contagem e resultado batem.
 
 Em 27/08/2026 eram 545 no servidor e 42 na tela. A leva de QUI-15 a QUI-19 dobrou a suíte de
 interface: o cabeçalho com nome longo, o ciclo de vida do tratamento, exportar e excluir conta,
