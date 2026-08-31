@@ -107,7 +107,7 @@ test("o cabeçalho não engorda com o nome longo", async ({ page, request }) => 
 
   /** Do topo do nome até a base do botão de ação: o cabeçalho inteiro. */
   const alturaDoCabecalho = async (nome: string): Promise<number> => {
-    const titulo = await page.getByRole("heading", { name }).boundingBox();
+    const titulo = await page.getByRole("heading", { name: nome }).boundingBox();
     const acao = await page.getByRole("button", { name: "Tratamento", exact: true }).boundingBox();
     return acao!.y + acao!.height - titulo!.y;
   };
