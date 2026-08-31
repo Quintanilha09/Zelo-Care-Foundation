@@ -1,5 +1,8 @@
 import { test, expect, type Page } from "@playwright/test";
-import { criarConta, entrar, criarPaciente, publicarUmMomento, type ContaDeTeste } from "./apoio";
+import {
+  criarConta, entrar, criarPaciente, publicarUmMomento, abrirPrimeiroMomento,
+  type ContaDeTeste,
+} from "./apoio";
 
 /**
  * Esqueleto de carregamento em toda tela — Issue #5.
@@ -149,10 +152,10 @@ test.describe("Apagar um momento sai animado", () => {
     await entrar(page, minhaConta);
     await page.goto(`/pacientes/${meuPaciente}`);
 
+    // QUI-18 — o mural virou grade: apagar mora no visualizador agora.
+    await abrirPrimeiroMomento(page);
     const botaoApagar = page.getByRole("button", { name: "Apagar este momento" });
-    await expect(botaoApagar, "o momento publicado precisa aparecer no mural").toBeVisible({
-      timeout: 15_000,
-    });
+    await expect(botaoApagar, "o visualizador precisa oferecer apagar").toBeVisible();
 
     // Segura o recarregamento do mural DEPOIS que ele já carregou uma vez.
     // É o que congela o instante interessante: a saída dura 120ms, curta
@@ -171,7 +174,10 @@ test.describe("Apagar um momento sai animado", () => {
     // já invisível. Se o `saindo` fosse limpo antes do recarregamento, ele
     // voltaria inteiro por um quadro — o pisco que a implementação evita.
     portao.soltar();
-    await expect(page.getByRole("button", { name: "Apagar este momento" })).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: /^Abrir a foto de / }),
+      "a miniatura precisa sumir da grade quando a lista nova chega"
+    ).toHaveCount(0);
     await expect(page.locator("li.zelo-sai")).toHaveCount(0);
   });
 });

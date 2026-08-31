@@ -22,8 +22,8 @@
  * O que aparece no lugar, e só para o cuidador principal, é o pedido de
  * consentimento.
  */
-import { useRef, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
+import { useInfiniteQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { authFetch, apiUrl } from "@/lib/auth-client";
 import { useAuth } from "@/context/AuthContext";
 import { comprimirFoto } from "@/lib/comprimir-imagem";
@@ -35,7 +35,10 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Camera, Trash2, ImagePlus, Bookmark, Heart } from "lucide-react";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+} from "@/components/ui/dialog";
+import { Camera, Trash2, ImagePlus, Bookmark, Heart, Mic, ChevronLeft, ChevronRight } from "lucide-react";
 import { AreaCarregando, EsqueletoDeMomento, BarraDeProgresso } from "@/components/esqueleto";
 
 interface Momento {
@@ -67,10 +70,19 @@ interface RespostaDoMural {
   timezone: string;
   diasDeRetencao: number;
   momentos: Momento[];
+  /**
+   * QUI-18 — o instante e o id do último momento desta página, ou `null`
+   * quando acabou. **Nunca um total**: um número de quantos faltam viraria
+   * placar do mural, que é justamente o que este recurso não pode ter.
+   */
+  proximoCursor: string | null;
 }
 
-async function buscarMural(patientId: number): Promise<RespostaDoMural | null> {
-  const res = await authFetch(`/api/patients/${patientId}/momentos`);
+async function buscarMural(patientId: number, cursor: string | null): Promise<RespostaDoMural | null> {
+  const endereco = cursor
+    ? `/api/patients/${patientId}/momentos?cursor=${encodeURIComponent(cursor)}`
+    : `/api/patients/${patientId}/momentos`;
+  const res = await authFetch(endereco);
   if (!res.ok) return null;
   return res.json();
 }
@@ -134,11 +146,48 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
   const [aApagar, setAApagar] = useState<Momento | null>(null);
   const [saindo, setSaindo] = useState<number | null>(null);
   const [consentindo, setConsentindo] = useState(false);
+  /** QUI-18 — índice do momento aberto no visualizador. `null` = fechado. */
+  const [aberto, setAberto] = useState<number | null>(null);
 
-  const { data: mural, isLoading } = useQuery({
+  // QUI-18 — paginação por cursor.
+  //
+  // **Não é feed infinito.** `fetchNextPage` só é chamado por um botão; o
+  // mural nunca puxa sozinho enquanto a pessoa rola. Rolagem infinita existe
+  // para prender, e este produto não quer prender ninguém.
+  const {
+    data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage,
+  } = useInfiniteQuery({
     queryKey: ["momentos", patientId],
-    queryFn: () => buscarMural(patientId),
+    queryFn: ({ pageParam }) => buscarMural(patientId, pageParam),
+    initialPageParam: null as string | null,
+    getNextPageParam: (ultima) => ultima?.proximoCursor ?? null,
   });
+
+  // A primeira página é quem carrega consentimento, fuso e retenção — eles
+  // não mudam entre páginas.
+  const mural = data?.pages[0] ?? null;
+  const momentos = data?.pages.flatMap((pagina) => pagina?.momentos ?? []) ?? [];
+  // Só para o efeito de teclado abaixo: `momentos` é um array novo a cada
+  // render, e usá-lo como dependência reinscreveria o listener sem parar.
+  const quantos = momentos.length;
+
+  /** O momento sendo olhado agora. `null` quando o visualizador está fechado. */
+  const momentoAberto = aberto !== null ? momentos[aberto] ?? null : null;
+
+  // Setas do teclado dentro do visualizador. O Radix já trata Esc; isto
+  // completa o gesto que qualquer galeria tem, e sem o qual quem usa teclado
+  // teria de fechar e reabrir para ver a foto seguinte.
+  useEffect(() => {
+    if (aberto === null) return;
+    const aoTeclar = (evento: KeyboardEvent) => {
+      if (evento.key === "ArrowLeft") setAberto((i) => (i === null ? null : Math.max(0, i - 1)));
+      if (evento.key === "ArrowRight") {
+        setAberto((i) => (i === null ? null : Math.min(quantos - 1, i + 1)));
+      }
+    };
+    window.addEventListener("keydown", aoTeclar);
+    return () => window.removeEventListener("keydown", aoTeclar);
+  }, [aberto, quantos]);
 
   const recarregar = () => queryClient.invalidateQueries({ queryKey: ["momentos", patientId] });
 
@@ -219,11 +268,26 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
   const alternarCoracao = async (momento: Momento) => {
     const meuNome = user?.caregiver?.name ?? "Você";
 
+    // Com paginação, o cache guarda `{ pages, pageParams }` — a atualização
+    // otimista precisa atravessar todas as páginas já carregadas, senão um
+    // coração dado numa foto da segunda página não aparece.
     const aplicar = (mudar: (m: Momento) => Momento) =>
-      queryClient.setQueryData<RespostaDoMural | null>(["momentos", patientId], (anterior) =>
-        anterior
-          ? { ...anterior, momentos: anterior.momentos.map((m) => (m.id === momento.id ? mudar(m) : m)) }
-          : anterior
+      queryClient.setQueryData<InfiniteData<RespostaDoMural | null>>(
+        ["momentos", patientId],
+        (anterior) =>
+          anterior
+            ? {
+                ...anterior,
+                pages: anterior.pages.map((pagina) =>
+                  pagina
+                    ? {
+                        ...pagina,
+                        momentos: pagina.momentos.map((m) => (m.id === momento.id ? mudar(m) : m)),
+                      }
+                    : pagina
+                ),
+              }
+            : anterior
       );
 
     aplicar((m) => ({
@@ -261,6 +325,10 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
 
   const apagar = async (momento: Momento) => {
     setAApagar(null);
+    // Fecha o visualizador junto: manter aberto deixaria o índice apontando
+    // para a foto seguinte, e a tela trocaria de imagem sozinha na cara de
+    // quem acabou de apagar.
+    setAberto(null);
     const res = await authFetch(`/api/media/${momento.id}`, { method: "DELETE" });
     if (!res.ok) {
       const corpo = (await res.json().catch(() => ({}))) as { error?: string };
@@ -313,10 +381,17 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
           <Camera className="w-4 h-4 text-muted-foreground shrink-0" />
           <p className="font-medium">Momentos</p>
         </div>
+        {/* Seis quadrados, e não dois retângulos: o esqueleto tem que ter a
+            forma do que vem, senão a página pula quando o conteúdo chega —
+            que é justamente o que ele existe para evitar. Seis é uma fileira
+            no celular e uma e meia no desktop: reserva espaço sem fingir que
+            já sabemos quantas fotos existem. */}
         <AreaCarregando rotulo="Carregando os momentos">
-          <ul className="space-y-4">
-            <EsqueletoDeMomento />
-            <EsqueletoDeMomento />
+          <ul className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+            {Array.from({ length: 6 }).map((_, i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: barra cinza sem identidade própria
+              <EsqueletoDeMomento key={i} />
+            ))}
           </ul>
         </AreaCarregando>
       </div>
@@ -413,126 +488,232 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
       {/* QUI-11 — avisar ANTES é critério de aceite, não gentileza. O tom é
           informativo: nada de contagem regressiva por foto, nada de âmbar,
           nada que pareça ameaça. Só o fato, e como escapar dele. */}
-      {mural.momentos.length > 0 && (
+      {momentos.length > 0 && (
         <p className="text-xs text-muted-foreground">
-          Os momentos somem sozinhos depois de {mural.diasDeRetencao} dias. Toque no marcador
-          para guardar um para sempre.
+          Os momentos somem sozinhos depois de {mural.diasDeRetencao} dias. Abra um e toque
+          no marcador para guardá-lo para sempre.
         </p>
       )}
 
-      {/* O mural */}
-      {mural.momentos.length === 0 ? (
+      {/* ── O mural, em grade — QUI-18 ─────────────────────────────────────
+          Era uma coluna de fotos em tamanho grande. Funcionava com cinco;
+          com cinquenta virava um rolo sem fim, e achar a foto do Natal
+          passado exigia rolar a lista inteira.
+
+          A grade mostra muito mais de uma vez, e quem quiser ver de perto
+          abre — que é como qualquer galeria de celular funciona, e portanto
+          não precisa ser aprendido.
+
+          O que a grade NÃO tem, e é regra: nenhum número. Sem "12 fotos",
+          sem "faltam 30". O coração e o marcador aparecem como marca, nunca
+          como contagem (CON-012). */}
+      {momentos.length === 0 ? (
         // Convite, nunca cobrança. Nada de "faz X dias sem foto" (CON-011).
         <p className="text-sm text-muted-foreground">
           Ainda não há nenhuma foto aqui. Quando houver, a família toda vê.
         </p>
       ) : (
-        <ul className="space-y-4">
-          {mural.momentos.map((momento) => (
+        <ul className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+          {momentos.map((momento, indice) => (
             // `zelo-entra` no item, NAO escalonado. Escalonar uma lista
             // inteira ("stagger") faz a ultima foto chegar meio segundo depois
             // da primeira, e quem abriu o mural quer ver tudo, nao assistir a
             // uma sequencia.
             <li
               key={momento.id}
-              className={`space-y-2 ${momento.id === saindo ? "zelo-sai" : "zelo-entra"}`}
+              className={momento.id === saindo ? "zelo-sai" : "zelo-entra"}
             >
-              {momento.kind === "audio" ? (
-                // Recado do paciente (QUI-8). `preload="none"` de propósito: um
-                // mural com vários recados não pode baixar todos ao abrir.
-                <div className="rounded-lg border p-3 space-y-2">
-                  <p className="text-sm font-medium">Recado de {momento.autor ?? patientName}</p>
-                  <audio controls preload="none" src={apiUrl(momento.url)} className="w-full">
-                    Seu navegador não consegue tocar áudio.
-                  </audio>
-                </div>
+              <button
+                type="button"
+                onClick={() => setAberto(indice)}
+                className="group relative block w-full aspect-square overflow-hidden rounded-lg border bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label={
+                  `Abrir ${momento.kind === "audio" ? "o recado" : "a foto"} de ` +
+                  `${momento.autor ?? patientName}, ${quando(momento.criadoEm, mural.timezone)}`
+                }
+              >
+                {momento.kind === "audio" ? (
+                  // Recado do paciente (QUI-8). Na grade ele é um bloco com
+                  // ícone: um player não cabe num quadrado pequeno, e ouvir é
+                  // uma decisão — não pode disparar por um toque de relance.
+                  <span className="flex h-full w-full flex-col items-center justify-center gap-1.5 text-muted-foreground">
+                    <Mic className="w-6 h-6" aria-hidden />
+                    <span className="text-xs">Recado</span>
+                  </span>
+                ) : (
+                  <img
+                    src={apiUrl(momento.url)}
+                    // Vazio de propósito: quem carrega o rótulo é o botão que
+                    // envolve a imagem. Repetir aqui faria o leitor de tela
+                    // anunciar a mesma coisa duas vezes.
+                    alt=""
+                    loading="lazy"
+                    // Decodificar fora da thread principal: sem isto, uma foto
+                    // grande chegando trava a rolagem por alguns quadros.
+                    decoding="async"
+                    className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
+                  />
+                )}
+
+                {/* Marcas, não contagens. Dizem "alguém reagiu" e "está
+                    guardado" — nunca quantos, que é o que separa carinho de
+                    placar (CON-012). Os nomes de quem reagiu aparecem por
+                    extenso no visualizador, onde há espaço para eles. */}
+                {(momento.quemReagiu.length > 0 || momento.guardado) && (
+                  <span className="absolute bottom-1 right-1 flex items-center gap-1 rounded-full bg-background/85 px-1.5 py-0.5">
+                    {momento.quemReagiu.length > 0 && (
+                      <Heart className="w-3 h-3 text-zelo-green-fg" fill="currentColor" aria-hidden />
+                    )}
+                    {momento.guardado && (
+                      <Bookmark className="w-3 h-3 text-zelo-green-fg" fill="currentColor" aria-hidden />
+                    )}
+                  </span>
+                )}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {/* Um BOTÃO, e não rolagem infinita. Ver mais é uma decisão de quem
+          está olhando; puxar sozinho enquanto a pessoa rola é a mecânica que
+          rede social usa para prender, e ela não entra aqui.
+
+          Nada de "faltam N": o servidor manda um cursor, nunca um total. */}
+      {hasNextPage && (
+        <div className="flex justify-center pt-1">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void fetchNextPage()}
+            disabled={isFetchingNextPage}
+          >
+            {isFetchingNextPage ? "Carregando…" : "Ver momentos mais antigos"}
+          </Button>
+        </div>
+      )}
+
+      {/* ── O visualizador — QUI-18 ────────────────────────────────────────
+          A foto grande, quem publicou, quando, a legenda, quem mandou
+          coração, e as ações. Tudo o que a lista antiga mostrava de uma vez
+          para todas as fotos, agora para a que a pessoa escolheu olhar. */}
+      <Dialog
+        open={momentoAberto !== null}
+        onOpenChange={(estaAberto) => { if (!estaAberto) setAberto(null); }}
+      >
+        <DialogContent className="sm:max-w-2xl">
+          {momentoAberto && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="text-base">
+                  {momentoAberto.autor ?? "Alguém da família"}
+                </DialogTitle>
+                <DialogDescription>
+                  {quando(momentoAberto.criadoEm, mural.timezone)}
+                  {momentoAberto.guardado && " · guardado"}
+                </DialogDescription>
+              </DialogHeader>
+
+              {momentoAberto.kind === "audio" ? (
+                <audio controls preload="none" src={apiUrl(momentoAberto.url)} className="w-full">
+                  Seu navegador não consegue tocar áudio.
+                </audio>
               ) : (
                 <img
-                  src={apiUrl(momento.url)}
-                  alt={momento.caption ?? `Momento de ${patientName}`}
-                  loading="lazy"
-                  // Decodificar fora da thread principal: sem isto, uma foto
-                  // grande chegando trava a rolagem por alguns quadros.
-                  decoding="async"
-                  // `min-h` reserva o espaço ANTES de a foto chegar, e resolve
-                  // duas coisas de uma vez (Issue #5):
-                  //
-                  //   1. a lista para de pular. Sem altura reservada, o item
-                  //      tem 0px, e ao carregar salta para até 26rem —
-                  //      empurrando para baixo o que a pessoa estava lendo.
-                  //   2. **o `loading="lazy"` volta a funcionar de verdade.**
-                  //      Imagem sem altura fica toda dentro da primeira tela
-                  //      na conta do navegador, então ele baixa o mural
-                  //      inteiro de uma vez — exatamente o que a Issue #5
-                  //      queria evitar.
-                  //
+                  src={apiUrl(momentoAberto.url)}
+                  alt={momentoAberto.caption ?? `Momento de ${patientName}`}
                   // `max-h` com `object-contain`: sem teto, uma foto em pé
                   // ocupa a tela inteira e empurra autor e legenda para fora
                   // do campo de visão. Relatado pelo fundador em 25/08/2026.
-                  className="w-full min-h-[10rem] max-h-[26rem] object-contain rounded-lg border bg-muted"
+                  className="w-full max-h-[60vh] object-contain rounded-lg bg-muted"
                 />
               )}
-              {momento.caption && <p className="text-sm">{momento.caption}</p>}
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs text-muted-foreground">
-                  {momento.autor ?? "Alguém da família"} · {quando(momento.criadoEm, mural.timezone)}
-                  {momento.guardado && " · guardado"}
+
+              {momentoAberto.caption && <p className="text-sm">{momentoAberto.caption}</p>}
+
+              {/* QUI-10 — quem reagiu, por extenso.
+                  `quemReagiu.length` existe, mas ninguém o escreve na tela:
+                  o caminho fácil aqui é listar os nomes, e é assim que o
+                  mural não vira contagem de curtidas (CON-012). */}
+              {momentoAberto.quemReagiu.length > 0 && (
+                <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                  <Heart className="w-3 h-3 text-zelo-green-fg shrink-0" fill="currentColor" aria-hidden />
+                  {fraseDeQuemReagiu(momentoAberto.quemReagiu)}
                 </p>
-                <div className="flex items-center gap-1 shrink-0">
+              )}
+
+              <div className="flex items-center justify-between gap-2 border-t pt-3">
+                <div className="flex items-center gap-1">
                   {/* QUI-10 — o coração.
                       Cheio quando você reagiu, contorno quando não. Sem
                       número ao lado: quem reagiu aparece por extenso logo
-                      abaixo, e essa é a diferença entre carinho e placar. */}
+                      acima, e essa é a diferença entre carinho e placar. */}
                   <Button
                     variant="ghost"
                     size="sm"
-                    className={momento.euReagi ? "text-zelo-green-fg" : "text-muted-foreground"}
-                    onClick={() => void alternarCoracao(momento)}
-                    aria-pressed={momento.euReagi}
-                    aria-label={momento.euReagi ? "Tirar seu coração" : "Mandar um coração"}
-                    title={momento.euReagi ? "Você mandou um coração" : "Mandar um coração"}
+                    className={momentoAberto.euReagi ? "text-zelo-green-fg" : "text-muted-foreground"}
+                    onClick={() => void alternarCoracao(momentoAberto)}
+                    aria-pressed={momentoAberto.euReagi}
+                    aria-label={momentoAberto.euReagi ? "Tirar seu coração" : "Mandar um coração"}
+                    title={momentoAberto.euReagi ? "Você mandou um coração" : "Mandar um coração"}
                   >
-                    <Heart className="w-4 h-4" fill={momento.euReagi ? "currentColor" : "none"} />
+                    <Heart className="w-4 h-4" fill={momentoAberto.euReagi ? "currentColor" : "none"} />
                   </Button>
                   {/* Guardar é de QUALQUER cuidador da família: decidir que uma
                       foto é importante não precisa de hierarquia. */}
                   <Button
                     variant="ghost"
                     size="sm"
-                    className={momento.guardado ? "text-zelo-green-fg" : "text-muted-foreground"}
-                    onClick={() => void alternarGuardado(momento)}
-                    aria-label={momento.guardado ? "Deixar de guardar" : "Guardar para sempre"}
-                    title={momento.guardado ? "Guardado — não expira" : "Guardar para não expirar"}
+                    className={momentoAberto.guardado ? "text-zelo-green-fg" : "text-muted-foreground"}
+                    onClick={() => void alternarGuardado(momentoAberto)}
+                    aria-label={momentoAberto.guardado ? "Deixar de guardar" : "Guardar para sempre"}
+                    title={momentoAberto.guardado ? "Guardado — não expira" : "Guardar para não expirar"}
                   >
-                    <Bookmark className="w-4 h-4" fill={momento.guardado ? "currentColor" : "none"} />
+                    <Bookmark className="w-4 h-4" fill={momentoAberto.guardado ? "currentColor" : "none"} />
                   </Button>
-                  {momento.podeApagar && (
+                  {momentoAberto.podeApagar && (
                     <Button
                       variant="ghost"
                       size="sm"
                       className="text-muted-foreground hover:text-destructive"
-                      onClick={() => setAApagar(momento)}
+                      onClick={() => setAApagar(momentoAberto)}
                       aria-label="Apagar este momento"
                     >
                       <Trash2 className="w-4 h-4" />
                     </Button>
                   )}
                 </div>
+
+                {/* Passar de uma foto para a outra sem voltar à grade. As
+                    setas do teclado fazem o mesmo — é o gesto que qualquer
+                    galeria tem, e quem usa teclado depende dele. */}
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={aberto === 0}
+                    onClick={() => setAberto((i) => (i === null ? null : Math.max(0, i - 1)))}
+                    aria-label="Momento anterior"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={aberto !== null && aberto >= momentos.length - 1}
+                    onClick={() =>
+                      setAberto((i) => (i === null ? null : Math.min(momentos.length - 1, i + 1)))
+                    }
+                    aria-label="Próximo momento"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </Button>
+                </div>
               </div>
-              {/* QUI-10 — quem reagiu, por extenso.
-                  `quemReagiu.length` existe, mas ninguém o escreve na tela:
-                  o caminho fácil aqui é listar os nomes, e é assim que o
-                  mural não vira contagem de curtidas (CON-012). */}
-              {momento.quemReagiu.length > 0 && (
-                <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-                  <Heart className="w-3 h-3 text-zelo-green-fg shrink-0" fill="currentColor" aria-hidden />
-                  {fraseDeQuemReagiu(momento.quemReagiu)}
-                </p>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={aApagar !== null} onOpenChange={(aberto) => !aberto && setAApagar(null)}>
         <AlertDialogContent>

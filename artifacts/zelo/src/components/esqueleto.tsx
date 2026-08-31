@@ -50,11 +50,13 @@ export function AreaCarregando({
 
 /** Esqueleto de um momento do mural: imagem, legenda, autor. */
 export function EsqueletoDeMomento() {
+  // QUI-18 — quadrado, porque o mural virou grade. Um retângulo alto aqui
+  // reservaria um espaço que a lista real não vai ocupar, e a página pularia
+  // ao chegar o conteúdo — que é exatamente o que o esqueleto existe para
+  // evitar.
   return (
-    <li className="space-y-2">
-      <Esqueleto className="w-full h-56" />
-      <Esqueleto className="h-4 w-2/3" />
-      <Esqueleto className="h-3 w-1/3" />
+    <li>
+      <Esqueleto className="w-full aspect-square" />
     </li>
   );
 }

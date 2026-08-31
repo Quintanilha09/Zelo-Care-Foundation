@@ -31,7 +31,7 @@
  */
 
 import { Router } from "express";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { mediaAssetsTable, caregiversTable, patientsTable } from "@workspace/db";
 import { requireAuth } from "../middleware/require-auth";
@@ -44,13 +44,81 @@ import { lerCoracoesEmLote } from "../lib/coracoes.ts";
 const router = Router();
 
 /**
- * Quantos momentos a lista devolve de uma vez.
+ * Quantos momentos a lista devolve de uma vez — QUI-18.
  *
- * Não é paginação de rede social — é um teto de sanidade para a resposta
- * não crescer sem limite. Com a retenção de 90 dias da QUI-11, um mural
- * normal cabe folgado aqui.
+ * Antes eram 100 de uma vez, e o motivo declarado era honesto: um teto de
+ * sanidade, não paginação. Com o mural em grade (QUI-18) 100 miniaturas são
+ * 100 requisições de imagem no primeiro toque, e num 3G isso é a diferença
+ * entre "abriu" e "travou".
+ *
+ * 24 é múltiplo de 3 e de 4, que são as duas larguras de coluna da grade —
+ * ou seja, a última fileira nunca chega pela metade.
+ *
+ * **Isto não é feed infinito.** A página seguinte só vem quando alguém pede,
+ * num botão. O mural não puxa sozinho enquanto a pessoa rola, porque rolagem
+ * infinita existe para prender, e este produto não quer prender ninguém.
  */
-const TETO_DA_LISTA = 100;
+const TAMANHO_DA_PAGINA = 24;
+const TETO_DA_PAGINA = 60;
+
+/**
+ * O instante do momento com a precisão que o Postgres realmente guarda.
+ *
+ * ── Por que não dá para usar o `Date` do JavaScript aqui ──────────────────
+ *
+ * `timestamptz` guarda MICROSSEGUNDOS. `Date` do JavaScript só tem
+ * milissegundos — e o driver do Postgres, ao converter, **arredonda**:
+ * `02:49:50.101567` vira `02:49:50.102`.
+ *
+ * Arredondar para cima joga o cursor **depois** da linha que ele deveria
+ * marcar. A página seguinte então pede "tudo que veio antes de .102", e a
+ * linha de .101567 entra de novo — e de novo, e de novo. O mural repetia a
+ * mesma foto a cada "ver mais".
+ *
+ * Foi assim que o defeito apareceu no CI: sete momentos paginados de três em
+ * três devolviam 3, 3 e 3 em vez de 3, 3 e 1. E o teste do "mesmo instante"
+ * passava, porque lá os instantes são idênticos de propósito e o desempate
+ * cai todo no id — que é exato.
+ *
+ * O `to_char` abaixo mantém os seis dígitos. A comparação continua sendo
+ * feita sobre a coluna crua, então o índice de `created_at` segue valendo.
+ */
+const INSTANTE_COM_MICROSSEGUNDOS = sql<string>`to_char(${mediaAssetsTable.createdAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
+
+/** O formato exato que `INSTANTE_COM_MICROSSEGUNDOS` produz. Nada mais passa. */
+const FORMATO_DO_INSTANTE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/;
+
+/**
+ * O cursor: o instante e o id do último momento já entregue.
+ *
+ * Precisa dos dois. Só o instante perderia (ou repetiria) momentos publicados
+ * no mesmo microssegundo — o que acontece de verdade quando alguém envia três
+ * fotos de uma vez —, e é o mesmo par que já ordena a consulta.
+ *
+ * Formato `<instante>|<id>`. Legível de propósito: cursor opaco esconde de
+ * quem depura, e não há nada aqui que valha esconder — quem tem o cursor já
+ * tem a resposta que o continha.
+ *
+ * O instante volta como TEXTO, e vai para o SQL como parâmetro vinculado
+ * (`::timestamptz`). O formato é validado antes: sem isso, um cursor
+ * malformado viraria erro de conversão do Postgres na cara de quem só clicou
+ * em "ver mais".
+ */
+function lerCursor(bruto: unknown): { instante: string; id: number } | null {
+  if (typeof bruto !== "string" || bruto.length === 0) return null;
+  const [instante, id] = bruto.split("|");
+  const numero = Number(id);
+  if (!instante || !FORMATO_DO_INSTANTE.test(instante)) return null;
+  if (!Number.isSafeInteger(numero) || numero <= 0) return null;
+  return { instante, id: numero };
+}
+
+/** Quantos itens pedir, respeitando o teto. Entrada inválida cai no padrão. */
+function lerLimite(bruto: unknown): number {
+  const numero = Number(bruto);
+  if (!Number.isSafeInteger(numero) || numero < 1) return TAMANHO_DA_PAGINA;
+  return Math.min(numero, TETO_DA_PAGINA);
+}
 
 router.get<{ patientId: string }>("/patients/:patientId/momentos", requireAuth, async (req, res): Promise<void> => {
   const patientId = Number(req.params.patientId);
@@ -88,19 +156,56 @@ router.get<{ patientId: string }>("/patients/:patientId/momentos", requireAuth, 
     return;
   }
 
+  const cursor = lerCursor(req.query.cursor);
+  const limite = lerLimite(req.query.limite);
+
+  // Um a mais do que o pedido: é assim que se sabe que HÁ próxima página sem
+  // uma segunda consulta de contagem — e sem contagem nenhuma vazar para a
+  // resposta, que é regra aqui (CON-012).
   const linhas = await db
     .select({
       id: mediaAssetsTable.id,
       kind: mediaAssetsTable.kind,
       caption: mediaAssetsTable.caption,
       createdAt: mediaAssetsTable.createdAt,
+      // Só para montar o cursor. Ver o comentário longo em
+      // INSTANTE_COM_MICROSSEGUNDOS: o `createdAt` acima já chega arredondado
+      // ao milissegundo, e um cursor arredondado repete linhas para sempre.
+      instanteExato: INSTANTE_COM_MICROSSEGUNDOS,
       keptAt: mediaAssetsTable.keptAt,
       autorId: mediaAssetsTable.uploadedByCaregiverId,
     })
     .from(mediaAssetsTable)
-    .where(and(eq(mediaAssetsTable.patientId, patientId), eq(mediaAssetsTable.familyId, auth.familyId)))
+    .where(
+      and(
+        eq(mediaAssetsTable.patientId, patientId),
+        eq(mediaAssetsTable.familyId, auth.familyId),
+        // Comparação do PAR (instante, id), na mesma ordem do `orderBy`.
+        // Comparar só o instante perderia — ou repetiria — os momentos
+        // enviados no mesmo segundo, que é o caso real de quem manda três
+        // fotos de uma vez.
+        // A comparação é feita sobre a COLUNA CRUA, com o instante exato
+        // vinculado como parâmetro — o índice de `created_at` continua
+        // valendo, e nenhum microssegundo se perde no caminho.
+        cursor
+          ? or(
+              sql`${mediaAssetsTable.createdAt} < ${cursor.instante}::timestamptz`,
+              and(
+                sql`${mediaAssetsTable.createdAt} = ${cursor.instante}::timestamptz`,
+                lt(mediaAssetsTable.id, cursor.id)
+              )
+            )
+          : sql`true`
+      )
+    )
     .orderBy(desc(mediaAssetsTable.createdAt), desc(mediaAssetsTable.id))
-    .limit(TETO_DA_LISTA);
+    .limit(limite + 1);
+
+  const temMais = linhas.length > limite;
+  if (temMais) linhas.pop();
+
+  const ultimo = linhas[linhas.length - 1];
+  const proximoCursor = temMais && ultimo ? `${ultimo.instanteExato}|${ultimo.id}` : null;
 
   // Nomes dos autores numa consulta só. Sem isto seriam N consultas para um
   // mural de 100 fotos.
@@ -128,6 +233,9 @@ router.get<{ patientId: string }>("/patients/:patientId/momentos", requireAuth, 
     timezone: paciente.timezone,
     // A tela precisa dizer, sem drama, que momentos somem depois de 90 dias.
     diasDeRetencao: DIAS_DE_RETENCAO,
+    // QUI-18 — `null` quando acabou. Nunca "faltam N": um total aqui viraria
+    // placar do mural, e é exatamente o que este recurso não pode ter.
+    proximoCursor,
     momentos: linhas.map((linha) => ({
       id: linha.id,
       kind: linha.kind,

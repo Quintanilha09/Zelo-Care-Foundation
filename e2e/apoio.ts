@@ -232,6 +232,27 @@ export async function publicarUmMomento(
 }
 
 /**
+ * Abre o primeiro momento da grade no visualizador — QUI-18.
+ *
+ * O mural virou grade: coração, marcador e apagar deixaram de estar embaixo
+ * de cada foto e passaram a viver no visualizador, que abre ao tocar numa
+ * miniatura. Os testes que agem sobre um momento precisam abrir antes.
+ *
+ * Localizado pelo rótulo do botão da miniatura, e não por posição: é o que o
+ * leitor de tela anuncia, então se ele quebrar o teste quebra junto — que é
+ * o comportamento desejado.
+ */
+export async function abrirPrimeiroMomento(page: Page): Promise<void> {
+  const miniatura = page.getByRole("button", { name: /^Abrir (a foto|o recado) de / }).first();
+  await expect(
+    miniatura,
+    "o momento publicado precisa aparecer na grade do mural"
+  ).toBeVisible({ timeout: 15_000 });
+  await miniatura.click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+}
+
+/**
  * Um tratamento com dose HOJE, ainda sem nenhum registro — Issue #26, QUI-16.
  *
  * ── Por que os horários são "00:01" e "23:59" ─────────────────────────────
