@@ -211,6 +211,25 @@ describe("ZELO-56 — tiers de plano", () => {
 
 describe("ZELO-57 — painel do dia consolidado", () => {
   it("ordena por urgência: sem registro primeiro, depois dose para agora, depois o resto", async () => {
+    // ── Relógio congelado ao meio-dia, e não por capricho — Issue #41 ──────
+    //
+    // Este teste monta a dose "sem registro" em `agora - 1 hora`, e o painel
+    // filtra as doses pela janela do DIA CIVIL do paciente (dashboard.ts).
+    //
+    // Rodando às 00:09 de Brasília — que foi o que o CI fez em 31/08/2026 —
+    // "agora menos uma hora" é 23:09 do dia ANTERIOR. A dose sai da janela, a
+    // paciente perde o `missedDoses`, despenca na ordenação, e o teste reprova
+    // acusando o painel de um defeito que é do dado de teste.
+    //
+    // O painel está certo em olhar o dia civil de quem é cuidado. Quem
+    // precisava parar de depender da hora era o teste: em 23 das 24 horas ele
+    // passava, e na vigésima quarta bloqueava qualquer PR.
+    //
+    // Meio-dia UTC é meio-dia menos três em São Paulo — nove da manhã, longe
+    // das duas bordas do dia.
+    const meioDia = new Date(`${Clock.todayUtc()}T12:00:00.000Z`);
+    Clock.freezeAt(meioDia);
+
     await setPlan("professional");
 
     const tranquilo = (await createPatient("Zulmira Tranquila")).body as { id: number };
@@ -246,6 +265,7 @@ describe("ZELO-57 — painel do dia consolidado", () => {
 
     await cleanupPatients();
     await setPlan(null);
+    Clock.reset();
   });
 
   it("nunca devolve percentual de adesão nem nota por paciente — a tela não é um placar", async () => {
