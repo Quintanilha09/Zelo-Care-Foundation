@@ -43,27 +43,43 @@ Medido nesta data, nesta máquina:
 | Middlewares | **3** | `require-auth.ts`, `require-patient-access.ts` e `receber-arquivo.ts` |
 | Arquivos de teste | **43** | `src/tests/*.test.ts` |
 | Consistência da suíte | **limpa** | 43 referenciados no `test:all` = 43 no disco; nenhum órfão, nenhum fora |
-| Testes de ponta a ponta | **3 arquivos** | `e2e/*.spec.ts` — Playwright, Desktop Chrome e Pixel 7 |
+| Testes de ponta a ponta | **10 arquivos** | `e2e/*.spec.ts` — Playwright, Desktop Chrome e Pixel 7. Medido em 31/08/2026 |
 | Typecheck do monorepo | **exit 0** | `pnpm run typecheck` — 4 pacotes, todos limpos |
 | Modelo de visão | `claude-haiku-4-5-20251001` | `lib/vision.ts` |
 | Fila | **pg-boss** sobre o mesmo Postgres | `lib/queue.ts` |
 
-### Contagem de testes passando — medida em 27/08/2026
+### Contagem de testes passando — medida em 31/08/2026
 
-**Servidor: 545 testes, 543 passando, 2 pulados, zero falhas.** Executado localmente nesta máquina,
-contra o Postgres em Docker descrito em
-[runbooks/banco-de-teste-local.md](planning/runbooks/banco-de-teste-local.md), com
-`ADMIN_PANEL_SECRET` diferente do `SESSION_SECRET`. Duração: ~534 s.
+**Servidor: 562 testes, 550 passando, 12 pulados, zero falhas.**
+**Tela: 102 testes de ponta a ponta**, Playwright, em Desktop Chrome e Pixel 7. Duração: 4,8 min.
 
-**Tela: 42 testes de ponta a ponta**, Playwright, em Desktop Chrome e Pixel 7. Duração: ~2,7 min.
+Medido na execução de CI `33354663972` (a do PR #37, verde de ponta a ponta) — **não** nesta
+máquina. Ver o aviso logo abaixo.
 
-Antes desta leva eram 513 no servidor (25/08/2026) e **zero na tela** — a suíte de interface nasceu
-na Issue #7, em 26/08/2026, e já pegou um defeito de celular que nenhuma pessoa tinha visto.
+Em 27/08/2026 eram 545 no servidor e 42 na tela. A leva de QUI-15 a QUI-19 dobrou a suíte de
+interface: o cabeçalho com nome longo, o ciclo de vida do tratamento, exportar e excluir conta,
+Ajustes em seções, e o mural em grade.
 
-**A suíte voltou a rodar localmente.** O bloqueio de 23/08 era o container `zelo-test-pg`
-parado e o `.env.local` apontando para uma URL sem senha. Resolvido subindo o Postgres com
-`POSTGRES_HOST_AUTH_METHOD=trust`, que é o que a URL do `.env.local` espera — o runbook tem
-os comandos.
+### A suíte NÃO roda mais nesta máquina — 31/08/2026
+
+O Windows ligou o **Smart App Control** (`VerifiedAndReputablePolicyState = 1` em
+`HKLM:SYSTEMCurrentControlSetControlCIPolicy`), que bloqueia binário nativo sem assinatura
+reconhecida. Dois são recusados:
+
+- `argon2.glibc.node` → `ERR_DLOPEN_FAILED`, e **sem ele a API nem sobe** — some a suíte de
+  integração e o Playwright junto
+- `biome.exe` → o lint local não roda
+
+**O CI em Linux não é afetado, e passou a ser a única verificação real.** Continua valendo a
+regra do GSD: número que não foi medido não se escreve — e a partir daqui os números vêm do log
+do CI, com o id da execução.
+
+Desligar o Smart App Control é decisão do fundador e **é irreversível**: uma vez desligado, só
+volta reinstalando o Windows. Nada foi mexido.
+
+O bloqueio anterior, de 23/08, era outro e continua resolvido: era o container `zelo-test-pg`
+parado e o `.env.local` apontando para uma URL sem senha — o runbook
+[banco-de-teste-local.md](planning/runbooks/banco-de-teste-local.md) tem os comandos.
 
 ### O build da raiz passou a funcionar — 27/08/2026
 

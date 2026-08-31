@@ -9,7 +9,7 @@
 > Se este arquivo voltar a passar de ~150 linhas, mova o excedente para `historico/` — foi
 > justamente por virar diário de 609 linhas que ele parou de ser lido.
 >
-> Última revisão: 27/08/2026.
+> Última revisão: 31/08/2026.
 
 ---
 
@@ -28,7 +28,7 @@ Ferramentas que passaram a existir:
 | **Biome** | revisor de código | **portão de CI** — falha o build |
 | **Knip** | detector de código morto | **relatório** — não falha o build |
 | `design-motion-principles` | skill de movimento | instalada em `.agents/skills/`, fora do git |
-| **Playwright** | teste de ponta a ponta na interface | **portão de CI** — 42 testes, Desktop Chrome e Pixel 7 |
+| **Playwright** | teste de ponta a ponta na interface | **portão de CI** — 102 testes, Desktop Chrome e Pixel 7 |
 
 **O passo de Build do CI nunca tinha passado** antes de 26/08/2026 — faltavam
 `PORT` e `BASE_PATH` no ambiente do workflow, e a falha não tinha relação com
@@ -38,11 +38,12 @@ o código em revisão. Corrigido na Issue #8.
 
 ## Posição
 
-**47 histórias entregues:** 38 das 42 do backlog original, mais ZELO-56, ZELO-57 e ZELO-58,
+**52 histórias entregues:** 38 das 42 do backlog original, mais ZELO-56, ZELO-57 e ZELO-58,
 criadas depois a partir de refinamento, mais **QUI-5** (fundação de mídia), **QUI-6**
 (consentimento de imagem), **QUI-7** (Momentos do paciente), **QUI-8** (recado em áudio) e
-**QUI-11** (retenção de 90 dias), as cinco em 25/08/2026, e **QUI-10** (aviso de momento novo e
-o coração) em 27/08/2026 — que **fecha o projeto ZELO — Momentos**.
+**QUI-11** (retenção de 90 dias), as cinco em 25/08/2026, **QUI-10** (aviso de momento novo e
+o coração) em 27/08/2026 — que **fecha o projeto ZELO — Momentos** —, e as cinco de
+**QUI-15 a QUI-19** em 30–31/08/2026, que **fecham o projeto ZELO — Interface e Conta**.
 
 | Fase | Situação |
 |---|---|
@@ -80,6 +81,56 @@ aparelho, se o comprador quiser. Ver [decisoes/CUSTOS-APIS.md](decisoes/CUSTOS-A
 
 **Com a QUI-10 entregue em 27/08/2026, o projeto ZELO — Momentos fecha:** tudo que foi decidido
 foi feito.
+
+## A leva QUI-15 a QUI-19 — 30 e 31/08/2026
+
+Cinco histórias de interface e conta, cada uma com Issue e PR próprios, todas verdes no CI:
+
+| História | O quê | Issue · PR |
+|---|---|---|
+| QUI-15 | O cabeçalho da ficha aguenta nome longo | [#28](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/28) · [#29](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/29) |
+| QUI-16 | Concluir, pausar, retomar e cancelar tratamento | [#30](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/30) · [#34](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/34) |
+| QUI-17 | Exportar os dados e excluir a conta (LGPD) | [#31](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/31) · [#40](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/40) |
+| QUI-19 | Ajustes agrupado por dono, em quatro seções | [#32](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/32) · [#36](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/36) |
+| QUI-18 | Mural de Momentos em grade, com visualizador e paginação | [#33](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/33) · [#37](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/37) |
+
+Mais uma correção que não estava no plano:
+
+| | O quê | Issue · PR |
+|---|---|---|
+| — | O teste do painel do dia parou de depender da hora do relógio | [#41](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/41) · [#42](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/42) |
+
+### Quatro defeitos que ninguém tinha visto, achados no caminho
+
+Todos têm a mesma forma: **rota certa, tela ausente** — ou o contrário. Vale registrar porque a
+lição é reaproveitável.
+
+1. **A exportação de dados só trazia o primeiro paciente.** A consulta filtrava por
+   `patientIds[0]` em vez da lista inteira; o comentário original até dizia "inAny". Numa família
+   com dois pacientes, o segundo saía com `treatments: []`. Como **nenhuma tela chamava a rota**,
+   ninguém tinha como perceber — e é justamente o direito do titular de levar os dados embora.
+
+2. **Apagar um tratamento apagaria o histórico de doses junto**, em silêncio:
+   `scheduled_doses.treatment_id` e `dose_records.scheduled_dose_id` são ambos
+   `ON DELETE CASCADE`. O `DELETE` novo recusa com 409 quando já houve dose registrada.
+
+3. **O cursor do mural repetia a página.** `timestamptz` guarda microssegundos; o `Date` do
+   JavaScript só tem milissegundos, e o driver **arredonda para cima** — o cursor passava a apontar
+   *depois* da linha que marcava. Sete momentos paginados de três em três devolviam 3, 3 e 3.
+   Pego pelo CI, não por leitura.
+
+4. **Um teste reprovava entre 00h e 01h de Brasília** e bloqueava qualquer PR nessa faixa. Montava
+   a dose em `agora - 1 hora` enquanto o painel filtra pelo dia civil do paciente. Duas execuções
+   independentes falharam na mesma hora, o que confirmou a causa.
+
+### O contexto de execução mudou
+
+**A suíte não roda mais nesta máquina.** O Smart App Control do Windows bloqueia `argon2` e
+`biome.exe`; sem o argon2 a API nem sobe. O CI em Linux passou a ser a única verificação real.
+Detalhes e o que isso implica para a regra "número que não foi medido não se escreve" estão no
+[CONTEXT.md](../CONTEXT.md).
+
+---
 
 ### Trabalho no GitHub — atualizado em 27/08/2026
 
