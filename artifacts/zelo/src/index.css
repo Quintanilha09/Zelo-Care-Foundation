@@ -303,6 +303,35 @@ gmp-place-autocomplete::part(prediction-item-match) {
   pointer-events: none;
 }
 
+/* ── Faixa que rola sozinha — Issue #28 ────────────────────────────────────
+   As seções da ficha (Rotina, Consultas, Histórico) num container que rola
+   na horizontal quando não cabem, para que a PÁGINA não role.
+
+   A barra de rolagem fica escondida de propósito: a faixa tem no máximo três
+   itens, o corte no fim já denuncia que há mais, e uma barra permanente
+   numa tira de 40px de altura come metade dela. Isso NÃO tira a rolagem —
+   o gesto de arrastar, a roda do mouse e o `scroll-into-view` do teclado
+   continuam funcionando, que é o que importa para quem não usa mouse.
+
+   `scroll-snap` deixa o item parar alinhado em vez de meio cortado, o que
+   num celular é a diferença entre ler "Histórico" e ler "Histór". */
+.zelo-faixa {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  scroll-snap-type: x proximity;
+  /* Sem isto o foco do teclado leva o item para a borda e o anel de foco
+     fica cortado pela metade. */
+  scroll-padding-inline: 0.5rem;
+}
+
+.zelo-faixa::-webkit-scrollbar {
+  display: none;
+}
+
+.zelo-faixa > * {
+  scroll-snap-align: start;
+}
+
 /* ── Esqueleto de carregamento ─────────────────────────────────────────────
    NÃO usa `animate-pulse` do Tailwind de propósito. Pulse pisca opacidade
    entre 1 e 0.5 em loop infinito — é "pulsing indicator", e num app usado por

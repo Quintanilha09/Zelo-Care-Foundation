@@ -357,82 +357,108 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
           </a>
         </Link>
 
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-semibold">{patient?.name ?? "…"}</h2>
-            <p className="text-muted-foreground text-[17px]">{patient?.timezone}</p>
+        {/* ── O cabeçalho da ficha — Issue #28 ────────────────────────────
+            O nome e os quatro botões dividiam a MESMA linha flex, e o bloco
+            do nome não tinha `min-w-0`. Num container flex a largura mínima
+            padrão é `auto`: o texto **se recusa a encolher** abaixo do que
+            ocupa naturalmente. Um nome longo empurrava a faixa de botões, o
+            `flex-wrap` herdado da Issue #17 os quebrava numa escadinha
+            encostada à direita, e o cabeçalho engordava até jogar a dose de
+            hoje para fora da primeira tela.
+
+            Agora são duas linhas com papéis separados: **quem** é a ficha,
+            e **o que dá para fazer** nela. */}
+        <div className="space-y-4">
+          <div className="min-w-0">
+            {/* `title` guarda o nome inteiro. Truncar na tela não pode
+                significar perder a informação — nem para quem passa o
+                mouse, nem para quem usa leitor de tela. */}
+            <h2 className="text-2xl font-semibold truncate" title={patient?.name}>
+              {patient?.name ?? "…"}
+            </h2>
+            <p className="text-muted-foreground text-[17px] truncate">{patient?.timezone}</p>
           </div>
-          {/* `flex-wrap` — Issue #17.
-              Sem ele, os quatro botoes ficavam numa linha so: no desktop
-              cabiam, num celular nao. E o resultado nao era so apertado — o
-              botao "Consultas" cobria o de "Tratamento" e interceptava o
-              toque, alem de fazer a pagina inteira rolar na horizontal.
-              Descoberto pelo Playwright no projeto `celular`, nao por
-              relato. */}
-          <div className="flex flex-wrap items-center gap-2">
-            <Link href={`/pacientes/${params.id}/rotina`}>
-              <Button variant="outline">Rotina</Button>
-            </Link>
-            <Link href={`/pacientes/${params.id}/consultas`}>
-              <Button variant="outline">Consultas</Button>
-            </Link>
-            <Link href={`/pacientes/${params.id}/historico`}>
-              <Button variant="outline">Histórico</Button>
-            </Link>
+
+          <div className="flex items-center gap-2">
+            {/* A FAIXA rola sozinha em vez de deixar a PÁGINA rolar — é a
+                diferença entre um gesto local, esperado, e a tela inteira
+                escorregando de lado, que foi o defeito da Issue #17.
+                `min-w-0` é o que permite o container encolher: sem ele o
+                `overflow-x-auto` nunca chega a valer, porque o flex item
+                simplesmente cresce. */}
+            <nav
+              aria-label="Seções da ficha"
+              className="flex-1 min-w-0 flex items-center gap-2 overflow-x-auto zelo-faixa"
+            >
+              <Link href={`/pacientes/${params.id}/rotina`}>
+                <Button variant="outline" className="shrink-0">Rotina</Button>
+              </Link>
+              <Link href={`/pacientes/${params.id}/consultas`}>
+                <Button variant="outline" className="shrink-0">Consultas</Button>
+              </Link>
+              <Link href={`/pacientes/${params.id}/historico`}>
+                <Button variant="outline" className="shrink-0">Histórico</Button>
+              </Link>
+            </nav>
+
+            {/* Fora da faixa de propósito: é a ação primária da tela, e ação
+                primária não pode depender de rolar para ser alcançada. */}
             <Dialog open={open} onOpenChange={setOpen}>
-              <Button onClick={() => setOpen(true)} className="gap-2">
+              <Button onClick={() => setOpen(true)} className="gap-2 shrink-0">
                 <Plus className="w-4 h-4" /> Tratamento
               </Button>
-            <DialogContent className="sm:max-w-xl">
-              <DialogHeader>
-                <DialogTitle>Novo tratamento</DialogTitle>
-                <DialogDescription>O que o médico prescreveu.</DialogDescription>
-              </DialogHeader>
-              <TreatmentForm patientId={Number(params.id)} onCreated={handleCreated} onCancel={() => setOpen(false)} />
-            </DialogContent>
-            </Dialog>
-
-            {/* Edição reusa o MESMO formulário, com `tratamento` preenchido.
-                Um formulário só para os dois casos evita o que sempre acontece
-                com formulários gêmeos: um ganha campo novo e o outro fica para trás. */}
-            <Dialog
-              open={editandoTratamento !== null}
-              onOpenChange={(aberto) => { if (!aberto) setEditandoTratamento(null); }}
-            >
               <DialogContent className="sm:max-w-xl">
                 <DialogHeader>
-                  <DialogTitle>Editar tratamento</DialogTitle>
-                  <DialogDescription>
-                    Corrija a posologia, as datas ou as instruções.
-                  </DialogDescription>
+                  <DialogTitle>Novo tratamento</DialogTitle>
+                  <DialogDescription>O que o médico prescreveu.</DialogDescription>
                 </DialogHeader>
-                {editandoTratamento && (
-                  <TreatmentForm
-                    patientId={Number(params.id)}
-                    tratamento={{
-                      id: editandoTratamento.id,
-                      medicationName: editandoTratamento.medicationName,
-                      dose: editandoTratamento.dose,
-                      scheduleConfig: editandoTratamento.scheduleConfig,
-                      startDate: editandoTratamento.startDate,
-                      endDate: editandoTratamento.endDate,
-                      instructions: editandoTratamento.instructions,
-                      escalationProfile: editandoTratamento.escalationProfile,
-                    }}
-                    onCreated={() => {
-                      setEditandoTratamento(null);
-                      void queryClient.invalidateQueries({ queryKey: ["treatments", params.id] });
-                      // As doses futuras são regeradas quando a posologia muda,
-                      // então a tela de hoje também precisa recarregar.
-                      void queryClient.invalidateQueries({ queryKey: ["today-doses", params.id] });
-                    }}
-                    onCancel={() => setEditandoTratamento(null)}
-                  />
-                )}
+                <TreatmentForm patientId={Number(params.id)} onCreated={handleCreated} onCancel={() => setOpen(false)} />
               </DialogContent>
             </Dialog>
           </div>
         </div>
+
+        {/* Edição reusa o MESMO formulário, com `tratamento` preenchido.
+            Um formulário só para os dois casos evita o que sempre acontece
+            com formulários gêmeos: um ganha campo novo e o outro fica para
+            trás. Fica fora do cabeçalho porque não tem botão ali — quem o
+            abre são os "Editar" da lista, e o conteúdo vai para um portal. */}
+        <Dialog
+          open={editandoTratamento !== null}
+          onOpenChange={(aberto) => { if (!aberto) setEditandoTratamento(null); }}
+        >
+          <DialogContent className="sm:max-w-xl">
+            <DialogHeader>
+              <DialogTitle>Editar tratamento</DialogTitle>
+              <DialogDescription>
+                Corrija a posologia, as datas ou as instruções.
+              </DialogDescription>
+            </DialogHeader>
+            {editandoTratamento && (
+              <TreatmentForm
+                patientId={Number(params.id)}
+                tratamento={{
+                  id: editandoTratamento.id,
+                  medicationName: editandoTratamento.medicationName,
+                  dose: editandoTratamento.dose,
+                  scheduleConfig: editandoTratamento.scheduleConfig,
+                  startDate: editandoTratamento.startDate,
+                  endDate: editandoTratamento.endDate,
+                  instructions: editandoTratamento.instructions,
+                  escalationProfile: editandoTratamento.escalationProfile,
+                }}
+                onCreated={() => {
+                  setEditandoTratamento(null);
+                  void queryClient.invalidateQueries({ queryKey: ["treatments", params.id] });
+                  // As doses futuras são regeradas quando a posologia muda,
+                  // então a tela de hoje também precisa recarregar.
+                  void queryClient.invalidateQueries({ queryKey: ["today-doses", params.id] });
+                }}
+                onCancel={() => setEditandoTratamento(null)}
+              />
+            )}
+          </DialogContent>
+        </Dialog>
 
         {todayDoses && todayDoses.length > 0 && (
           <div className="space-y-3">
