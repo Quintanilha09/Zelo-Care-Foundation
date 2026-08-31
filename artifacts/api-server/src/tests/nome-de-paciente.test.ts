@@ -43,6 +43,13 @@ describe("Nome de paciente — o que passa", () => {
     assert.equal(aceita("Ana-Clara D'Ávila"), "Ana-Clara D'Ávila");
   });
 
+  it("inicial do meio — 'Ana P Silva' é nome de gente", () => {
+    // A primeira versão da regra pedia duas palavras com 2+ caracteres e
+    // recusava isto. Recusava também "Paciente A" dentro da própria suíte,
+    // e foi assim que o exagero apareceu.
+    assert.equal(aceita("Ana P Silva"), "Ana P Silva");
+  });
+
   it("TRÊS palavras passam — é a suposição registrada no módulo", () => {
     // O paciente cadastrado no ambiente do fundador em 31/08/2026. Se um dia
     // a regra virar "exatamente duas palavras", este teste falha — e falhar
@@ -103,10 +110,6 @@ describe("Nome de paciente — o que é recusado", () => {
     assert.match(recusa("Maria; DROP TABLE"), /letras/i);
   });
 
-  it("duas iniciais soltas não são nome e sobrenome", () => {
-    // "A B" tem duas palavras, mas nenhuma com substância.
-    assert.match(recusa("A B"), /sobrenome/i);
-  });
 
   it("a mensagem é específica, nunca 'dados inválidos'", () => {
     for (const bruto of ["Maria", "Maria Silva 2", `${"A".repeat(80)} Silva`]) {

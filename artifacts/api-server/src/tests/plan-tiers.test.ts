@@ -151,7 +151,7 @@ describe("ZELO-56 — tiers de plano", () => {
       assert.equal(res.status, 201, `paciente ${i} deveria caber no Profissional`);
     }
     // o 16º não
-    const excedente = await createPatient("Paciente 16");
+    const excedente = await createPatient("Paciente Dezesseis");
     assert.equal(excedente.status, 403);
     const body = excedente.body as { error: string; code: string };
     assert.equal(body.code, "PLAN_LIMIT");
@@ -169,7 +169,7 @@ describe("ZELO-56 — tiers de plano", () => {
       const res = await createPatient(`Fam ${i}`);
       assert.equal(res.status, 201);
     }
-    const excedente = await createPatient("Fam 6");
+    const excedente = await createPatient("Paciente Seis");
     assert.equal(excedente.status, 403);
     assert.match((excedente.body as { error: string }).error, /Profissional libera até 15/);
 
@@ -179,8 +179,8 @@ describe("ZELO-56 — tiers de plano", () => {
 
   it("registrar dose continua liberado em qualquer tier, inclusive no paciente excedente", async () => {
     await setPlan("professional");
-    const p1 = await createPatient("Primeiro");
-    const p2 = await createPatient("Segundo");
+    const p1 = await createPatient("Paciente Primeiro");
+    const p2 = await createPatient("Paciente Segundo");
     const patient2Id = (p2.body as { id: number }).id;
     void p1;
 

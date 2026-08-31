@@ -102,15 +102,15 @@ async function cleanupInvites() {
 describe("Limite de pacientes", () => {
   it("gratuito bloqueia o 2º paciente; plano Família permite até 5", async () => {
     await setPlan(null); // sem linha = gratuito
-    const first = await createPatient("Paciente 1");
+    const first = await createPatient("Paciente Um");
     assert.equal(first.status, 201);
 
-    const second = await createPatient("Paciente 2");
+    const second = await createPatient("Paciente Dois");
     assert.equal(second.status, 403);
     assert.equal((second.body as { code: string }).code, "PLAN_LIMIT");
 
     await setPlan("premium");
-    const withPlan = await createPatient("Paciente 2 de novo");
+    const withPlan = await createPatient("Paciente Dois de Novo");
     assert.equal(withPlan.status, 201);
 
     await cleanupPatients();
@@ -268,9 +268,9 @@ describe("Downgrade nunca apaga dado — excedente vira somente-leitura", () => 
   // que já foi prescrito. Este teste agora prova a regra nova.
   it("registrar dose NUNCA é bloqueado por plano, nem no paciente excedente — é a função vital do produto", async () => {
     await setPlan("premium");
-    const p1 = await createPatient("A");
+    const p1 = await createPatient("Paciente Alfa");
     const _patient1Id = (p1.body as { id: number }).id;
-    const p2 = await createPatient("B");
+    const p2 = await createPatient("Paciente Beta");
     const patient2Id = (p2.body as { id: number }).id;
     const med = await api("POST", "/medications", { name: "Medicamento Dose Downgrade" });
     const medicationId = (med.body as { id: number }).id;
@@ -304,8 +304,8 @@ describe("Downgrade nunca apaga dado — excedente vira somente-leitura", () => 
 
   it("mas CRIAR tratamento novo no paciente excedente continua bloqueado — isso é crescer, não registrar", async () => {
     await setPlan("premium");
-    const p1 = await createPatient("C");
-    const p2 = await createPatient("D");
+    const p1 = await createPatient("Paciente Gama");
+    const p2 = await createPatient("Paciente Delta");
     const patient2Id = (p2.body as { id: number }).id;
     void p1;
     const med = await api("POST", "/medications", { name: "Medicamento Limite Crescer" });

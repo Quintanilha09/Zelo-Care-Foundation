@@ -20,7 +20,11 @@
  * 2. **Allow-list de caracteres**, nunca deny-list: letras (com acento),
  *    espaço, hífen e apóstrofo. Lista de proibidos sempre esquece alguma
  *    coisa; lista de permitidos, não.
- * 3. **Pelo menos duas palavras**, com duas delas tendo 2 caracteres ou mais.
+ * 3. **Pelo menos duas palavras.** Sem exigir tamanho mínimo por palavra: a
+ *    primeira versão pedia duas palavras com 2+ caracteres e recusava
+ *    "Ana P Silva" — inicial do meio é nome de gente. Recusava também
+ *    "Paciente A" dentro da própria suíte, e isso é sinal, não coincidência:
+ *    regra que só o autor consegue satisfazer está errada.
  * 4. **Normalização antes de gravar:** corta as pontas e colapsa espaço
  *    repetido, para "Maria   Silva" e "Maria Silva" não virarem dois nomes.
  *
@@ -62,9 +66,9 @@ export function normalizarNome(bruto: string): string {
   return bruto.trim().replace(/\s+/g, " ");
 }
 
-/** Quantas palavras do nome têm ao menos 2 caracteres. */
-function palavrasComSubstancia(nome: string): number {
-  return nome.split(" ").filter((p) => p.length >= 2).length;
+/** Quantas palavras o nome tem. */
+function quantasPalavras(nome: string): number {
+  return nome.split(" ").filter(Boolean).length;
 }
 
 /**
@@ -98,7 +102,7 @@ export const nomeDePaciente = z
       });
       return;
     }
-    if (palavrasComSubstancia(nome) < 2) {
+    if (quantasPalavras(nome) < 2) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: "Escreva o nome e ao menos um sobrenome.",
