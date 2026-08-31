@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Locator } from "@playwright/test";
 import { abrirPrimeiroMomento, criarConta, criarPaciente, entrar, tokenDaConta } from "./apoio";
 
 /**
@@ -73,6 +73,37 @@ async function publicarDuasProporcoes(
   }
 }
 
+/**
+ * O `y` do elemento depois que ele para de se mexer.
+ *
+ * ── Por que isto e necessario, e nao paranoia ─────────────────────────────
+ *
+ * O `DialogContent` do shadcn abre com `zoom-in-95` e
+ * `slide-in-from-top-[48%]`, em `duration-200` (ver `components/ui/dialog.tsx`).
+ * Durante esses 200ms o dialogo inteiro esta escalando e deslizando, e
+ * `boundingBox()` devolve uma posicao intermediaria.
+ *
+ * A primeira versao deste teste media logo apos abrir e reprovava com
+ * y=370 na primeira leitura e y=427 na re-execucao, contra 607,5 estavel
+ * depois. **Os numeros que variavam eram os medidos no meio da animacao** —
+ * o defeito estava no teste, nao no componente.
+ *
+ * `waitForTimeout` fixo resolveria e seria pior: numero magico que ou e
+ * curto demais num runner lento, ou desperdicia tempo em todo mundo. Duas
+ * leituras iguais seguidas dizem que parou, e param assim que parou.
+ */
+async function yQuandoParar(alvo: Locator): Promise<number> {
+  let anterior = Number.NaN;
+  for (let tentativa = 0; tentativa < 40; tentativa++) {
+    const caixa = await alvo.boundingBox();
+    const y = caixa?.y ?? Number.NaN;
+    if (Number.isFinite(y) && y === anterior) return y;
+    anterior = y;
+    await alvo.page().waitForTimeout(50);
+  }
+  throw new Error("a posição do elemento não estabilizou em 2 segundos");
+}
+
 test("as setas do visualizador ficam no mesmo lugar ao trocar de foto", async ({
   page,
   request,
@@ -89,20 +120,18 @@ test("as setas do visualizador ficam no mesmo lugar ao trocar de foto", async ({
   const proxima = page.getByRole("button", { name: "Próximo momento" });
   await expect(proxima).toBeVisible();
 
-  const antes = await proxima.boundingBox();
-  expect(antes, "a seta de próximo momento precisa estar na tela").not.toBeNull();
+  const antes = await yQuandoParar(proxima);
 
   await proxima.click();
 
   // A imagem trocou de proporção. Se a caixa não fosse de altura fixa, a
   // altura renderizada mudaria e a seta desceria (ou subiria) junto.
-  const depois = await proxima.boundingBox();
-  expect(depois, "a seta precisa continuar na tela depois de trocar").not.toBeNull();
+  const depois = await yQuandoParar(proxima);
 
   // Um pixel de folga para arredondamento de layout; o defeito movia a seta
   // por centenas.
   expect(
-    Math.abs(depois!.y - antes!.y),
-    `a seta se moveu de y=${antes!.y} para y=${depois!.y} ao trocar de foto`
+    Math.abs(depois - antes),
+    `a seta se moveu de y=${antes} para y=${depois} ao trocar de foto`
   ).toBeLessThanOrEqual(1);
 });
