@@ -387,7 +387,29 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
             no celular e uma e meia no desktop: reserva espaço sem fingir que
             já sabemos quantas fotos existem. */}
         <AreaCarregando rotulo="Carregando os momentos">
-          <ul className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+          // Teto de altura com rolagem propria — Issue #52.
+        //
+        // A QUI-18 resolveu metade: antes era uma coluna de fotos grandes,
+        // que era pior. Mas a grade continua crescendo com o acervo, e o
+        // mural guarda 90 dias. Em tres colunas no celular, cada 3 fotos
+        // acrescentam uma linha a pagina inteira — e o mural fica na ficha do
+        // paciente, junto de tratamento, dose e consulta. Secao que cresce
+        // sem limite empurra para longe o que o produto vende.
+        //
+        // `max-h` e nao `h`: com seis fotos a grade fica do tamanho natural,
+        // sem caixa vazia embaixo. So passa a rolar quando precisa.
+        //
+        // O botao "Ver momentos mais antigos" fica FORA desta caixa, de
+        // proposito: assim ele nao some quando a pessoa rola a grade. E o
+        // carregamento e por botao, nunca por rolagem — entao nao ha o
+        // problema classico de scroll infinito preso a um container que nunca
+        // dispara.
+        <ul
+          className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-[60vh] overflow-y-auto pr-1"
+          tabIndex={0}
+          role="region"
+          aria-label={`Momentos de ${patientName}`}
+        >
             {Array.from({ length: 6 }).map((_, i) => (
               // biome-ignore lint/suspicious/noArrayIndexKey: barra cinza sem identidade própria
               <EsqueletoDeMomento key={i} />
