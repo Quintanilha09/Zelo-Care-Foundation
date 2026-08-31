@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { criarConta, entrar, criarPaciente, naoRolaNaHorizontal, type ContaDeTeste } from "./apoio";
+import { criarConta, entrar, sair, criarPaciente, naoRolaNaHorizontal, type ContaDeTeste } from "./apoio";
 
 /**
  * O cabeçalho da ficha aguenta um nome de gente de verdade — Issue #28.
@@ -51,10 +51,35 @@ test.describe("Ficha de paciente com nome longo", () => {
   test("o nome trunca, e o nome inteiro não se perde", async ({ page }) => {
     const titulo = page.getByRole("heading", { name: NOME_LONGO });
 
-    // Truncar de verdade: o texto renderizado não pode ser mais largo que a
-    // caixa que o contém. Se `truncate` sumir, isto reprova.
-    const cabe = await titulo.evaluate((el) => el.scrollWidth <= el.clientWidth + 1);
-    expect(cabe, "o título precisa truncar em vez de transbordar").toBeTruthy();
+    // ── A primeira versão deste teste media a coisa errada ────────────────
+    //
+    // Ela pedia `scrollWidth <= clientWidth`, achando que isso significava
+    // "cabe". Significa o oposto: com `overflow: hidden`, `scrollWidth` é
+    // justamente o tamanho do texto INTEIRO, e `clientWidth` o pedaço que
+    // aparece. Num nome truncado o primeiro é **sempre** maior — o teste
+    // reprovava exatamente quando a correção estava funcionando.
+    //
+    // O que importa de verdade é outra coisa: a caixa do título não pode
+    // ficar mais larga que a do pai. É isso que impede o nome de empurrar o
+    // resto do cabeçalho.
+    const dentroDoPai = await titulo.evaluate((el) => {
+      const pai = el.parentElement;
+      if (!pai) return false;
+      return el.getBoundingClientRect().width <= pai.getBoundingClientRect().width + 1;
+    });
+    expect(dentroDoPai, "o título não pode ser mais largo que a caixa que o contém").toBeTruthy();
+
+    // E o corte precisa ser um corte com reticências, não um texto espremido
+    // em três linhas: é o `truncate` que faz as três coisas juntas.
+    const estilo = await titulo.evaluate((el) => {
+      const s = getComputedStyle(el);
+      return { overflow: s.overflow, quebra: s.whiteSpace, corte: s.textOverflow };
+    });
+    expect(estilo, "o título precisa truncar com reticências, numa linha só").toEqual({
+      overflow: "hidden",
+      quebra: "nowrap",
+      corte: "ellipsis",
+    });
 
     // E truncar não pode custar a informação. O nome completo fica no
     // `title` — para quem passa o mouse e para quem usa leitor de tela.
@@ -117,6 +142,10 @@ test("o cabeçalho não engorda com o nome longo", async ({ page, request }) => 
   await expect(page.getByRole("heading", { name: "Ana Teste" })).toBeVisible({ timeout: 15_000 });
   const comNomeCurto = await alturaDoCabecalho("Ana Teste");
 
+  // Sem isto, o segundo `entrar` abriria a tela inicial já autenticado, o
+  // formulário de login não existiria, e o teste morreria em timeout de 30s
+  // esperando por um campo de e-mail que nunca ia aparecer.
+  await sair(page);
   await entrar(page, conta);
   await page.goto(`/pacientes/${patientId}`);
   await expect(page.getByRole("heading", { name: NOME_LONGO })).toBeVisible({ timeout: 15_000 });
