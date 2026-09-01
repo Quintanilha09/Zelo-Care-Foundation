@@ -34,7 +34,7 @@ import { revokeAllAccessTokensForUser, generateAccessToken, generateRefreshToken
 import { Clock } from "../lib/clock";
 import { listCaregiverLinks, switchActiveFamily } from "../lib/active-family.ts";
 import { getPlanTier, PLAN_LIMITS, PLAN_LABELS } from "../lib/plan-limits.ts";
-import { verifyPassword } from "../lib/password";
+import { verifyPassword, hashPassword, validatePasswordStrength } from "../lib/password";
 import { verifyPasswordLimiter } from "../lib/rate-limit";
 
 const router = Router();
@@ -510,6 +510,151 @@ router.post("/account/deletion/execute", requirePrimaryCaregiver, async (req, re
   safeLog.info({ action: "family_data_deleted", familyId }, "Dados da família excluídos permanentemente");
 
   res.json({ message: "Dados excluídos permanentemente. Esta ação não pode ser desfeita." });
+});
+
+
+// ── Os próprios dados: nome e senha — Issue #45 ────────────────────────────
+//
+// Até 01/09/2026 não havia como a pessoa mudar nada da própria conta. Quem
+// digitou o nome errado no cadastro convivia com ele para sempre, e quem
+// queria trocar de senha precisava deslogar e fingir que esqueceu — num fluxo
+// que depende de e-mail e HOJE NÃO FUNCIONA em produção.
+//
+// O e-mail fica de fora de propósito: trocar e-mail exige verificar o
+// endereço novo, e isso depende de provedor de e-mail. Está na Issue #46,
+// bloqueada. Nome e senha não dependem de nada.
+
+const UpdateMeBody = z.object({
+  name: z.string().min(2).max(100),
+});
+
+router.patch("/account/me", requireAuth, async (req, res): Promise<void> => {
+  const body = UpdateMeBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: "O nome precisa ter entre 2 e 100 caracteres." }); return; }
+
+  // SEMPRE o `userId` do JWT. Nunca um id vindo da URL ou do corpo — é o
+  // invariante 2 aplicado a um recurso que não é paciente.
+  const nome = body.data.name.trim().replace(/\s+/g, " ");
+  if (nome.length < 2) { res.status(400).json({ error: "O nome precisa ter entre 2 e 100 caracteres." }); return; }
+
+  const [atualizado] = await db
+    .update(usersTable)
+    .set({ name: nome, updatedAt: Clock.now() })
+    .where(eq(usersTable.id, getAuth(req).userId))
+    .returning({ id: usersTable.id, name: usersTable.name });
+
+  if (!atualizado) { res.status(404).json({ error: "Conta não encontrada" }); return; }
+
+  // O nome do cuidador nesta família acompanha: é ele que aparece em
+  // "quem registrou a dose", e ver dois nomes diferentes para a mesma pessoa
+  // é pior que não poder trocar.
+  await db
+    .update(caregiversTable)
+    .set({ name: nome, updatedAt: Clock.now() })
+    .where(eq(caregiversTable.id, getAuth(req).caregiverId));
+
+  await audit({
+    familyId: getAuth(req).familyId,
+    entityType: "user",
+    entityId: String(atualizado.id),
+    action: "updated",
+    actorId: String(getAuth(req).caregiverId),
+    actorType: "caregiver",
+  });
+
+  res.json({ name: atualizado.name });
+});
+
+const ChangePasswordBody = z.object({
+  currentPassword: z.string().min(1).max(128),
+  newPassword: z.string().min(1).max(128),
+});
+
+/**
+ * Trocar a senha estando logado.
+ *
+ * ── Por que devolve tokens novos ──────────────────────────────────────────
+ *
+ * Trocar senha é o que se faz quando se desconfia de alguém. Se as outras
+ * sessões continuassem valendo, a troca não protegeria de nada — é o
+ * comportamento que qualquer pessoa espera e quase ninguém implementa.
+ *
+ * Então todos os refresh tokens são revogados e todos os access tokens do
+ * usuário caem. Isso derrubaria também quem acabou de trocar, e é por isso
+ * que a resposta traz um par novo: a sessão atual continua, todas as outras
+ * morrem.
+ *
+ * Usa o MESMO limitador do `/account/verify-password`: esta rota também é um
+ * oráculo de senha atual, e sem limite viraria força bruta autenticada.
+ */
+router.post("/account/password", requireAuth, verifyPasswordLimiter, async (req, res): Promise<void> => {
+  const body = ChangePasswordBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: "Informe a senha atual e a nova." }); return; }
+
+  const forca = validatePasswordStrength(body.data.newPassword);
+  if (!forca.ok) { res.status(400).json({ error: forca.error }); return; }
+
+  const [user] = await db
+    .select({ passwordHash: usersTable.passwordHash })
+    .from(usersTable)
+    .where(eq(usersTable.id, getAuth(req).userId))
+    .limit(1);
+
+  // Mesma razão do `/verify-password`: conta só do Google não tem senha, e
+  // dizer "senha incorreta" seria mentira.
+  if (!user?.passwordHash) {
+    res.status(400).json({ error: "Esta conta entra pelo Google e não tem senha.", code: "NO_PASSWORD_SET" });
+    return;
+  }
+
+  if (!(await verifyPassword(user.passwordHash, body.data.currentPassword))) {
+    res.status(401).json({ error: "Senha atual incorreta.", code: "INVALID_PASSWORD" });
+    return;
+  }
+
+  await db
+    .update(usersTable)
+    .set({ passwordHash: await hashPassword(body.data.newPassword), updatedAt: Clock.now() })
+    .where(eq(usersTable.id, getAuth(req).userId));
+
+  // Derruba TODAS as sessões — inclusive esta, que ganha um par novo abaixo.
+  await db
+    .update(refreshTokensTable)
+    .set({ revoked: true })
+    .where(and(eq(refreshTokensTable.userId, getAuth(req).userId), eq(refreshTokensTable.revoked, false)));
+  revokeAllAccessTokensForUser(getAuth(req).userId);
+
+  const accessToken = generateAccessToken(
+    getAuth(req).userId,
+    getAuth(req).familyId,
+    getAuth(req).caregiverId,
+    getAuth(req).role
+  );
+  const { raw: refreshRaw, hash: refreshHash } = generateRefreshToken(getAuth(req).userId);
+  const REFRESH_TTL_DAYS = 30;
+  await db.insert(refreshTokensTable).values({
+    userId: getAuth(req).userId,
+    tokenHash: refreshHash,
+    userAgent: req.headers["user-agent"] ?? null,
+    ipAddress: req.ip ?? null,
+    expiresAt: new Date(Clock.now().getTime() + REFRESH_TTL_DAYS * 24 * 60 * 60 * 1000),
+  });
+
+  // NUNCA a senha, nem o hash, nem no contexto nem na mensagem — `safeLog`
+  // sanitiza o contexto, e a mensagem é escrita à mão.
+  safeLog.info({ action: "password_changed", userId: getAuth(req).userId }, "Senha alterada");
+  await audit({
+    familyId: getAuth(req).familyId,
+    entityType: "user",
+    entityId: String(getAuth(req).userId),
+    // `audit` so aceita created|updated|deleted|accessed. A senha nao entra
+    // no diff, e nem poderia: o registro diz QUE mudou, nunca PARA o que.
+    action: "updated",
+    actorId: String(getAuth(req).caregiverId),
+    actorType: "caregiver",
+  });
+
+  res.json({ accessToken, refreshToken: refreshRaw, expiresIn: 900 });
 });
 
 export default router;

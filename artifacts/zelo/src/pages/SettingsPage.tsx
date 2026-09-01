@@ -85,6 +85,16 @@ export default function SettingsPage() {
             </div>
           </div>
 
+          {/* Issue #45: a identidade acima RESPONDE "que conta e esta?"; esta
+              linha responde "como mudo isso?". Eram duas perguntas e so a
+              primeira tinha resposta. */}
+          <SettingsRow
+            href="/ajustes/conta"
+            icon={User}
+            title="Sua conta"
+            description="Trocar seu nome ou sua senha"
+          />
+
           <SettingsRow
             href="/planos"
             icon={CreditCard}

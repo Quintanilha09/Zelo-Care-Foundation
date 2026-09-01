@@ -328,6 +328,140 @@ describe("Autenticação — ZELO", () => {
       });
     });
 
+    describe("Trocar nome e senha da própria conta — Issue #45", () => {
+      /**
+       * Até 01/09/2026 não havia rota nenhuma para a pessoa mudar os
+       * próprios dados. `PATCH /caregivers/:id` existia, mas é o cuidador
+       * PRINCIPAL editando OUTRA pessoa, e não toca em `users`.
+       */
+      it("PATCH /account/me troca o nome, e o cuidador desta família acompanha", async () => {
+        const email = `conta-nome-${Date.now()}@zelo.test`;
+        const criado = await createVerifiedUser(email, "SenhaSegura456!");
+        const login = await api("POST", "/auth/login", { email, password: "SenhaSegura456!" });
+        const { accessToken } = login.body as Record<string, string>;
+
+        const res = await api("PATCH", "/account/me", { name: "  Ana   Maria Fictícia  " }, accessToken);
+        assert.equal(res.status, 200);
+
+        const [user] = await db
+          .select({ name: usersTable.name })
+          .from(usersTable)
+          .where(eq(usersTable.id, criado.userId))
+          .limit(1);
+        assert.equal(
+          user?.name,
+          "Ana Maria Fictícia",
+          "o nome precisa ser normalizado antes de gravar — espaço nas pontas e repetido"
+        );
+
+        // O nome do cuidador é o que aparece em "quem registrou a dose".
+        // Ver dois nomes diferentes para a mesma pessoa é pior que não poder
+        // trocar.
+        const [caregiver] = await db
+          .select({ name: caregiversTable.name })
+          .from(caregiversTable)
+          .where(eq(caregiversTable.userId, criado.userId))
+          .limit(1);
+        assert.equal(caregiver?.name, "Ana Maria Fictícia");
+
+        await db.delete(usersTable).where(eq(usersTable.id, criado.userId));
+        await db.delete(familiesTable).where(eq(familiesTable.id, criado.familyId));
+      });
+
+      it("senha atual errada NÃO troca a senha", async () => {
+        const email = `conta-senha-errada-${Date.now()}@zelo.test`;
+        const criado = await createVerifiedUser(email, "SenhaSegura456!");
+        const login = await api("POST", "/auth/login", { email, password: "SenhaSegura456!" });
+        const { accessToken } = login.body as Record<string, string>;
+
+        const res = await api("POST", "/account/password", {
+          currentPassword: "SenhaErrada999!",
+          newPassword: "OutraSenhaBoa789!",
+        }, accessToken);
+        assert.equal(res.status, 401);
+
+        // E a senha velha continua valendo — não basta recusar, não pode ter
+        // gravado nada pelo caminho.
+        const conferindo = await api("POST", "/auth/login", { email, password: "SenhaSegura456!" });
+        assert.equal(conferindo.status, 200, "a senha antiga precisa continuar funcionando");
+
+        await db.delete(usersTable).where(eq(usersTable.id, criado.userId));
+        await db.delete(familiesTable).where(eq(familiesTable.id, criado.familyId));
+      });
+
+      it("senha fraca é recusada antes de qualquer escrita", async () => {
+        const email = `conta-senha-fraca-${Date.now()}@zelo.test`;
+        const criado = await createVerifiedUser(email, "SenhaSegura456!");
+        const login = await api("POST", "/auth/login", { email, password: "SenhaSegura456!" });
+        const { accessToken } = login.body as Record<string, string>;
+
+        const res = await api("POST", "/account/password", {
+          currentPassword: "SenhaSegura456!",
+          newPassword: "curta",
+        }, accessToken);
+        assert.equal(res.status, 400);
+
+        await db.delete(usersTable).where(eq(usersTable.id, criado.userId));
+        await db.delete(familiesTable).where(eq(familiesTable.id, criado.familyId));
+      });
+
+      /**
+       * O coração desta Issue: trocar senha é o que se faz quando se
+       * desconfia de alguém. Se as outras sessões sobrevivessem, a troca não
+       * protegeria de nada.
+       */
+      it("trocar a senha derruba as OUTRAS sessões e mantém a atual", async () => {
+        const email = `conta-senha-${Date.now()}@zelo.test`;
+        const criado = await createVerifiedUser(email, "SenhaSegura456!");
+
+        const [s1, s2] = await Promise.all([
+          api("POST", "/auth/login", { email, password: "SenhaSegura456!" }),
+          api("POST", "/auth/login", { email, password: "SenhaSegura456!" }),
+        ]);
+        const { accessToken: token1 } = s1.body as Record<string, string>;
+        const { refreshToken: refresh2 } = s2.body as Record<string, string>;
+
+        const res = await api("POST", "/account/password", {
+          currentPassword: "SenhaSegura456!",
+          newPassword: "NovaSenhaBoa789!",
+        }, token1);
+        assert.equal(res.status, 200);
+
+        // A sessão que trocou recebe um par novo — senão ela também cairia,
+        // que é o oposto do que a pessoa pediu.
+        const novos = res.body as { accessToken?: string; refreshToken?: string };
+        assert.ok(novos.accessToken, "quem trocou a senha precisa sair com token novo");
+        assert.ok(novos.refreshToken);
+
+        // A OUTRA sessão morreu.
+        const [outra] = await db
+          .select({ revoked: refreshTokensTable.revoked })
+          .from(refreshTokensTable)
+          .where(eq(refreshTokensTable.tokenHash, hashToken(refresh2)))
+          .limit(1);
+        assert.ok(outra?.revoked, "a sessão do outro aparelho precisa ser revogada");
+
+        // E a senha nova é a que vale.
+        const comNova = await api("POST", "/auth/login", { email, password: "NovaSenhaBoa789!" });
+        assert.equal(comNova.status, 200);
+        const comVelha = await api("POST", "/auth/login", { email, password: "SenhaSegura456!" });
+        assert.equal(comVelha.status, 401, "a senha antiga não pode continuar valendo");
+
+        await db.delete(usersTable).where(eq(usersTable.id, criado.userId));
+        await db.delete(familiesTable).where(eq(familiesTable.id, criado.familyId));
+      });
+
+      it("sem autenticação, nenhuma das duas rotas responde", async () => {
+        const semToken = await api("PATCH", "/account/me", { name: "Quem Quer Que Seja" });
+        assert.equal(semToken.status, 401);
+        const senhaSemToken = await api("POST", "/account/password", {
+          currentPassword: "x",
+          newPassword: "OutraSenhaBoa789!",
+        });
+        assert.equal(senhaSemToken.status, 401);
+      });
+    });
+
     describe("Recuperação de senha", () => {
       it("solicitação de reset retorna 200 mesmo para e-mail inexistente (antiEnumeração)", async () => {
         const res = await api("POST", "/auth/password-reset/request", {
