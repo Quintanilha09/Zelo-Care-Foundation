@@ -53,31 +53,27 @@ Das 10 fases do backlog original só sobraram três buracos, todos deixados de p
 
 ## Onde o desenvolvimento parou
 
-**Seis Issues abertas, nenhum PR** — verificado em 01/09/2026, com `gh`. Este bloco envelhece
-rápido: se a sessão for depois disso, meça de novo.
+**Duas Issues abertas, um PR** — verificado em 01/09/2026, de madrugada, com `gh`. Este bloco
+envelhece rápido: se a sessão for depois disso, meça de novo.
 
-**As ondas 2 e 3 do refinamento entraram em 01/09/2026** — seis PRs mesclados, do `b81c165` ao
-`9510bc7`. Plano e refinamento em
-[refinamentos/interface-apos-teste-real.md](refinamentos/interface-apos-teste-real.md).
+**O teste no aparelho mudou o rumo.** Em 31/08/2026 o fundador abriu o app no celular pela
+primeira vez, e o veredito sobre Momentos foi *"nada do que foi planejado funcionou"* — com razão.
+Disso saíram as Issues #63, #64 e #65. **Oito PRs entraram entre 31/08 e 01/09**, de `b81c165` a
+`40ee3da`: galeria de verdade, várias fotos por vez, estoque de tratamento encerrado, nome e senha
+da própria conta, e a exportação LGPD completa em JSON e PDF.
 
-| Issue · PR | O quê |
-|---|---|
-| #47 · [#57](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/57) | Convites pendentes mostrava título sozinho — a guarda contava um conjunto e a lista mostrava outro |
-| #54 · [#61](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/61) | Atividade recente com teto de altura. **A lista nunca cresceu sem limite**: já era 15 |
-| #55 · [#59](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/59) | Botão "Enviar acesso" estourava com nome longo |
-| #50 · [#58](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/58) | Setas do visualizador subiam e desciam conforme a proporção da foto |
-| #52 · [#62](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/62) | Grade de Momentos com teto de altura |
-| #56 · [#60](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/60) | Nome do paciente ganhou teto de 60, allow-list e exigência de sobrenome |
+O relato inteiro — o que falhou, por que falhou e as cinco reprovações de CI que **nenhuma era do
+produto** — está em
+[historico/DIARIO-2026-09-01-teste-no-aparelho.md](historico/DIARIO-2026-09-01-teste-no-aparelho.md).
+Vale ler antes de mexer em Momentos ou em teste de tela.
 
-**O que sobrou aberto**, e por quê:
+## O que sobrou aberto
 
 | Issue | Estado |
 |---|---|
-| [#53](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/53) foto some ao publicar no celular | **Espera reprodução no aparelho.** Quatro hipóteses eliminadas por leitura de código; sobrou o `start_url: "/"` do manifesto |
-| [#48](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/48) exportação LGPD incompleta | Pronta para começar. **Bloqueia a #49** |
-| [#45](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/45) alterar nome e senha | Pronta para começar |
-| [#51](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/51) deslizar para trocar de foto | Pronta — a #50 já entrou |
-| [#49](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/49) exportação em PDF | Depende da #48 |
+| [#53](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/53) foto some ao publicar no celular | **A mais grave: é a única que faz PERDER TRABALHO.** Espera duas respostas do fundador — o app foi aberto pelo ícone da tela de início ou por aba? E sair da ficha e voltar SEM escolher foto também volta para a inicial? Quatro hipóteses já eliminadas por leitura de código; sobrou o `start_url: "/"` do manifesto |
+| [#51](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/51) deslizar para trocar de foto | PR [#72](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/72) aberto, no CI |
+
 | [#46](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/46) trocar o e-mail | 🔒 Bloqueada por provedor de e-mail, que depende do domínio |
 
 **Uma decisão do fundador ficou registrada dentro do código** (`lib/nome-de-paciente.ts`): o pedido

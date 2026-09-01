@@ -43,15 +43,15 @@ Medido nesta data, nesta máquina:
 | Middlewares | **3** | `require-auth.ts`, `require-patient-access.ts` e `receber-arquivo.ts` |
 | Arquivos de teste | **43** | `src/tests/*.test.ts` |
 | Consistência da suíte | **limpa** | 43 referenciados no `test:all` = 43 no disco; nenhum órfão, nenhum fora |
-| Testes de ponta a ponta | **10 arquivos, 102 casos** | `e2e/*.spec.ts` — Playwright, Desktop Chrome e Pixel 7. O `apoio.ts` é auxiliar e não conta. 102 = 51 casos × 2 navegadores. Medido nesta máquina em 31/08/2026, no commit 4e3ca3e, com `pnpm exec playwright test --list` |
+| Testes de ponta a ponta | **16 arquivos, 120 casos** | `e2e/*.spec.ts` — Playwright, Desktop Chrome e Pixel 7. O `apoio.ts` é auxiliar e não conta. 120 = 60 casos × 2 navegadores. Medido no log do CI, execução `33469035253` (main, verde) em 01/09/2026 |
 | Typecheck do monorepo | **exit 0** | `pnpm run typecheck` — 4 pacotes mais o projeto `e2e/`, todos limpos. A pasta `e2e/` passou a ser coberta na Issue #38; antes dela o `tsc` nao abria um arquivo ali. Medido em 31/08/2026 |
 | Modelo de visão | `claude-haiku-4-5-20251001` | `lib/vision.ts` |
 | Fila | **pg-boss** sobre o mesmo Postgres | `lib/queue.ts` |
 
-### Contagem de testes passando — medida em 31/08/2026
+### Contagem de testes passando — medida em 01/09/2026
 
-**Servidor: 562 testes, 550 passando, 12 pulados, zero falhas.**
-**Tela: 102 testes de ponta a ponta**, Playwright, em Desktop Chrome e Pixel 7. Duração: 4,8 min.
+**Servidor: 592 testes, 580 passando, 12 pulados, zero falhas.**
+**Tela: 120 testes de ponta a ponta**, Playwright, em Desktop Chrome e Pixel 7. Duração: 5,7 min.
 
 O número de casos que **passam** vem da execução de CI `33354663972` (a do PR #37, verde de
 ponta a ponta) — **não** desta máquina. Ver o aviso logo abaixo. Já a **contagem** de 102 casos
