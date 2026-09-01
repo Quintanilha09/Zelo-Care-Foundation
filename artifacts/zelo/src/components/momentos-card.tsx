@@ -22,7 +22,7 @@
  * O que aparece no lugar, e só para o cuidador principal, é o pedido de
  * consentimento.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type PointerEvent as EventoDePonteiro } from "react";
 import { useInfiniteQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { authFetch, apiUrl } from "@/lib/auth-client";
 import { useAuth } from "@/context/AuthContext";
@@ -583,6 +583,61 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
     </li>
   );
 
+  /**
+   * Passa de um momento para o outro — Issue #51.
+   *
+   * Um lugar só, usado pelas setas, pelo teclado e pelo gesto. Antes cada
+   * seta tinha seu próprio `setAberto` com o `Math.min`/`Math.max` repetido;
+   * com um terceiro caminho de navegação chegando, isso viraria três cópias
+   * da mesma regra de borda.
+   */
+  const irPara = (delta: number) => {
+    setAberto((i) => {
+      if (i === null) return null;
+      const proximo = i + delta;
+      // Sem dar a volta: o mural tem ordem cronológica, e pular do fim para
+      // o começo desorienta.
+      if (proximo < 0 || proximo > quantos - 1) return i;
+      return proximo;
+    });
+  };
+
+  /**
+   * O gesto de deslizar — Issue #51.
+   *
+   * Pointer Events, e não Touch Events: cobre dedo, mouse e caneta com um
+   * código só. No celular, que é o público real deste app, deslizar era a
+   * única forma de navegar que NÃO existia — sobravam um botão pequeno e as
+   * setas do teclado.
+   */
+  const inicioDoGesto = useRef<{ x: number; y: number } | null>(null);
+
+  const aoTocar = (e: EventoDePonteiro) => {
+    inicioDoGesto.current = { x: e.clientX, y: e.clientY };
+  };
+
+  const aoSoltar = (e: EventoDePonteiro) => {
+    const inicio = inicioDoGesto.current;
+    inicioDoGesto.current = null;
+    if (!inicio) return;
+
+    const dx = e.clientX - inicio.x;
+    const dy = e.clientY - inicio.y;
+
+    // Movimento predominantemente HORIZONTAL. Se o dedo desceu mais do que
+    // andou de lado, a pessoa estava rolando a página, não trocando de foto.
+    if (Math.abs(dx) <= Math.abs(dy)) return;
+
+    // Limiar por distância: sem ele, um toque com micro-tremor — que é a
+    // regra numa mão idosa, não a exceção — trocaria de foto sozinho.
+    const largura = (e.currentTarget as HTMLElement).clientWidth || 1;
+    const limiar = Math.max(50, largura * 0.15);
+    if (Math.abs(dx) < limiar) return;
+
+    // Arrastar para a ESQUERDA avança, como virar página.
+    irPara(dx < 0 ? 1 : -1);
+  };
+
   /** Abre o visualizador — pela prévia ou de dentro da galeria. */
   const abrirFoto = (indice: number) => {
     setAberto(indice);
@@ -895,7 +950,18 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
                     Sozinho isso NÃO bastou: faltava travar a altura do próprio
                     diálogo, senão ele se re-centraliza e move o palco inteiro.
                     Ver o comentário no `DialogContent` acima. */}
-                <div className="relative shrink-0">
+                {/* `touch-pan-y`: o navegador continua dono da rolagem
+                    vertical, e só o horizontal vira gesto nosso. Sem isso, o
+                    deslize competiria com a rolagem da página.
+
+                    Só na foto: no áudio, arrastar sobre o player é buscar
+                    posição na faixa. */}
+                <div
+                  className="relative shrink-0 touch-pan-y"
+                  onPointerDown={momentoAberto.kind === "audio" ? undefined : aoTocar}
+                  onPointerUp={momentoAberto.kind === "audio" ? undefined : aoSoltar}
+                  onPointerCancel={() => { inicioDoGesto.current = null; }}
+                >
                   {momentoAberto.kind === "audio" ? (
                     // Palco baixo para áudio: um player centralizado em 60vh
                     // de vazio seria pior que o problema que isto corrige.
@@ -922,7 +988,7 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
                           foto clara e sobre foto escura. */}
                       <button
                         type="button"
-                        onClick={() => setAberto((i) => (i === null ? null : Math.max(0, i - 1)))}
+                        onClick={() => irPara(-1)}
                         disabled={aberto === 0}
                         aria-label="Momento anterior"
                         className="left-2 absolute top-1/2 -translate-y-1/2 flex h-11 w-11 items-center justify-center rounded-full bg-background/80 text-foreground shadow-sm backdrop-blur-sm transition hover:bg-background disabled:opacity-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -931,9 +997,7 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
                       </button>
                       <button
                         type="button"
-                        onClick={() =>
-                          setAberto((i) => (i === null ? null : Math.min(quantos - 1, i + 1)))
-                        }
+                        onClick={() => irPara(1)}
                         disabled={aberto === quantos - 1}
                         aria-label="Próximo momento"
                         className="right-2 absolute top-1/2 -translate-y-1/2 flex h-11 w-11 items-center justify-center rounded-full bg-background/80 text-foreground shadow-sm backdrop-blur-sm transition hover:bg-background disabled:opacity-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
