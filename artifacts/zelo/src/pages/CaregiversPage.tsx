@@ -248,6 +248,11 @@ export default function CaregiversPage() {
   const { data: caregivers, isLoading } = useQuery({ queryKey: ["caregivers"], queryFn: fetchCaregivers });
   const { data: invites } = useQuery({ queryKey: ["invites"], queryFn: fetchInvites, enabled: isPrimary });
 
+  // Convite ACEITO continua vindo da rota — `invites` traz todo tipo, nao so
+  // os pendentes. Derivar aqui, uma vez, e o que impede a armadilha de
+  // decidir a secao por um conjunto e listar outro (Issue #47).
+  const convitesPendentes = invites?.filter((i) => i.status === "pending");
+
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ["caregivers"] });
     void queryClient.invalidateQueries({ queryKey: ["invites"] });
@@ -318,10 +323,19 @@ export default function CaregiversPage() {
           })}
         </div>
 
-        {isPrimary && invites && invites.length > 0 && (
+        {/* A guarda contava `invites.length` — TODOS os convites — e a lista
+            filtrava `status === "pending"`. Um convite aceito e nenhum
+            pendente deixava o titulo sozinho na tela. Agora as duas olham
+            `convitesPendentes` (Issue #47).
+            `undefined` e "ainda carregando": nao renderiza nada, para nao
+            piscar "Nenhum convite pendente" antes da resposta chegar. */}
+        {isPrimary && convitesPendentes !== undefined && (
           <div className="space-y-3">
             <h3 className="text-sm font-medium text-muted-foreground">Convites pendentes</h3>
-            {invites.filter((i) => i.status === "pending").map((inv) => (
+            {convitesPendentes.length === 0 && (
+              <p className="text-sm text-muted-foreground">Nenhum convite pendente.</p>
+            )}
+            {convitesPendentes.map((inv) => (
               <div key={inv.id} className="flex items-center justify-between gap-3 p-3 rounded-lg border bg-muted/30">
                 <div>
                   <p className="text-sm">{inv.invitedEmail ?? "Link compartilhável"}</p>
