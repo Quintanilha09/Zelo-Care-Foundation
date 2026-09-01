@@ -183,7 +183,7 @@ export const adminLoginLimiter = rateLimit({
  */
 export const publicTokenLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 30 * M,
+  limit: 100 * M,
   standardHeaders: "draft-7",
   legacyHeaders: false,
   keyGenerator: (req) => `public-token:${clientIp(req)}`,
@@ -207,12 +207,19 @@ export const refreshLimiter = rateLimit({
 });
 
 /**
- * Envio de mídia (QUI-5): 30 arquivos por hora, por usuário.
+ * Envio de mídia (QUI-5): 100 arquivos por hora, por usuário.
  *
  * A chave é o userId, não o IP — mesmo raciocínio do photoExtractionLimiter:
  * o custo é por arquivo guardado, e uma família atrás do mesmo IP não deve
- * dividir cota. 30/hora é folgado para quem está publicando o dia do
- * paciente e apertado para quem quer usar o bucket como hospedagem.
+ * dividir cota.
+ *
+ * Era 30/hora, calibrado quando o envio era de UMA foto por vez. Com o lote
+ * da Issue #64, três lotes de dez fotos — um passeio de fim de semana — batiam
+ * no teto e o próprio app levava 429. O limite existe contra usar o bucket
+ * como hospedagem, não contra quem está registrando o dia do paciente.
+ *
+ * 100/hora continua sendo teto de verdade: o lote é capado em 20 por vez na
+ * tela, então são cinco lotes cheios numa hora.
  */
 export const mediaUploadLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,

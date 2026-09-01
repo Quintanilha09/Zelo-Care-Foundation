@@ -38,7 +38,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
-import { Camera, Trash2, ImagePlus, Bookmark, Heart, Mic, ChevronLeft, ChevronRight, Images, ArrowLeft } from "lucide-react";
+import { Camera, Trash2, ImagePlus, Bookmark, Heart, Mic, ChevronLeft, ChevronRight, Images, ArrowLeft, X } from "lucide-react";
 import { AreaCarregando, EsqueletoDeMomento, BarraDeProgresso } from "@/components/esqueleto";
 
 interface Momento {
@@ -114,6 +114,15 @@ function quando(iso: string, timezone: string): string {
 const MS_DE_SAIDA = 120;
 
 /**
+ * Teto de fotos por lote — Issue #64.
+ *
+ * Casado com o `mediaUploadLimiter` do servidor (100/hora por pessoa): cinco
+ * lotes cheios cabem numa hora. Sem teto, escolher a galeria inteira no
+ * celular levaria 429 no meio do envio.
+ */
+const MAX_POR_LOTE = 20;
+
+/**
  * "Ana mandou um coração", "Ana e Bruno", "Ana, Bruno e mais 2" — QUI-10.
  *
  * ── O "e mais 2" não é um contador ────────────────────────────────────────
@@ -142,7 +151,15 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState("");
   const [legenda, setLegenda] = useState("");
-  const [previa, setPrevia] = useState<{ url: string; arquivo: File } | null>(null);
+  /**
+   * As fotos escolhidas e ainda não publicadas — Issue #64.
+   *
+   * Era UMA (`previa`). Quem voltava de um passeio com oito fotos repetia
+   * oito vezes o ciclo escolher-esperar-publicar.
+   */
+  const [escolhidas, setEscolhidas] = useState<{ url: string; arquivo: File; nome: string }[]>([]);
+  /** Progresso honesto durante o lote: qual está subindo agora. */
+  const [enviandoIndice, setEnviandoIndice] = useState(0);
   const [aApagar, setAApagar] = useState<Momento | null>(null);
   const [saindo, setSaindo] = useState<number | null>(null);
   const [consentindo, setConsentindo] = useState(false);
@@ -212,10 +229,30 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
 
   const recarregar = () => queryClient.invalidateQueries({ queryKey: ["momentos", patientId] });
 
-  const escolherArquivo = async (arquivo: File | undefined) => {
-    if (!arquivo) return;
+  const escolherArquivos = async (lista: FileList | null) => {
+    if (!lista || lista.length === 0) return;
     setErro("");
-    try {
+
+    // Teto por lote. Não é capricho: cada foto é uma requisição, e o
+    // limitador do servidor é de 100/hora por pessoa. Sem teto aqui, escolher
+    // a galeria inteira no celular levaria 429 no meio do caminho — e a
+    // pessoa perderia parte do lote sem entender por quê.
+    const cabem = MAX_POR_LOTE - escolhidas.length;
+    if (cabem <= 0) {
+      setErro(`Dá para enviar até ${MAX_POR_LOTE} fotos por vez. Publique estas e escolha as próximas.`);
+      return;
+    }
+    const recortada = Array.from(lista).slice(0, cabem);
+    if (recortada.length < lista.length) {
+      setErro(`Dá para enviar até ${MAX_POR_LOTE} fotos por vez — as primeiras ${recortada.length} entraram.`);
+    }
+
+    // Uma por vez, e não `Promise.all`: comprimir usa canvas e memória, e
+    // oito ao mesmo tempo derrubam a aba num celular. Em sequência é mais
+    // lento e termina; em paralelo é mais rápido e às vezes não termina.
+    const novas: { url: string; arquivo: File; nome: string }[] = [];
+    for (const arquivo of recortada) {
+      try {
       // Comprime ANTES de mostrar a prévia: a prévia então mostra exatamente
       // o que vai subir, e não uma versão melhor que a real.
       const comprimida = await comprimirFoto(arquivo);
@@ -231,45 +268,108 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
           `${comprimida.largura}×${comprimida.altura})`
       );
 
-      if (previa) URL.revokeObjectURL(previa.url);
-      setPrevia({ url: URL.createObjectURL(comprimida.arquivo), arquivo: comprimida.arquivo });
-    } catch (e) {
-      setErro(e instanceof Error ? e.message : "Não conseguimos ler essa foto.");
+        novas.push({
+          url: URL.createObjectURL(comprimida.arquivo),
+          arquivo: comprimida.arquivo,
+          nome: arquivo.name,
+        });
+      } catch (e) {
+        // Uma foto ilegível não pode derrubar o lote inteiro: as outras
+        // sete continuam válidas.
+        setErro(
+          e instanceof Error
+            ? `${arquivo.name}: ${e.message}`
+            : `Não conseguimos ler ${arquivo.name}.`
+        );
+      }
     }
+
+    setEscolhidas((antes) => [...antes, ...novas]);
+    // Zerar o input: sem isto, escolher o MESMO arquivo de novo não dispara
+    // `onChange` e parece que o app ignorou o toque.
+    if (inputArquivo.current) inputArquivo.current.value = "";
   };
 
-  const limparPrevia = () => {
-    if (previa) URL.revokeObjectURL(previa.url);
-    setPrevia(null);
+  /** Tira uma foto do lote antes de publicar. */
+  const removerEscolhida = (indice: number) => {
+    setEscolhidas((antes) => {
+      const alvo = antes[indice];
+      if (alvo) URL.revokeObjectURL(alvo.url);
+      return antes.filter((_, i) => i !== indice);
+    });
+  };
+
+  const limparEscolhidas = () => {
+    for (const e of escolhidas) URL.revokeObjectURL(e.url);
+    setEscolhidas([]);
     setLegenda("");
     if (inputArquivo.current) inputArquivo.current.value = "";
   };
 
+  /**
+   * Publica o lote — Issue #64.
+   *
+   * ── Uma requisição por arquivo, de propósito ────────────────────────────
+   *
+   * O servidor continua com `upload.single`. Trocar por `upload.array`
+   * mudaria de uma vez o teto de tamanho POR ARQUIVO, a validação de MIME e
+   * o limitador de taxa — três proteções — para ganhar pouco.
+   *
+   * ── Falha no meio do lote não pode perder o resto ───────────────────────
+   *
+   * Se a quinta de sete falhar, as quatro primeiras já estão publicadas. O
+   * que falhou CONTINUA na lista para tentar de novo; o que subiu sai. Sumir
+   * com o lote inteiro seria perder trabalho — e perder trabalho é a coisa
+   * mais cara que este app pode fazer com quem cuida de alguém.
+   */
   const publicar = async () => {
-    if (!previa) return;
+    if (escolhidas.length === 0) return;
     setEnviando(true);
     setErro("");
-    try {
-      const form = new FormData();
-      // patientId e caption ANTES do arquivo: o multer preenche req.body na
-      // ordem em que as partes chegam, e o servidor precisa dos dois quando
-      // o handler roda.
-      form.append("patientId", String(patientId));
-      if (legenda.trim()) form.append("caption", legenda.trim());
-      form.append("arquivo", previa.arquivo);
 
-      const res = await authFetch("/api/media", { method: "POST", body: form });
-      if (!res.ok) {
-        const corpo = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(corpo.error ?? "Não conseguimos enviar a foto.");
+    const legendaDoLote = legenda.trim();
+    const falharam: typeof escolhidas = [];
+    let ultimoErro = "";
+
+    for (let i = 0; i < escolhidas.length; i++) {
+      setEnviandoIndice(i);
+      const item = escolhidas[i];
+      try {
+        const form = new FormData();
+        // patientId e caption ANTES do arquivo: o multer preenche req.body na
+        // ordem em que as partes chegam, e o servidor precisa dos dois quando
+        // o handler roda.
+        form.append("patientId", String(patientId));
+        if (legendaDoLote) form.append("caption", legendaDoLote);
+        form.append("arquivo", item.arquivo);
+
+        const res = await authFetch("/api/media", { method: "POST", body: form });
+        if (!res.ok) {
+          const corpo = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(corpo.error ?? "Não conseguimos enviar.");
+        }
+        URL.revokeObjectURL(item.url);
+      } catch (e) {
+        falharam.push(item);
+        ultimoErro = e instanceof Error ? e.message : "Não conseguimos enviar.";
       }
-      limparPrevia();
-      await recarregar();
-    } catch (e) {
-      setErro(e instanceof Error ? e.message : "Não conseguimos enviar a foto.");
-    } finally {
-      setEnviando(false);
     }
+
+    setEscolhidas(falharam);
+    setEnviandoIndice(0);
+    if (falharam.length === 0) {
+      setLegenda("");
+      if (inputArquivo.current) inputArquivo.current.value = "";
+    } else {
+      setErro(
+        falharam.length === escolhidas.length
+          ? ultimoErro
+          : `${falharam.length} de ${escolhidas.length} não subiram. ${ultimoErro} As outras já estão no mural — toque em Publicar para tentar de novo só o que faltou.`
+      );
+    }
+
+    setEnviando(false);
+    await recarregar();
   };
 
   /**
@@ -540,38 +640,84 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
           accept="image/jpeg,image/png,image/webp"
           // `capture` deixado de fora de propósito: forçar a câmera impediria
           // escolher uma foto que já está no aparelho, que é metade dos casos.
+          //
+          // `multiple` — Issue #64. Quem volta de um passeio com oito fotos
+          // não deveria repetir oito vezes o mesmo ciclo.
+          multiple
           className="hidden"
-          onChange={(e) => void escolherArquivo(e.target.files?.[0])}
+          onChange={(e) => void escolherArquivos(e.target.files)}
         />
 
-        {!previa ? (
+        {escolhidas.length === 0 ? (
           <Button variant="outline" size="sm" className="gap-2" onClick={() => inputArquivo.current?.click()}>
-            <ImagePlus className="w-4 h-4" /> Adicionar uma foto
+            <ImagePlus className="w-4 h-4" /> Adicionar fotos
           </Button>
         ) : (
           <div className="space-y-3 rounded-lg border p-3">
-            <img
-              src={previa.url}
-              alt="Foto escolhida, ainda não publicada"
-              className="w-full max-h-64 object-contain rounded-md bg-muted"
-            />
+            {/* Grade de escolhidas: dá para tirar uma do lote antes de
+                publicar. Sem isso, escolher 8 e perceber que uma está ruim
+                obrigaria a recomeçar do zero. */}
+            <ul className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+              {escolhidas.map((item, indice) => (
+                <li key={item.url} className="relative">
+                  <img
+                    src={item.url}
+                    alt={`${item.nome}, escolhida e ainda não publicada`}
+                    className="aspect-square w-full object-cover rounded-md bg-muted"
+                  />
+                  {!enviando && (
+                    <button
+                      type="button"
+                      onClick={() => removerEscolhida(indice)}
+                      aria-label={`Tirar ${item.nome} do envio`}
+                      className="absolute -right-1.5 -top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-background text-muted-foreground shadow-sm border hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+
+            {!enviando && (
+              <Button variant="ghost" size="sm" className="gap-2" onClick={() => inputArquivo.current?.click()}>
+                <ImagePlus className="w-4 h-4" /> Adicionar mais
+              </Button>
+            )}
+
+            {/* Uma legenda para o lote. Legenda por foto é outra história, e
+                não é esta — oito campos de texto antes de publicar seria pior
+                que oito envios. */}
             <Textarea
               value={legenda}
               onChange={(e) => setLegenda(e.target.value.slice(0, 300))}
-              placeholder="Escreva alguma coisa, se quiser"
+              placeholder={
+                escolhidas.length > 1
+                  ? "Escreva alguma coisa sobre estas fotos, se quiser"
+                  : "Escreva alguma coisa, se quiser"
+              }
               rows={2}
             />
             {/* Enquanto envia, a barra substitui os botoes. Deixar botao
                 desabilitado do lado de uma barra e dar duas mensagens sobre a
-                mesma coisa — e um deles convida a clicar de novo. */}
+                mesma coisa — e um deles convida a clicar de novo.
+
+                O rótulo diz QUAL está subindo: a compressão roda por foto e é
+                o passo lento, então sem isso um lote de oito parece travado. */}
             {enviando ? (
-              <BarraDeProgresso rotulo="Enviando a foto…" />
+              <BarraDeProgresso
+                rotulo={
+                  escolhidas.length > 1
+                    ? `Enviando ${enviandoIndice + 1} de ${escolhidas.length}…`
+                    : "Enviando a foto…"
+                }
+              />
             ) : (
               <div className="flex items-center gap-2">
                 <Button size="sm" onClick={publicar} className="gap-2">
                   Publicar
                 </Button>
-                <Button variant="ghost" size="sm" onClick={limparPrevia}>
+                <Button variant="ghost" size="sm" onClick={limparEscolhidas}>
                   Cancelar
                 </Button>
               </div>
