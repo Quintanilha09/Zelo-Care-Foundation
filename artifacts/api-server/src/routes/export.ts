@@ -37,6 +37,7 @@ import { publicTokenLimiter } from "../lib/rate-limit";
 import { audit } from "../lib/audit";
 import { safeLog } from "../lib/safe-logger";
 import { Clock } from "../lib/clock";
+import { gerarPdfDaExportacao } from "../lib/export-pdf.ts";
 
 const router = Router();
 
@@ -220,16 +221,23 @@ router.post("/export", requireAuth, async (req, res): Promise<void> => {
       "Ficam de fora, de propósito: hash de senha, tokens de sessão e o e-mail dos outros cuidadores. Os dois primeiros são credencial interna, não dado seu; o terceiro é dado de outra pessoa.",
   }, null, 2);
 
+  // ── DOIS tokens, um por formato — Issue #49 ─────────────────────────────
+  //
+  // O link é de uso único. Com um token só para os dois formatos, baixar o
+  // PDF mataria o JSON — e a pessoa que quisesse conferir os dois teria de
+  // gerar a exportação duas vezes.
+  //
+  // Dois tokens custam uma linha a mais na tabela e resolvem: cada um morre
+  // no próprio uso, os dois expiram na mesma hora, e o formato vem da URL,
+  // sem precisar de coluna nova.
   const { raw, hash } = generateOneTimeToken();
+  const { raw: rawPdf, hash: hashPdf } = generateOneTimeToken();
   const expiresAt = new Date(Clock.now().getTime() + 60 * 60 * 1000); // 1 hora
 
-  await db.insert(exportTokensTable).values({
-    userId: getAuth(req).userId,
-    familyId,
-    tokenHash: hash,
-    expiresAt,
-    snapshot,
-  });
+  await db.insert(exportTokensTable).values([
+    { userId: getAuth(req).userId, familyId, tokenHash: hash, expiresAt, snapshot },
+    { userId: getAuth(req).userId, familyId, tokenHash: hashPdf, expiresAt, snapshot },
+  ]);
 
   await audit({
     familyId,
@@ -243,6 +251,9 @@ router.post("/export", requireAuth, async (req, res): Promise<void> => {
 
   res.json({
     downloadUrl: `/api/export/download/${raw}`,
+    // O PDF é a versão para LER; o JSON, a versão para IMPORTAR. As duas
+    // são portabilidade, e trocar uma pela outra perderia metade dela.
+    downloadUrlPdf: `/api/export/download/${rawPdf}?formato=pdf`,
     expiresAt,
     patientCount: patients.length,
   });
@@ -276,9 +287,21 @@ router.get<{ rawToken: string }>("/export/download/:rawToken", publicTokenLimite
     .set({ downloaded: true, downloadedAt: Clock.now() })
     .where(eq(exportTokensTable.id, exportRecord.id));
 
-  const filename = `zelo-export-${Clock.now().toISOString().slice(0, 10)}.json`;
+  const dia = Clock.now().toISOString().slice(0, 10);
+
+  // O formato vem da URL, não do banco: o token diz QUEM pode baixar, a
+  // query diz COMO. Evita uma coluna nova para uma informação que já cabe
+  // no link que o próprio servidor montou.
+  if (req.query.formato === "pdf") {
+    const pdf = await gerarPdfDaExportacao(exportRecord.snapshot);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="zelo-seus-dados-${dia}.pdf"`);
+    res.send(pdf);
+    return;
+  }
+
   res.setHeader("Content-Type", "application/json");
-  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.setHeader("Content-Disposition", `attachment; filename="zelo-export-${dia}.json"`);
   res.send(exportRecord.snapshot);
 });
 

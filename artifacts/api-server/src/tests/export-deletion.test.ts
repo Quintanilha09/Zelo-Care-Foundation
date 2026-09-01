@@ -258,6 +258,59 @@ describe("Exportação e exclusão de dados — ZELO", () => {
       }
     });
 
+    /**
+     * Issue #49 — o pacote saía como JSON cru do banco: `medicationId: 267`
+     * em vez do nome do remédio, `"outcome": "skipped"` em inglês, datas em
+     * UTC. A LGPD dá direito à portabilidade E à transparência; um dump com
+     * chave estrangeira atende a letra e falha o espírito.
+     */
+    it("o mesmo conteúdo sai em PDF legível, com o nome do remédio e sem inglês", async () => {
+      const exportRes = await api(exportFamily.token, "POST", "/export");
+      const { downloadUrlPdf } = exportRes.body as { downloadUrlPdf: string };
+      assert.ok(downloadUrlPdf, "a resposta precisa oferecer também o PDF");
+
+      const dlRes = await rawGet(downloadUrlPdf.replace(/^\/api/, ""));
+      assert.equal(dlRes.status, 200);
+      assert.ok(dlRes.contentType?.includes("application/pdf"), "precisa sair como PDF");
+
+      // O PDF é gerado sem compressão (mesma escolha da ZELO-35), então o
+      // texto aparece nos bytes crus e dá para conferir sem parser de PDF.
+      assert.match(dlRes.body, /Seus dados no ZELO/, "o documento precisa se identificar");
+      assert.match(
+        dlRes.body,
+        /Medicamento ExportDel/,
+        "o NOME do remédio precisa aparecer — era isso que o JSON escondia atrás do id"
+      );
+      assert.match(dlRes.body, /Consentimentos que você deu/);
+
+      // Nada de inglês do banco vazando para o documento do titular.
+      assert.doesNotMatch(dlRes.body, /"outcome"|scheduledDoseId|medicationId/);
+    });
+
+    /**
+     * O link é de uso único. Com um token só para os dois formatos, baixar o
+     * PDF mataria o JSON — e quem quisesse os dois teria de exportar duas
+     * vezes.
+     */
+    it("baixar o PDF NÃO invalida o link do JSON — são tokens separados", async () => {
+      const exportRes = await api(exportFamily.token, "POST", "/export");
+      const { downloadUrl, downloadUrlPdf } = exportRes.body as {
+        downloadUrl: string;
+        downloadUrlPdf: string;
+      };
+
+      const pdf = await rawGet(downloadUrlPdf.replace(/^\/api/, ""));
+      assert.equal(pdf.status, 200);
+
+      const json = await rawGet(downloadUrl.replace(/^\/api/, ""));
+      assert.equal(json.status, 200, "o link do JSON precisa continuar valendo");
+      assert.ok(json.contentType?.includes("application/json"));
+
+      // Mas cada um continua morrendo no próprio uso.
+      const pdfDeNovo = await rawGet(downloadUrlPdf.replace(/^\/api/, ""));
+      assert.equal(pdfDeNovo.status, 404, "o link do PDF é de uso único");
+    });
+
     it("link de download é de uso único — segunda tentativa retorna 404", async () => {
       const exportRes = await api(exportFamily.token, "POST", "/export");
       const { downloadUrl } = exportRes.body as { downloadUrl: string };
