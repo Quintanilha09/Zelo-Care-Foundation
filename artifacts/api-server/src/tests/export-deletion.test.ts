@@ -31,6 +31,8 @@ let closeServer: () => Promise<void>;
 interface TestFamily {
   userId: number; familyId: number; caregiverId: number;
   patientId: number; token: string;
+  /** Usado pela Issue #48: o pacote precisa conter o e-mail de quem pediu. */
+  email: string;
 }
 
 async function createCompleteFamily(email: string): Promise<TestFamily> {
@@ -72,7 +74,7 @@ async function createCompleteFamily(email: string): Promise<TestFamily> {
   });
 
   const token = generateAccessToken(user.id, family.id, caregiver.id, "primary_caregiver");
-  return { userId: user.id, familyId: family.id, caregiverId: caregiver.id, patientId: patient.id, token };
+  return { userId: user.id, familyId: family.id, caregiverId: caregiver.id, patientId: patient.id, token, email };
 }
 
 before(async () => {
@@ -182,6 +184,78 @@ describe("Exportação e exclusão de dados — ZELO", () => {
       const data = JSON.parse(dlRes.body) as { patients: Array<unknown>; exportDate: string };
       assert.ok(Array.isArray(data.patients), "deve ter campo patients");
       assert.ok(data.exportDate, "deve ter exportDate");
+    });
+
+    /**
+     * Issue #48 — o pacote afirmava conformidade LGPD e não continha os dados
+     * pessoais de quem o pediu. Saíam `userId` e `caregiverId` como números,
+     * e nada de nome, e-mail, consentimento ou mídia.
+     */
+    it("traz a conta, a família, os cuidadores e os consentimentos de quem pediu", async () => {
+      const exportRes = await api(exportFamily.token, "POST", "/export");
+      const { downloadUrl } = exportRes.body as { downloadUrl: string };
+      const dlRes = await rawGet(downloadUrl.replace(/^\/api/, ""));
+      assert.equal(dlRes.status, 200);
+
+      const data = JSON.parse(dlRes.body) as {
+        conta: { id: number; nome: string; email: string } | null;
+        familia: { id: number; nome: string } | null;
+        cuidadores: Array<{ nome: string; papel: string; ehVoce: boolean; email?: string }>;
+        consentimentos: Array<{ tipo: string }>;
+        preferenciasDeNotificacao: Array<unknown>;
+        _midia: string;
+        _fora: string;
+      };
+
+      assert.ok(data.conta, "o pacote precisa conter a conta de quem pediu");
+      assert.equal(data.conta?.email, exportFamily.email, "o e-mail do titular precisa estar lá");
+      assert.ok(data.conta?.nome, "o nome do titular precisa estar lá");
+
+      assert.ok(data.familia, "a família precisa estar no pacote");
+
+      assert.ok(data.cuidadores.length >= 1, "os cuidadores precisam estar no pacote");
+      const voce = data.cuidadores.find((c) => c.ehVoce);
+      assert.ok(voce, "quem pediu precisa estar marcado entre os cuidadores");
+
+      assert.ok(
+        data.consentimentos.length >= 1,
+        "o consentimento é o que legitima o tratamento de dado de saúde — não pode faltar"
+      );
+
+      assert.ok(Array.isArray(data.preferenciasDeNotificacao));
+
+      // O que o pacote NÃO tem precisa estar dito nele, não omitido em
+      // silêncio. É a diferença entre recorte declarado e pacote incompleto.
+      assert.ok(data._midia.length > 0, "o pacote precisa dizer que a mídia vai como metadado");
+      assert.ok(data._fora.length > 0, "o pacote precisa dizer o que ficou de fora");
+    });
+
+    it("NUNCA exporta hash de senha, nem o e-mail dos outros cuidadores", async () => {
+      const exportRes = await api(exportFamily.token, "POST", "/export");
+      const { downloadUrl } = exportRes.body as { downloadUrl: string };
+      const dlRes = await rawGet(downloadUrl.replace(/^\/api/, ""));
+
+      // Varredura no texto cru, e não no objeto: se um campo novo entrar no
+      // pacote carregando o hash, o teste pega mesmo sem conhecer o formato.
+      assert.doesNotMatch(
+        dlRes.body,
+        /passwordHash|password_hash/,
+        "hash de senha é credencial interna, nunca dado pessoal do titular"
+      );
+      assert.doesNotMatch(dlRes.body, /tokenHash|token_hash|refreshToken/, "token não é dado do titular");
+
+      const data = JSON.parse(dlRes.body) as {
+        cuidadores: Array<{ ehVoce: boolean; email?: string }>;
+      };
+      for (const c of data.cuidadores) {
+        if (!c.ehVoce) {
+          assert.equal(
+            c.email,
+            undefined,
+            "e-mail de outro cuidador é dado dele, não de quem pediu a exportação"
+          );
+        }
+      }
     });
 
     it("link de download é de uso único — segunda tentativa retorna 404", async () => {
