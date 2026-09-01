@@ -35,7 +35,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ArrowLeft, Download, Trash2, ShieldAlert } from "lucide-react";
+import { ArrowLeft, Download, Trash2, ShieldAlert, FileText } from "lucide-react";
 
 interface PedidoDeExclusao {
   scheduledDeletionAt: string;
@@ -71,6 +71,7 @@ export default function SettingsDataPage() {
 
   const [exportando, setExportando] = useState(false);
   const [linkDoArquivo, setLinkDoArquivo] = useState("");
+  const [linkDoPdf, setLinkDoPdf] = useState("");
   const [erroDaExportacao, setErroDaExportacao] = useState("");
 
   const [janelaAberta, setJanelaAberta] = useState(false);
@@ -96,7 +97,10 @@ export default function SettingsDataPage() {
         setErroDaExportacao(data.error ?? "Não foi possível gerar o arquivo agora.");
         return;
       }
-      const { downloadUrl } = (await res.json()) as { downloadUrl: string };
+      const { downloadUrl, downloadUrlPdf } = (await res.json()) as {
+        downloadUrl: string;
+        downloadUrlPdf: string;
+      };
       // O link é de USO ÚNICO e vale uma hora. Por isso a tela o mostra em
       // vez de baixar sozinha: um download disparado por script pode ser
       // engolido por bloqueador de pop-up e queimar o link em silêncio, e a
@@ -104,6 +108,7 @@ export default function SettingsDataPage() {
       // nenhum. Clicar é do usuário, e falha visível é melhor que sucesso
       // invisível.
       setLinkDoArquivo(downloadUrl);
+      setLinkDoPdf(downloadUrlPdf);
     } catch {
       setErroDaExportacao("Sem conexão agora. Tente de novo.");
     } finally {
@@ -152,9 +157,9 @@ export default function SettingsDataPage() {
           <div>
             <p className="font-medium">Baixar uma cópia de tudo</p>
             <p className="text-sm text-muted-foreground">
-              Um arquivo com os pacientes, os tratamentos, o histórico de doses, as
-              consultas e as aferições da família. O link vale por uma hora e serve
-              uma vez só.
+              Sua conta, os cuidadores, os consentimentos, os pacientes, os
+              tratamentos, o histórico de doses, as consultas, as aferições e os
+              momentos. Cada link vale por uma hora e serve uma vez só.
             </p>
           </div>
 
@@ -165,15 +170,38 @@ export default function SettingsDataPage() {
 
           {linkDoArquivo && (
             <Alert>
-              <AlertDescription className="space-y-2">
-                <p>O arquivo está pronto.</p>
-                <a
-                  href={linkDoArquivo}
-                  className="inline-flex items-center gap-1.5 font-medium underline underline-offset-4"
-                  download
-                >
-                  <Download className="w-4 h-4" /> Baixar agora
-                </a>
+              <AlertDescription className="space-y-3">
+                <p>Está pronto. São dois formatos, e os dois trazem o mesmo conteúdo.</p>
+
+                {/* O PDF vem primeiro: é o que a pessoa quer 9 em 10 vezes.
+                    O JSON continua porque portabilidade também é levar os
+                    dados para OUTRO SISTEMA, e para isso o PDF não serve. */}
+                <div className="space-y-2">
+                  <a
+                    href={linkDoPdf}
+                    className="inline-flex items-center gap-1.5 font-medium underline underline-offset-4"
+                    download
+                  >
+                    <FileText className="w-4 h-4" /> Baixar em PDF, para ler
+                  </a>
+                  <p className="text-xs text-muted-foreground">
+                    Legível, com o nome dos remédios e as datas no fuso do paciente.
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <a
+                    href={linkDoArquivo}
+                    className="inline-flex items-center gap-1.5 font-medium underline underline-offset-4"
+                    download
+                  >
+                    <Download className="w-4 h-4" /> Baixar em JSON, para outro sistema
+                  </a>
+                  <p className="text-xs text-muted-foreground">
+                    Todos os campos como estão guardados, para importar em outro
+                    lugar.
+                  </p>
+                </div>
               </AlertDescription>
             </Alert>
           )}

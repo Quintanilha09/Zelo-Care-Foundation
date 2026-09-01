@@ -28,21 +28,30 @@ test.describe("Exportar os dados", () => {
     await criarPaciente(request, conta);
   });
 
-  test("gera o arquivo e entrega o link de download", async ({ page }) => {
+  test("gera o arquivo e entrega os DOIS formatos", async ({ page }) => {
     await entrar(page, conta);
     await page.goto("/ajustes/seus-dados");
 
     await page.getByRole("button", { name: "Gerar o arquivo" }).click();
 
-    const link = page.getByRole("link", { name: /Baixar agora/ });
-    await expect(link, "a exportação precisa entregar um link de verdade").toBeVisible({
+    // Issue #49: era um link e um formato. Passaram a ser dois, cada um com
+    // seu token — baixar o PDF não pode matar o JSON.
+    //
+    // Portabilidade tem duas audiências: a pessoa, que quer LER, e outro
+    // sistema, que quer IMPORTAR. Um formato só perde metade do direito.
+    const pdf = page.getByRole("link", { name: /Baixar em PDF/ });
+    await expect(pdf, "a exportação precisa entregar o PDF, que é o que se lê").toBeVisible({
       timeout: 15_000,
     });
 
-    // O link NÃO é clicado aqui de propósito: ele é de uso único e vale uma
-    // hora, então baixar dentro do teste queimaria o token sem provar nada
-    // que a suíte de servidor já não prove melhor.
-    await expect(link).toHaveAttribute("href", /\/api\/export\/download\/.+/);
+    const json = page.getByRole("link", { name: /Baixar em JSON/ });
+    await expect(json, "o JSON continua, para importar em outro sistema").toBeVisible();
+
+    // Os links NÃO são clicados aqui de propósito: são de uso único e valem
+    // uma hora, então baixar dentro do teste queimaria os tokens sem provar
+    // nada que a suíte de servidor já não prove melhor.
+    await expect(pdf).toHaveAttribute("href", /\/api\/export\/download\/.+formato=pdf/);
+    await expect(json).toHaveAttribute("href", /\/api\/export\/download\/[^?]+$/);
   });
 });
 
