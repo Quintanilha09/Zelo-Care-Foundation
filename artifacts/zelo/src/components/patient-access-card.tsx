@@ -86,7 +86,11 @@ export function PatientAccessCard({ patientId, patientName }: { patientId: numbe
       {!link ? (
         <Button variant="outline" size="sm" className="gap-2" onClick={() => void handleGenerate()} disabled={generating}>
           <Send className="w-3.5 h-3.5" />
-          {generating ? "Gerando…" : `Enviar acesso para ${patientName}`}
+          {/* Rotulo ESTATICO. Interpolar o nome aqui estourava a caixa com
+              nome longo (Issue #55), e nao acrescentava nada: o bloco que
+              envolve este botao ja diz "No celular de {nome}" e "{nome} abre
+              no proprio celular" nas duas linhas imediatamente acima. */}
+          {generating ? "Gerando…" : "Enviar acesso"}
         </Button>
       ) : (
         <div className="space-y-2">

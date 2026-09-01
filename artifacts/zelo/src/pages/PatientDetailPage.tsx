@@ -812,8 +812,12 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
                 <div className="rounded-lg border p-3 space-y-2">
                   <div className="flex items-center gap-2">
                     <Smartphone className="w-4 h-4 text-zelo-green-fg shrink-0" />
-                    <p className="text-sm font-medium">No celular de {patient.name}</p>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-zelo-green-bg text-zelo-green-fg">recomendado</span>
+                    {/* `min-w-0` + `truncate` no nome e `shrink-0` no selo:
+                        sem isso um nome longo empurra o "recomendado" para
+                        fora da linha. Mesmo padrao provado pela QUI-15 no
+                        cabecalho da ficha (Issue #55). */}
+                    <p className="text-sm font-medium min-w-0 truncate">No celular de {patient.name}</p>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-zelo-green-bg text-zelo-green-fg shrink-0">recomendado</span>
                   </div>
                   <p className="text-xs text-muted-foreground">
                     Envie um link. {patient.name} abre no próprio celular e pronto — sem criar senha, sem preencher nada.
