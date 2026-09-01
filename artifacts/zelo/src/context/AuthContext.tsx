@@ -50,6 +50,14 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   logoutAll: () => Promise<void>;
+  /**
+   * Relê `/account/me` — Issue #45.
+   *
+   * O usuário NÃO vive no React Query: quem o carrega é o `loadMe` daqui.
+   * Sem expor isto, trocar o próprio nome salvava no banco e a tela continuava
+   * mostrando o antigo até o próximo carregamento da página.
+   */
+  recarregarUsuario: () => Promise<void>;
   /** Troca a família ativa. O token carrega familyId/caregiverId/role, então
    *  trocar de família é necessariamente trocar de token (ver active-family.ts). */
   switchFamily: (familyId: number) => Promise<void>;
@@ -186,7 +194,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [loadMe]);
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, isAuthenticated: !!user, login, logout, logoutAll, switchFamily }}>
+    <AuthContext.Provider value={{ user, isLoading, isAuthenticated: !!user, login, logout, logoutAll, switchFamily, recarregarUsuario: loadMe }}>
       {children}
     </AuthContext.Provider>
   );
