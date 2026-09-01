@@ -78,7 +78,24 @@ export function computeDaysRemaining(
     daysRemainingByStock,
     daysUntilPrescriptionExpires,
     effectiveDaysRemaining,
-    isLow: effectiveDaysRemaining !== null && effectiveDaysRemaining <= LOW_STOCK_ALERT_DAYS,
+    // Sem tratamento ativo NÃO há alerta — Issue #65.
+    //
+    // O comentário no topo desta função já dizia isso desde a ZELO-34; a
+    // implementação é que não seguia. `daysRemainingByStock` fica nulo sem
+    // tratamento, mas `daysUntilPrescriptionExpires` continuava valendo, e
+    // uma receita vencida virava `effectiveDaysRemaining: 0` — ou seja,
+    // ÂMBAR num estoque que sobrou de um tratamento cancelado.
+    //
+    // Não há nada de errado em ter comprimido sobrando de um tratamento que
+    // acabou. Âmbar neste produto quer dizer dose pendente ou atrasada
+    // (invariante 5); usá-lo para isto é ruído que ensina a ignorar âmbar.
+    //
+    // Corrigido aqui, e não na tela, porque `isLow` também alimenta o painel
+    // do dia e o alerta de reposição — os três estavam errados juntos.
+    isLow:
+      activeTreatment !== null &&
+      effectiveDaysRemaining !== null &&
+      effectiveDaysRemaining <= LOW_STOCK_ALERT_DAYS,
   };
 }
 

@@ -39,6 +39,7 @@ interface StockListItem {
   daysUntilPrescriptionExpires: number | null;
   effectiveDaysRemaining: number | null;
   isLow: boolean;
+  temTratamentoAtivo: boolean;
 }
 
 let testPort: number;
@@ -297,5 +298,110 @@ describe("PATCH /patients/:id/stock/:medicationId — ajuste manual e reposiçã
     const res = await api("PATCH", `/patients/${patientId}/stock/${medicationId}`, { addQuantity: 5 }, hiredToken);
     assert.equal(res.status, 403);
     await db.delete(stockEntriesTable).where(eq(stockEntriesTable.id, stock.id));
+  });
+});
+
+describe("Sobra de tratamento encerrado — Issue #65", () => {
+  /**
+   * ── Por que o teste que já existia não pegava isto ─────────────────────
+   *
+   * Havia um teste chamado "sem tratamento ATIVO pro medicamento, não estima
+   * taxa nenhuma (nem alerta, nem 'dias')", e ele passava com o defeito vivo.
+   *
+   * Ele criava o estoque **sem data de receita**. Sem ela
+   * `effectiveDaysRemaining` fica nulo e `isLow` sai falso por falta de
+   * candidato — não porque a regra estivesse certa.
+   *
+   * Com receita cadastrada, `daysUntilPrescriptionExpires` continuava valendo
+   * mesmo sem tratamento, e uma receita vencida virava `0` — ou seja, ÂMBAR
+   * num estoque que sobrou de um tratamento cancelado. Foi o que apareceu na
+   * tela do fundador em 01/09/2026: "cerca de 0 dia(s) restantes", em âmbar.
+   */
+  it("receita VENCIDA sem tratamento ativo não vira alerta — o caso que escapou", async () => {
+    const treatmentId = await createTreatment(["08:00"]);
+    await api("PATCH", `/treatments/${treatmentId}`, { status: "cancelled" }, token);
+
+    const [stock] = await db
+      .insert(stockEntriesTable)
+      .values({
+        patientId,
+        medicationId,
+        quantityRemaining: 8,
+        unit: "comprimidos",
+        // No passado, como a do fundador (17/08/2026, olhada em 01/09).
+        prescriptionExpiresAt: "2020-01-01",
+      })
+      .returning();
+
+    const entry = await getStockEntry();
+    assert.ok(entry);
+    assert.equal(
+      entry!.temTratamentoAtivo,
+      false,
+      "a tela precisa saber que isto é sobra, não estoque em uso"
+    );
+    assert.equal(
+      entry!.isLow,
+      false,
+      "sobra de tratamento encerrado não é alerta — âmbar aqui é ruído (invariante 5)"
+    );
+
+    await db.delete(stockEntriesTable).where(eq(stockEntriesTable.id, stock.id));
+    await db.delete(treatmentsTable).where(eq(treatmentsTable.id, treatmentId));
+  });
+
+  it("com tratamento ativo, a receita vencendo CONTINUA antecipando o alerta", async () => {
+    // O contrapeso do teste acima: a correção não pode ter desligado o alerta
+    // de receita para quem ainda está em tratamento.
+    const treatmentId = await createTreatment(["08:00"]);
+    const [stock] = await db
+      .insert(stockEntriesTable)
+      .values({
+        patientId,
+        medicationId,
+        quantityRemaining: 500,
+        unit: "comprimidos",
+        prescriptionExpiresAt: "2020-01-01",
+      })
+      .returning();
+
+    const entry = await getStockEntry();
+    assert.ok(entry);
+    assert.equal(entry!.temTratamentoAtivo, true);
+    assert.equal(
+      entry!.isLow,
+      true,
+      "com tratamento em curso, receita vencida continua sendo alerta"
+    );
+
+    await db.delete(stockEntriesTable).where(eq(stockEntriesTable.id, stock.id));
+    await db.delete(treatmentsTable).where(eq(treatmentsTable.id, treatmentId));
+  });
+});
+
+describe("DELETE /patients/:id/stock/:medicationId — Issue #65", () => {
+  it("remove a entrada e ela some da listagem", async () => {
+    const [stock] = await db
+      .insert(stockEntriesTable)
+      .values({ patientId, medicationId, quantityRemaining: 8, unit: "comprimidos" })
+      .returning();
+
+    assert.ok(await getStockEntry(), "o estoque precisa existir antes de remover");
+
+    const res = await api("DELETE", `/patients/${patientId}/stock/${medicationId}`, undefined, token);
+    assert.equal(res.status, 204);
+
+    assert.equal(await getStockEntry(), undefined, "a entrada precisa sumir da listagem");
+
+    const [noBanco] = await db
+      .select()
+      .from(stockEntriesTable)
+      .where(eq(stockEntriesTable.id, stock.id));
+    assert.equal(noBanco, undefined, "e sumir do banco, não só da resposta");
+  });
+
+  it("remover estoque que não existe responde 404, não 204", async () => {
+    const res = await api("DELETE", `/patients/${patientId}/stock/${medicationId}`, undefined, token);
+    assert.equal(res.status, 404);
   });
 });

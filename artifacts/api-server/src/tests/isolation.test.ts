@@ -53,6 +53,7 @@ const PROTECTED_ROUTES = new Set([
   "POST /patients/:id/activities",
   "GET /patients/:id/stock",
   "PATCH /patients/:id/stock/:medicationId",
+  "DELETE /patients/:id/stock/:medicationId",
   "GET /caregivers",
   "GET /caregivers/:id",
   "PATCH /caregivers/:id",
@@ -362,6 +363,13 @@ describe("Isolamento entre famílias — ZELO", () => {
 
   it("PATCH /patients/:id/stock/:medicationId — família A não ajusta estoque de paciente de B", async () => {
     await assertIsolated("PATCH /patients/:id/stock/:medicationId", "PATCH", `/patients/${patientBId}/stock/${medicationBId}`, { addQuantity: 1 });
+  });
+
+  // Issue #65 — a rota de remover estoque nasce com isolamento testado, e não
+  // depois. Remover é destrutivo: se ela vazasse entre famílias, alguém
+  // apagaria o estoque de um paciente que não é dele.
+  it("DELETE /patients/:id/stock/:medicationId — família A não remove estoque de paciente de B", async () => {
+    await assertIsolated("DELETE /patients/:id/stock/:medicationId", "DELETE", `/patients/${patientBId}/stock/${medicationBId}`);
   });
 
   it("POST /patients/:id/dose-records — família A não registra dose para paciente de B", async () => {
