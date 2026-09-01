@@ -628,6 +628,10 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
 
   const aoTocar = (e: EventoDePonteiro) => {
     inicioDoGesto.current = { x: e.clientX, y: e.clientY };
+    // Captura o ponteiro: sem isto, um arrasto que termina fora do elemento
+    // — ou sobre a seta sobreposta — não entrega o `pointerup` aqui, e o
+    // gesto morre no meio.
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
 
   const aoSoltar = (e: EventoDePonteiro) => {
@@ -989,7 +993,15 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
                       <img
                         src={apiUrl(momentoAberto.url)}
                         alt={momentoAberto.caption ?? `Momento de ${patientName}`}
-                        className="max-h-full max-w-full object-contain"
+                        // `draggable={false}` — Issue #51.
+                        //
+                        // Imagem é arrastável por padrão no navegador. Sem
+                        // isto, encostar e puxar inicia um ARRASTO NATIVO de
+                        // imagem, que cancela os pointer events e mata o gesto
+                        // antes do `pointerup`. Era o que reprovava o teste de
+                        // deslizar enquanto o resto passava.
+                        draggable={false}
+                        className="max-h-full max-w-full object-contain select-none"
                       />
                     </div>
                   )}

@@ -88,7 +88,7 @@ test.describe("Deslizar para trocar de foto", () => {
     // A grade vem da mais recente para a mais antiga: a primeira é a nº 3.
     await expect(janela.getByText("foto numero 3")).toBeVisible();
 
-    const palco = janela.locator("div.relative").first();
+    const palco = janela.locator("div.touch-pan-y").first();
 
     await deslizar(page, palco, -300);
     await expect(
@@ -119,7 +119,7 @@ test.describe("Deslizar para trocar de foto", () => {
     const janela = page.getByRole("dialog");
     await expect(janela.getByText("foto numero 2")).toBeVisible();
 
-    const palco = janela.locator("div.relative").first();
+    const palco = janela.locator("div.touch-pan-y").first();
 
     // 20px: bem abaixo do limiar de 50px. É a diferença entre um toque com
     // micro-tremor — regra numa mão idosa, não exceção — e uma decisão.
