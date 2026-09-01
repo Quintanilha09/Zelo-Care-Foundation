@@ -667,7 +667,28 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
           if (!estaAberto) setAberto(null);
         }}
       >
-        <DialogContent className="sm:max-w-3xl">
+        {/* ── Altura FIXA no modo foto — Issue #63, segunda tentativa ─────
+
+            Sobrepor as setas à foto não bastou, e o CI mostrou por quê: o
+            `DialogContent` é centralizado (`top-[50%]` + `-translate-y-[50%]`),
+            então a legenda muda a ALTURA DO DIÁLOGO e o diálogo inteiro se
+            desloca — levando junto tudo que está dentro dele, inclusive as
+            setas sobrepostas.
+
+            Medido na execução 33465371943: 1,5px no desktop e 16px no
+            celular, entre a foto sem legenda e a foto com legenda.
+
+            Com `h-[85vh]` o diálogo para de mudar de tamanho, e a
+            re-centralização deixa de existir. O palco fica com altura fixa
+            logo abaixo de um cabeçalho de altura fixa; o que sobra vai para
+            a legenda, que rola sozinha quando for longa. */}
+        <DialogContent
+          className={
+            modoDaGaleria === "foto"
+              ? "sm:max-w-3xl h-[85vh] flex flex-col gap-3"
+              : "sm:max-w-3xl"
+          }
+        >
           {modoDaGaleria === "grade" ? (
             <>
               <DialogHeader>
@@ -720,11 +741,15 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
                     legenda punham as setas em alturas diferentes — o defeito
                     continuou, só mudou de causa.
 
-                    Sobrepostas e ancoradas em `top-1/2`, elas não dependem de
-                    nada que venha depois. É o que toda galeria faz, e era a
-                    alternativa que a #50 registrou e descartou por ser maior.
-                    O teste no aparelho disse que era a certa. */}
-                <div className="relative">
+                    Sobrepostas e ancoradas em `top-1/2`, elas deixam de
+                    depender do que vem depois DENTRO do diálogo. É o que toda
+                    galeria faz, e era a alternativa que a #50 registrou e
+                    descartou por ser maior.
+
+                    Sozinho isso NÃO bastou: faltava travar a altura do próprio
+                    diálogo, senão ele se re-centraliza e move o palco inteiro.
+                    Ver o comentário no `DialogContent` acima. */}
+                <div className="relative shrink-0">
                   {momentoAberto.kind === "audio" ? (
                     // Palco baixo para áudio: um player centralizado em 60vh
                     // de vazio seria pior que o problema que isto corrige.
@@ -773,6 +798,10 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
                   )}
                 </div>
 
+                {/* Área elástica: é ela que absorve a diferença de tamanho
+                    entre uma foto com legenda longa e uma sem legenda. Antes
+                    essa diferença ia para a altura do diálogo. */}
+                <div className="flex-1 min-h-0 overflow-y-auto space-y-2">
                 {momentoAberto.caption && <p className="text-sm">{momentoAberto.caption}</p>}
   
                 {/* QUI-10 — quem reagiu, por extenso.
@@ -785,8 +814,9 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
                     {fraseDeQuemReagiu(momentoAberto.quemReagiu)}
                   </p>
                 )}
+                </div>
 
-                <div className="flex items-center justify-between gap-2 border-t pt-3">
+                <div className="flex shrink-0 items-center justify-between gap-2 border-t pt-3">
                   <div className="flex items-center gap-1">
                     {/* QUI-10 — o coração.
                         Cheio quando você reagiu, contorno quando não. Sem
