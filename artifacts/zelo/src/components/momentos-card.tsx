@@ -147,6 +147,21 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
   const { toast } = useToast();
   const { user } = useAuth();
   const inputArquivo = useRef<HTMLInputElement>(null);
+  /**
+   * Onde o dedo encostou, para medir o deslize — Issue #51.
+   *
+   * AQUI EM CIMA, junto dos outros hooks, e não perto do código que o usa.
+   * A primeira versão declarou este `useRef` depois do `if (!mural) return
+   * null`, o que faz dele um hook CONDICIONAL: nas renderizações em que o
+   * mural ainda não chegou, ele não é chamado, e o React derruba o
+   * componente inteiro com "rendered more hooks than during the previous
+   * render".
+   *
+   * O typecheck não pega. O que pegou foi o Playwright — e não pelo teste do
+   * gesto: pela ficha do paciente inteira parando de renderizar, o que
+   * reprovou dezenas de testes que nada tinham a ver com esta Issue.
+   */
+  const inicioDoGesto = useRef<{ x: number; y: number } | null>(null);
 
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState("");
@@ -610,7 +625,6 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
    * única forma de navegar que NÃO existia — sobravam um botão pequeno e as
    * setas do teclado.
    */
-  const inicioDoGesto = useRef<{ x: number; y: number } | null>(null);
 
   const aoTocar = (e: EventoDePonteiro) => {
     inicioDoGesto.current = { x: e.clientX, y: e.clientY };
