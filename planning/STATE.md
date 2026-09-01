@@ -53,14 +53,14 @@ Das 10 fases do backlog original só sobraram três buracos, todos deixados de p
 
 ## Onde o desenvolvimento parou
 
-**Duas Issues abertas, um PR** — verificado em 01/09/2026, de madrugada, com `gh`. Este bloco
+**Duas Issues abertas, nenhum PR** — verificado em 01/09/2026, de madrugada, com `gh`. Este bloco
 envelhece rápido: se a sessão for depois disso, meça de novo.
 
 **O teste no aparelho mudou o rumo.** Em 31/08/2026 o fundador abriu o app no celular pela
 primeira vez, e o veredito sobre Momentos foi *"nada do que foi planejado funcionou"* — com razão.
-Disso saíram as Issues #63, #64 e #65. **Oito PRs entraram entre 31/08 e 01/09**, de `b81c165` a
-`40ee3da`: galeria de verdade, várias fotos por vez, estoque de tratamento encerrado, nome e senha
-da própria conta, e a exportação LGPD completa em JSON e PDF.
+Disso saíram as Issues #63, #64 e #65. **Nove PRs entraram entre 31/08 e 01/09**, de `b81c165` a
+`a2ee9b0`: galeria de verdade, deslizar para trocar de foto, várias fotos por vez, estoque de
+tratamento encerrado, nome e senha da própria conta, e a exportação LGPD completa em JSON e PDF.
 
 O relato inteiro — o que falhou, por que falhou e as cinco reprovações de CI que **nenhuma era do
 produto** — está em
@@ -72,7 +72,7 @@ Vale ler antes de mexer em Momentos ou em teste de tela.
 | Issue | Estado |
 |---|---|
 | [#53](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/53) foto some ao publicar no celular | **A mais grave: é a única que faz PERDER TRABALHO.** Espera duas respostas do fundador — o app foi aberto pelo ícone da tela de início ou por aba? E sair da ficha e voltar SEM escolher foto também volta para a inicial? Quatro hipóteses já eliminadas por leitura de código; sobrou o `start_url: "/"` do manifesto |
-| [#51](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/51) deslizar para trocar de foto | PR [#72](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/72) aberto, no CI |
+| [#46](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/46) trocar o e-mail da conta | 🔒 Bloqueada por provedor de e-mail, que depende do domínio — a mesma decisão que trava a fase 11.1b |
 
 | [#46](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/46) trocar o e-mail | 🔒 Bloqueada por provedor de e-mail, que depende do domínio |
 
