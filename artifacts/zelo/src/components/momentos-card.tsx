@@ -38,7 +38,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
-import { Camera, Trash2, ImagePlus, Bookmark, Heart, Mic, ChevronLeft, ChevronRight } from "lucide-react";
+import { Camera, Trash2, ImagePlus, Bookmark, Heart, Mic, ChevronLeft, ChevronRight, Images, ArrowLeft } from "lucide-react";
 import { AreaCarregando, EsqueletoDeMomento, BarraDeProgresso } from "@/components/esqueleto";
 
 interface Momento {
@@ -146,8 +146,29 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
   const [aApagar, setAApagar] = useState<Momento | null>(null);
   const [saindo, setSaindo] = useState<number | null>(null);
   const [consentindo, setConsentindo] = useState(false);
+  /**
+   * Quantas fotos a ficha do paciente mostra — Issue #63.
+   *
+   * Um NÚMERO DE ITENS, e não uma fração da janela. A Issue #52 tentou
+   * `max-h-[60vh]` e o teto nunca engatou: com 10 fotos em 4 colunas o
+   * conteúdo dava ~544px contra ~557px de teto. Oito fotos são oito fotos em
+   * qualquer tela — a ficha passa a ter altura constante, com 8 momentos ou
+   * com 800.
+   */
+  const FOTOS_NA_PREVIA = 8;
+
   /** QUI-18 — índice do momento aberto no visualizador. `null` = fechado. */
   const [aberto, setAberto] = useState<number | null>(null);
+  /**
+   * A galeria — Issue #63.
+   *
+   * UM diálogo só, que alterna entre a grade e a foto, em vez de dois
+   * aninhados. Radix aninhado embaralha o foco e o clique-fora, e o caminho
+   * "estou na galeria, toquei numa foto, volto para a galeria" é o que as
+   * galerias de verdade fazem — não é abrir uma janela em cima da outra.
+   */
+  const [galeriaAberta, setGaleriaAberta] = useState(false);
+  const [modoDaGaleria, setModoDaGaleria] = useState<"grade" | "foto">("grade");
 
   // QUI-18 — paginação por cursor.
   //
@@ -400,6 +421,75 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
 
   if (!mural) return null;
 
+  /**
+   * Uma miniatura da grade — Issue #63.
+   *
+   * Extraída porque agora ela aparece em DOIS lugares: na prévia da ficha do
+   * paciente e dentro da galeria. Duplicar o markup faria as duas divergirem
+   * na primeira mudança.
+   */
+  const miniatura = (momento: Momento, indice: number) => (
+    <li
+      key={momento.id}
+      className={momento.id === saindo ? "zelo-sai" : "zelo-entra"}
+    >
+      <button
+        type="button"
+        onClick={() => abrirFoto(indice)}
+        className="group relative block w-full aspect-square overflow-hidden rounded-lg border bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        aria-label={
+          `Abrir ${momento.kind === "audio" ? "o recado" : "a foto"} de ` +
+          `${momento.autor ?? patientName}, ${quando(momento.criadoEm, mural.timezone)}`
+        }
+      >
+        {momento.kind === "audio" ? (
+          // Recado do paciente (QUI-8). Na grade ele é um bloco com
+          // ícone: um player não cabe num quadrado pequeno, e ouvir é
+          // uma decisão — não pode disparar por um toque de relance.
+          <span className="flex h-full w-full flex-col items-center justify-center gap-1.5 text-muted-foreground">
+            <Mic className="w-6 h-6" aria-hidden />
+            <span className="text-xs">Recado</span>
+          </span>
+        ) : (
+          <img
+            src={apiUrl(momento.url)}
+            // Vazio de propósito: quem carrega o rótulo é o botão que
+            // envolve a imagem. Repetir aqui faria o leitor de tela
+            // anunciar a mesma coisa duas vezes.
+            alt=""
+            loading="lazy"
+            // Decodificar fora da thread principal: sem isto, uma foto
+            // grande chegando trava a rolagem por alguns quadros.
+            decoding="async"
+            className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
+          />
+        )}
+
+        {/* Marcas, não contagens. Dizem "alguém reagiu" e "está
+            guardado" — nunca quantos, que é o que separa carinho de
+            placar (CON-012). Os nomes de quem reagiu aparecem por
+            extenso no visualizador, onde há espaço para eles. */}
+        {(momento.quemReagiu.length > 0 || momento.guardado) && (
+          <span className="absolute bottom-1 right-1 flex items-center gap-1 rounded-full bg-background/85 px-1.5 py-0.5">
+            {momento.quemReagiu.length > 0 && (
+              <Heart className="w-3 h-3 text-zelo-green-fg" fill="currentColor" aria-hidden />
+            )}
+            {momento.guardado && (
+              <Bookmark className="w-3 h-3 text-zelo-green-fg" fill="currentColor" aria-hidden />
+            )}
+          </span>
+        )}
+      </button>
+    </li>
+  );
+
+  /** Abre o visualizador — pela prévia ou de dentro da galeria. */
+  const abrirFoto = (indice: number) => {
+    setAberto(indice);
+    setModoDaGaleria("foto");
+    setGaleriaAberta(true);
+  };
+
   // ── Sem consentimento ───────────────────────────────────────────────────
   if (!mural.consentido) {
     // Para quem não decide, a seção simplesmente não existe.
@@ -429,7 +519,14 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
 
   // ── Com consentimento: o mural ──────────────────────────────────────────
   return (
-    <div className="p-4 rounded-xl border space-y-4">
+    // `region` com nome: dá à seção um handle estável, e é o que um leitor de
+    // tela anuncia ao entrar nela. Sem isto o teste precisaria caçar `div` por
+    // texto, que quebra na primeira mudança de markup.
+    <div
+      className="p-4 rounded-xl border space-y-4"
+      role="region"
+      aria-label={`Momentos de ${patientName}`}
+    >
       <div className="flex items-center gap-2">
         <Camera className="w-4 h-4 text-muted-foreground shrink-0" />
         <p className="font-medium">Momentos</p>
@@ -513,239 +610,241 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
           Ainda não há nenhuma foto aqui. Quando houver, a família toda vê.
         </p>
       ) : (
-        /* Teto de altura com rolagem própria — Issue #52.
+        <>
+          {/* ── A PRÉVIA, não o acervo — Issue #63 ─────────────────────────
 
-           A QUI-18 resolveu metade: antes era uma coluna de fotos grandes, que
-           era pior. Mas a grade continua crescendo com o acervo, e o mural
-           guarda 90 dias. Em três colunas no celular, cada 3 fotos acrescentam
-           uma linha à página inteira — e o mural fica na ficha do paciente,
-           junto de tratamento, dose e consulta. Seção que cresce sem limite
-           empurra para longe o que o produto vende.
+              A ficha do paciente mostra as oito mais recentes e para por aí.
+              O acervo inteiro vive na galeria, que tem rolagem própria.
 
-           `max-h` e não `h`: com seis fotos a grade fica do tamanho natural,
-           sem caixa vazia embaixo. Só passa a rolar quando precisa.
+              Isto é o que faz a ficha ter ALTURA CONSTANTE. A tentativa
+              anterior (#52) capou por `60vh` e o teto nunca engatou — dez
+              fotos davam ~544px contra ~557px de teto. Oito fotos são oito
+              fotos em qualquer aparelho.
 
-           O botão "Ver momentos mais antigos" fica FORA desta caixa, de
-           propósito: assim ele não some quando a pessoa rola a grade. E o
-           carregamento é por botão, nunca por rolagem — então não há o problema
-           clássico de scroll infinito preso a um container que nunca dispara.
+              Sem rolagem aqui de propósito: caixa que rola dentro de página
+              que rola é confuso no celular, e agora não precisa existir. */}
+          <ul className="grid grid-cols-4 gap-2">
+            {momentos.slice(0, FOTOS_NA_PREVIA).map((momento, indice) =>
+              miniatura(momento, indice)
+            )}
+          </ul>
 
-           `tabIndex` e `role` não são enfeite: região que rola precisa ser
-           alcançável por teclado. */
-        <ul
-          className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-[60vh] overflow-y-auto pr-1"
-          tabIndex={0}
-          role="region"
-          aria-label={`Momentos de ${patientName}`}
-        >
-          {momentos.map((momento, indice) => (
-            // `zelo-entra` no item, NAO escalonado. Escalonar uma lista
-            // inteira ("stagger") faz a ultima foto chegar meio segundo depois
-            // da primeira, e quem abriu o mural quer ver tudo, nao assistir a
-            // uma sequencia.
-            <li
-              key={momento.id}
-              className={momento.id === saindo ? "zelo-sai" : "zelo-entra"}
-            >
-              <button
-                type="button"
-                onClick={() => setAberto(indice)}
-                className="group relative block w-full aspect-square overflow-hidden rounded-lg border bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                aria-label={
-                  `Abrir ${momento.kind === "audio" ? "o recado" : "a foto"} de ` +
-                  `${momento.autor ?? patientName}, ${quando(momento.criadoEm, mural.timezone)}`
-                }
+          {/* Só aparece quando há mais do que a prévia mostra. E nada de
+              número: "Ver todas as fotos", nunca "ver as outras 42" — a regra
+              do CON-012 vale aqui igual. */}
+          {(momentos.length > FOTOS_NA_PREVIA || hasNextPage) && (
+            <div className="flex justify-center pt-1">
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={() => {
+                  setModoDaGaleria("grade");
+                  setGaleriaAberta(true);
+                }}
               >
-                {momento.kind === "audio" ? (
-                  // Recado do paciente (QUI-8). Na grade ele é um bloco com
-                  // ícone: um player não cabe num quadrado pequeno, e ouvir é
-                  // uma decisão — não pode disparar por um toque de relance.
-                  <span className="flex h-full w-full flex-col items-center justify-center gap-1.5 text-muted-foreground">
-                    <Mic className="w-6 h-6" aria-hidden />
-                    <span className="text-xs">Recado</span>
-                  </span>
-                ) : (
-                  <img
-                    src={apiUrl(momento.url)}
-                    // Vazio de propósito: quem carrega o rótulo é o botão que
-                    // envolve a imagem. Repetir aqui faria o leitor de tela
-                    // anunciar a mesma coisa duas vezes.
-                    alt=""
-                    loading="lazy"
-                    // Decodificar fora da thread principal: sem isto, uma foto
-                    // grande chegando trava a rolagem por alguns quadros.
-                    decoding="async"
-                    className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
-                  />
-                )}
-
-                {/* Marcas, não contagens. Dizem "alguém reagiu" e "está
-                    guardado" — nunca quantos, que é o que separa carinho de
-                    placar (CON-012). Os nomes de quem reagiu aparecem por
-                    extenso no visualizador, onde há espaço para eles. */}
-                {(momento.quemReagiu.length > 0 || momento.guardado) && (
-                  <span className="absolute bottom-1 right-1 flex items-center gap-1 rounded-full bg-background/85 px-1.5 py-0.5">
-                    {momento.quemReagiu.length > 0 && (
-                      <Heart className="w-3 h-3 text-zelo-green-fg" fill="currentColor" aria-hidden />
-                    )}
-                    {momento.guardado && (
-                      <Bookmark className="w-3 h-3 text-zelo-green-fg" fill="currentColor" aria-hidden />
-                    )}
-                  </span>
-                )}
-              </button>
-            </li>
-          ))}
-        </ul>
+                <Images className="w-4 h-4" aria-hidden /> Ver todas as fotos
+              </Button>
+            </div>
+          )}
+        </>
       )}
 
-      {/* Um BOTÃO, e não rolagem infinita. Ver mais é uma decisão de quem
-          está olhando; puxar sozinho enquanto a pessoa rola é a mecânica que
-          rede social usa para prender, e ela não entra aqui.
+      {/* ── A galeria — Issue #63 ──────────────────────────────────────────
 
-          Nada de "faltam N": o servidor manda um cursor, nunca um total. */}
-      {hasNextPage && (
-        <div className="flex justify-center pt-1">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => void fetchNextPage()}
-            disabled={isFetchingNextPage}
-          >
-            {isFetchingNextPage ? "Carregando…" : "Ver momentos mais antigos"}
-          </Button>
-        </div>
-      )}
+          UM diálogo que alterna entre a grade e a foto. Antes, a ficha do
+          paciente ERA o acervo: a grade crescia ali dentro e não havia nada
+          em que clicar para "ver as fotos".
 
-      {/* ── O visualizador — QUI-18 ────────────────────────────────────────
-          A foto grande, quem publicou, quando, a legenda, quem mandou
-          coração, e as ações. Tudo o que a lista antiga mostrava de uma vez
-          para todas as fotos, agora para a que a pessoa escolheu olhar. */}
+          Dois diálogos aninhados seriam o caminho óbvio e o errado — Radix
+          aninhado embaralha foco e clique-fora. Alternar o conteúdo também é
+          o que a pessoa espera: ela está NA galeria e entra numa foto, não
+          abre uma janela em cima da outra. */}
       <Dialog
-        open={momentoAberto !== null}
-        onOpenChange={(estaAberto) => { if (!estaAberto) setAberto(null); }}
+        open={galeriaAberta}
+        onOpenChange={(estaAberto) => {
+          setGaleriaAberta(estaAberto);
+          if (!estaAberto) setAberto(null);
+        }}
       >
-        <DialogContent className="sm:max-w-2xl">
-          {momentoAberto && (
+        <DialogContent className="sm:max-w-3xl">
+          {modoDaGaleria === "grade" ? (
             <>
               <DialogHeader>
-                <DialogTitle className="text-base">
-                  {momentoAberto.autor ?? "Alguém da família"}
-                </DialogTitle>
-                <DialogDescription>
-                  {quando(momentoAberto.criadoEm, mural.timezone)}
-                  {momentoAberto.guardado && " · guardado"}
-                </DialogDescription>
+                <DialogTitle className="text-base">Momentos de {patientName}</DialogTitle>
+                <DialogDescription>Toque numa foto para ver de perto.</DialogDescription>
               </DialogHeader>
 
-              {momentoAberto.kind === "audio" ? (
-                <audio controls preload="none" src={apiUrl(momentoAberto.url)} className="w-full">
-                  Seu navegador não consegue tocar áudio.
-                </audio>
-              ) : (
-                // Caixa de altura FIXA, e a foto se ajusta dentro dela.
-                //
-                // Era `max-h-[60vh]` na própria imagem, o que resolvia o
-                // problema de 25/08/2026 (foto em pé ocupando a tela toda) e
-                // criava outro: a altura renderizada passava a variar com a
-                // proporção de cada foto. Uma paisagem ocupa pouco, um
-                // retrato ocupa 60vh — e as setas, que vêm depois no fluxo,
-                // subiam e desciam a cada troca. No celular o dedo já está
-                // onde a seta estava, e a seta se moveu (Issue #50).
-                //
-                // Com a caixa fixa, a foto muda de tamanho e o resto não sai
-                // do lugar.
-                <div className="flex h-[60vh] w-full items-center justify-center rounded-lg bg-muted">
-                  <img
-                    src={apiUrl(momentoAberto.url)}
-                    alt={momentoAberto.caption ?? `Momento de ${patientName}`}
-                    className="max-h-full max-w-full object-contain"
-                  />
+              {/* AQUI a rolagem faz sentido: o que rola é a galeria, e não a
+                  ficha do paciente por baixo. */}
+              <ul
+                className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-[60vh] overflow-y-auto pr-1"
+                tabIndex={0}
+                role="region"
+                aria-label={`Todos os momentos de ${patientName}`}
+              >
+                {momentos.map((momento, indice) => miniatura(momento, indice))}
+              </ul>
+
+              {/* Fora da área que rola, para não sumir de vista. */}
+              {hasNextPage && (
+                <div className="flex justify-center border-t pt-3">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void fetchNextPage()}
+                    disabled={isFetchingNextPage}
+                  >
+                    {isFetchingNextPage ? "Carregando…" : "Ver momentos mais antigos"}
+                  </Button>
                 </div>
               )}
+            </>
+          ) : (
+            momentoAberto && (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="text-base">
+                    {momentoAberto.autor ?? "Alguém da família"}
+                  </DialogTitle>
+                  <DialogDescription>
+                    {quando(momentoAberto.criadoEm, mural.timezone)}
+                    {momentoAberto.guardado && " · guardado"}
+                  </DialogDescription>
+                </DialogHeader>
 
-              {momentoAberto.caption && <p className="text-sm">{momentoAberto.caption}</p>}
+                {/* ── O palco, e as setas SOBRE ele — Issue #63 ────────────
 
-              {/* QUI-10 — quem reagiu, por extenso.
-                  `quemReagiu.length` existe, mas ninguém o escreve na tela:
-                  o caminho fácil aqui é listar os nomes, e é assim que o
-                  mural não vira contagem de curtidas (CON-012). */}
-              {momentoAberto.quemReagiu.length > 0 && (
-                <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-                  <Heart className="w-3 h-3 text-zelo-green-fg shrink-0" fill="currentColor" aria-hidden />
-                  {fraseDeQuemReagiu(momentoAberto.quemReagiu)}
-                </p>
-              )}
+                    A #50 fixou a altura da imagem e deixou as setas embaixo,
+                    depois da legenda. Resultado: foto com legenda e foto sem
+                    legenda punham as setas em alturas diferentes — o defeito
+                    continuou, só mudou de causa.
 
-              <div className="flex items-center justify-between gap-2 border-t pt-3">
-                <div className="flex items-center gap-1">
-                  {/* QUI-10 — o coração.
-                      Cheio quando você reagiu, contorno quando não. Sem
-                      número ao lado: quem reagiu aparece por extenso logo
-                      acima, e essa é a diferença entre carinho e placar. */}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className={momentoAberto.euReagi ? "text-zelo-green-fg" : "text-muted-foreground"}
-                    onClick={() => void alternarCoracao(momentoAberto)}
-                    aria-pressed={momentoAberto.euReagi}
-                    aria-label={momentoAberto.euReagi ? "Tirar seu coração" : "Mandar um coração"}
-                    title={momentoAberto.euReagi ? "Você mandou um coração" : "Mandar um coração"}
-                  >
-                    <Heart className="w-4 h-4" fill={momentoAberto.euReagi ? "currentColor" : "none"} />
-                  </Button>
-                  {/* Guardar é de QUALQUER cuidador da família: decidir que uma
-                      foto é importante não precisa de hierarquia. */}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className={momentoAberto.guardado ? "text-zelo-green-fg" : "text-muted-foreground"}
-                    onClick={() => void alternarGuardado(momentoAberto)}
-                    aria-label={momentoAberto.guardado ? "Deixar de guardar" : "Guardar para sempre"}
-                    title={momentoAberto.guardado ? "Guardado — não expira" : "Guardar para não expirar"}
-                  >
-                    <Bookmark className="w-4 h-4" fill={momentoAberto.guardado ? "currentColor" : "none"} />
-                  </Button>
-                  {momentoAberto.podeApagar && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-muted-foreground hover:text-destructive"
-                      onClick={() => setAApagar(momentoAberto)}
-                      aria-label="Apagar este momento"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
+                    Sobrepostas e ancoradas em `top-1/2`, elas não dependem de
+                    nada que venha depois. É o que toda galeria faz, e era a
+                    alternativa que a #50 registrou e descartou por ser maior.
+                    O teste no aparelho disse que era a certa. */}
+                <div className="relative">
+                  {momentoAberto.kind === "audio" ? (
+                    // Palco baixo para áudio: um player centralizado em 60vh
+                    // de vazio seria pior que o problema que isto corrige.
+                    <div className="flex h-32 w-full items-center justify-center rounded-lg bg-muted px-4">
+                      <audio controls preload="none" src={apiUrl(momentoAberto.url)} className="w-full">
+                        Seu navegador não consegue tocar áudio.
+                      </audio>
+                    </div>
+                  ) : (
+                    <div className="flex h-[60vh] w-full items-center justify-center rounded-lg bg-muted">
+                      <img
+                        src={apiUrl(momentoAberto.url)}
+                        alt={momentoAberto.caption ?? `Momento de ${patientName}`}
+                        className="max-h-full max-w-full object-contain"
+                      />
+                    </div>
+                  )}
+
+                  {quantos > 1 && (
+                    <>
+                      {/* 44px de alvo de toque: é o mínimo para um app com
+                          idosos, e `size="sm"` do shadcn é menor que isso.
+                          Fundo semitransparente porque a seta pousa sobre
+                          foto clara e sobre foto escura. */}
+                      <button
+                        type="button"
+                        onClick={() => setAberto((i) => (i === null ? null : Math.max(0, i - 1)))}
+                        disabled={aberto === 0}
+                        aria-label="Momento anterior"
+                        className="left-2 absolute top-1/2 -translate-y-1/2 flex h-11 w-11 items-center justify-center rounded-full bg-background/80 text-foreground shadow-sm backdrop-blur-sm transition hover:bg-background disabled:opacity-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <ChevronLeft className="w-5 h-5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setAberto((i) => (i === null ? null : Math.min(quantos - 1, i + 1)))
+                        }
+                        disabled={aberto === quantos - 1}
+                        aria-label="Próximo momento"
+                        className="right-2 absolute top-1/2 -translate-y-1/2 flex h-11 w-11 items-center justify-center rounded-full bg-background/80 text-foreground shadow-sm backdrop-blur-sm transition hover:bg-background disabled:opacity-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <ChevronRight className="w-5 h-5" />
+                      </button>
+                    </>
                   )}
                 </div>
 
-                {/* Passar de uma foto para a outra sem voltar à grade. As
-                    setas do teclado fazem o mesmo — é o gesto que qualquer
-                    galeria tem, e quem usa teclado depende dele. */}
-                <div className="flex items-center gap-1">
+                {momentoAberto.caption && <p className="text-sm">{momentoAberto.caption}</p>}
+  
+                {/* QUI-10 — quem reagiu, por extenso.
+                    `quemReagiu.length` existe, mas ninguém o escreve na tela:
+                    o caminho fácil aqui é listar os nomes, e é assim que o
+                    mural não vira contagem de curtidas (CON-012). */}
+                {momentoAberto.quemReagiu.length > 0 && (
+                  <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <Heart className="w-3 h-3 text-zelo-green-fg shrink-0" fill="currentColor" aria-hidden />
+                    {fraseDeQuemReagiu(momentoAberto.quemReagiu)}
+                  </p>
+                )}
+
+                <div className="flex items-center justify-between gap-2 border-t pt-3">
+                  <div className="flex items-center gap-1">
+                    {/* QUI-10 — o coração.
+                        Cheio quando você reagiu, contorno quando não. Sem
+                        número ao lado: quem reagiu aparece por extenso logo
+                        acima, e essa é a diferença entre carinho e placar. */}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className={momentoAberto.euReagi ? "text-zelo-green-fg" : "text-muted-foreground"}
+                      onClick={() => void alternarCoracao(momentoAberto)}
+                      aria-pressed={momentoAberto.euReagi}
+                      aria-label={momentoAberto.euReagi ? "Tirar seu coração" : "Mandar um coração"}
+                      title={momentoAberto.euReagi ? "Você mandou um coração" : "Mandar um coração"}
+                    >
+                      <Heart className="w-4 h-4" fill={momentoAberto.euReagi ? "currentColor" : "none"} />
+                    </Button>
+                    {/* Guardar é de QUALQUER cuidador da família: decidir que uma
+                        foto é importante não precisa de hierarquia. */}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className={momentoAberto.guardado ? "text-zelo-green-fg" : "text-muted-foreground"}
+                      onClick={() => void alternarGuardado(momentoAberto)}
+                      aria-label={momentoAberto.guardado ? "Deixar de guardar" : "Guardar para sempre"}
+                      title={momentoAberto.guardado ? "Guardado — não expira" : "Guardar para não expirar"}
+                    >
+                      <Bookmark className="w-4 h-4" fill={momentoAberto.guardado ? "currentColor" : "none"} />
+                    </Button>
+                    {momentoAberto.podeApagar && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-muted-foreground hover:text-destructive"
+                        onClick={() => setAApagar(momentoAberto)}
+                        aria-label="Apagar este momento"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* Voltar para a grade sem fechar a galeria. `aberto` volta
+                      a `null` junto: senão as setas do teclado continuariam
+                      navegando por uma foto que ninguém está vendo. */}
                   <Button
                     variant="ghost"
                     size="sm"
-                    disabled={aberto === 0}
-                    onClick={() => setAberto((i) => (i === null ? null : Math.max(0, i - 1)))}
-                    aria-label="Momento anterior"
+                    className="gap-2"
+                    onClick={() => {
+                      setAberto(null);
+                      setModoDaGaleria("grade");
+                    }}
                   >
-                    <ChevronLeft className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={aberto !== null && aberto >= momentos.length - 1}
-                    onClick={() =>
-                      setAberto((i) => (i === null ? null : Math.min(momentos.length - 1, i + 1)))
-                    }
-                    aria-label="Próximo momento"
-                  >
-                    <ChevronRight className="w-4 h-4" />
+                    <ArrowLeft className="w-4 h-4" aria-hidden /> Todas as fotos
                   </Button>
                 </div>
-              </div>
-            </>
+              </>
+            )
           )}
         </DialogContent>
       </Dialog>
