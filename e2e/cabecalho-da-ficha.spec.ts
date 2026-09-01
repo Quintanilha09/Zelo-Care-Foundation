@@ -24,8 +24,16 @@ import { criarConta, entrar, sair, criarPaciente, naoRolaNaHorizontal, type Cont
  *   5. as três seções continuam alcançáveis pela faixa que rola
  */
 
-/** 60 caracteres. Nada de excepcional — é um nome brasileiro comum. */
-const NOME_LONGO = "Maria Aparecida do Nascimento Albuquerque Teste Fictícia E2E";
+/**
+ * 60 caracteres — exatamente o teto do cadastro. Nada de excepcional: é um
+ * nome brasileiro comum.
+ *
+ * Terminava em "E2E" até 31/08/2026, e o `2` passou a ser recusado quando a
+ * Issue #56 pôs allow-list de caracteres no nome do paciente. O nome mudou,
+ * o tamanho não: 60 continua sendo o pior caso que o cadastro aceita, que é
+ * o que este arquivo precisa provar que a tela aguenta.
+ */
+const NOME_LONGO = "Maria Aparecida do Nascimento Albuquerque Fictícia de Testes";
 
 let conta: ContaDeTeste;
 let patientId: number;

@@ -286,7 +286,7 @@ describe("Isolamento entre famílias — ZELO", () => {
   });
 
   it("PATCH /patients/:id — família A não edita paciente de B", async () => {
-    await assertIsolated("PATCH /patients/:id", "PATCH", `/patients/${patientBId}`, { name: "Hackeado" });
+    await assertIsolated("PATCH /patients/:id", "PATCH", `/patients/${patientBId}`, { name: "Hackeado Invasor" });
   });
 
   it("POST /patients — família A cria paciente para si mesma (não para B)", async () => {
@@ -399,7 +399,7 @@ describe("Isolamento entre famílias — ZELO", () => {
   });
 
   it("PATCH /caregivers/:id — família A não edita cuidador de B", async () => {
-    await assertIsolated("PATCH /caregivers/:id", "PATCH", `/caregivers/${caregiverBId}`, { name: "Hackeado" });
+    await assertIsolated("PATCH /caregivers/:id", "PATCH", `/caregivers/${caregiverBId}`, { name: "Hackeado Invasor" });
   });
 
   it("DELETE /caregivers/:id — família A não remove cuidador de B", async () => {

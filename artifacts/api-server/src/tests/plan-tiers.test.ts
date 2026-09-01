@@ -62,6 +62,17 @@ async function setPlan(plan: "free" | "premium" | "professional" | null): Promis
   if (plan) await db.insert(subscriptionsTable).values({ familyId, plan, status: "active" });
 }
 
+/**
+ * A, B, C… — sufixo único feito só de letra.
+ *
+ * Os nomes daqui eram "Paciente 01", "Paciente 02". A Issue #56 pôs
+ * allow-list no nome do paciente e dígito deixou de passar: nome de gente
+ * não tem número. A letra mantém a leitura do teste e o nome válido.
+ */
+function sufixo(i: number): string {
+  return String.fromCharCode(64 + i);
+}
+
 async function createPatient(name: string): Promise<{ status: number; body: unknown }> {
   return api("POST", "/patients", {
     name, timezone: "America/Sao_Paulo",
@@ -147,11 +158,11 @@ describe("ZELO-56 — tiers de plano", () => {
     await setPlan("professional");
     // 15 cabem
     for (let i = 1; i <= 15; i++) {
-      const res = await createPatient(`Paciente ${String(i).padStart(2, "0")}`);
+      const res = await createPatient(`Paciente ${sufixo(i)}`);
       assert.equal(res.status, 201, `paciente ${i} deveria caber no Profissional`);
     }
     // o 16º não
-    const excedente = await createPatient("Paciente 16");
+    const excedente = await createPatient("Paciente Dezesseis");
     assert.equal(excedente.status, 403);
     const body = excedente.body as { error: string; code: string };
     assert.equal(body.code, "PLAN_LIMIT");
@@ -166,10 +177,10 @@ describe("ZELO-56 — tiers de plano", () => {
   it("no Família cheio, a mensagem oferece o Profissional — não repete 'Família'", async () => {
     await setPlan("premium");
     for (let i = 1; i <= 5; i++) {
-      const res = await createPatient(`Fam ${i}`);
+      const res = await createPatient(`Familia ${sufixo(i)}`);
       assert.equal(res.status, 201);
     }
-    const excedente = await createPatient("Fam 6");
+    const excedente = await createPatient("Paciente Seis");
     assert.equal(excedente.status, 403);
     assert.match((excedente.body as { error: string }).error, /Profissional libera até 15/);
 
@@ -179,8 +190,8 @@ describe("ZELO-56 — tiers de plano", () => {
 
   it("registrar dose continua liberado em qualquer tier, inclusive no paciente excedente", async () => {
     await setPlan("professional");
-    const p1 = await createPatient("Primeiro");
-    const p2 = await createPatient("Segundo");
+    const p1 = await createPatient("Paciente Primeiro");
+    const p2 = await createPatient("Paciente Segundo");
     const patient2Id = (p2.body as { id: number }).id;
     void p1;
 
@@ -284,7 +295,7 @@ describe("ZELO-57 — painel do dia consolidado", () => {
 
   it("responde rápido com 15 pacientes — o número de consultas não cresce com N", async () => {
     await setPlan("professional");
-    for (let i = 1; i <= 15; i++) await createPatient(`Paciente Perf ${String(i).padStart(2, "0")}`);
+    for (let i = 1; i <= 15; i++) await createPatient(`Paciente Perf ${sufixo(i)}`);
 
     const started = Date.now();
     const res = await api("GET", "/dashboard/today-summary");

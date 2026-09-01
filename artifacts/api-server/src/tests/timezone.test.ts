@@ -230,7 +230,7 @@ describe("Mudança de fuso do paciente regenera doses futuras — ZELO-19", () =
       .orderBy(scheduledDosesTable.scheduledAt)
       .limit(1);
 
-    await api("PATCH", `/patients/${patientId}`, { name: "Paciente Sem Mudanca (renomeado)" });
+    await api("PATCH", `/patients/${patientId}`, { name: "Paciente Sem Mudanca Renomeado" });
 
     const [doseAfter] = await db.select().from(scheduledDosesTable).where(eq(scheduledDosesTable.id, doseBefore.id));
     assert.ok(doseAfter, "a mesma linha de dose deve continuar existindo — nada foi regenerado");
