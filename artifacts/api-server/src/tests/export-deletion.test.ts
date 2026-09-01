@@ -131,6 +131,53 @@ function api(token: string, method: string, path: string, body?: unknown) {
   });
 }
 
+/**
+ * O mesmo GET, mas guardando BYTES — Issue #49.
+ *
+ * O `rawGet` acumula com `c.toString()`, que decodifica como utf8 e
+ * corrompe binário. Serve para JSON; para PDF, não.
+ */
+function rawGetBinary(path: string) {
+  return new Promise<{ status: number; body: Buffer; contentType?: string }>((resolve, reject) => {
+    const req = http.request(
+      { hostname: "127.0.0.1", port: testPort, path: `/api${path}`, method: "GET" },
+      (res) => {
+        const pedacos: Buffer[] = [];
+        res.on("data", (c: Buffer) => pedacos.push(c));
+        res.on("end", () =>
+          resolve({
+            status: res.statusCode ?? 0,
+            body: Buffer.concat(pedacos),
+            contentType: res.headers["content-type"],
+          })
+        );
+      }
+    );
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+/**
+ * O texto de dentro do PDF — mesmo extrator de `adherence-report.test.ts`.
+ *
+ * O pdfkit escreve texto em fragmentos HEX dentro do operador TJ, quebrados
+ * pelo ajuste de kerning entre letras. Buscar substring nos bytes crus nunca
+ * bate — foi assim que a primeira versão deste teste reprovou, procurando
+ * "Seus dados no ZELO" num arquivo onde estava escrito
+ * `<53657573206461646f73206e6f205a454c4f>`.
+ */
+function textoDoPdf(pdf: Buffer): string {
+  const cru = pdf.toString("latin1");
+  const blocos = cru.match(/BT[\s\S]*?ET/g) ?? [];
+  return blocos
+    .map((bloco) => {
+      const hex = bloco.match(/<([0-9a-fA-F]+)>/g) ?? [];
+      return hex.map((t) => Buffer.from(t.slice(1, -1), "hex").toString("latin1")).join("");
+    })
+    .join(" ");
+}
+
 function rawGet(path: string) {
   return new Promise<{ status: number; body: string; contentType?: string }>((resolve, reject) => {
     const req = http.request(
@@ -269,22 +316,24 @@ describe("Exportação e exclusão de dados — ZELO", () => {
       const { downloadUrlPdf } = exportRes.body as { downloadUrlPdf: string };
       assert.ok(downloadUrlPdf, "a resposta precisa oferecer também o PDF");
 
-      const dlRes = await rawGet(downloadUrlPdf.replace(/^\/api/, ""));
+      const dlRes = await rawGetBinary(downloadUrlPdf.replace(/^\/api/, ""));
       assert.equal(dlRes.status, 200);
       assert.ok(dlRes.contentType?.includes("application/pdf"), "precisa sair como PDF");
+      assert.equal(dlRes.body.subarray(0, 4).toString("latin1"), "%PDF", "precisa ser um PDF de verdade");
 
-      // O PDF é gerado sem compressão (mesma escolha da ZELO-35), então o
-      // texto aparece nos bytes crus e dá para conferir sem parser de PDF.
-      assert.match(dlRes.body, /Seus dados no ZELO/, "o documento precisa se identificar");
+      const texto = textoDoPdf(dlRes.body);
+      assert.match(texto, /Seus dados no ZELO/, "o documento precisa se identificar");
       assert.match(
-        dlRes.body,
+        texto,
         /Medicamento ExportDel/,
         "o NOME do remédio precisa aparecer — era isso que o JSON escondia atrás do id"
       );
-      assert.match(dlRes.body, /Consentimentos que você deu/);
+      assert.match(texto, /Consentimentos que você deu/);
+      assert.match(texto, /Tratamento de dados de saúde/, "o consentimento sai em português");
 
       // Nada de inglês do banco vazando para o documento do titular.
-      assert.doesNotMatch(dlRes.body, /"outcome"|scheduledDoseId|medicationId/);
+      assert.doesNotMatch(texto, /outcome|scheduledDoseId|medicationId/);
+      assert.doesNotMatch(texto, /\bskipped\b|\btaken\b|\bcancelled\b/);
     });
 
     /**
@@ -299,7 +348,7 @@ describe("Exportação e exclusão de dados — ZELO", () => {
         downloadUrlPdf: string;
       };
 
-      const pdf = await rawGet(downloadUrlPdf.replace(/^\/api/, ""));
+      const pdf = await rawGetBinary(downloadUrlPdf.replace(/^\/api/, ""));
       assert.equal(pdf.status, 200);
 
       const json = await rawGet(downloadUrl.replace(/^\/api/, ""));
@@ -307,7 +356,7 @@ describe("Exportação e exclusão de dados — ZELO", () => {
       assert.ok(json.contentType?.includes("application/json"));
 
       // Mas cada um continua morrendo no próprio uso.
-      const pdfDeNovo = await rawGet(downloadUrlPdf.replace(/^\/api/, ""));
+      const pdfDeNovo = await rawGetBinary(downloadUrlPdf.replace(/^\/api/, ""));
       assert.equal(pdfDeNovo.status, 404, "o link do PDF é de uso único");
     });
 
