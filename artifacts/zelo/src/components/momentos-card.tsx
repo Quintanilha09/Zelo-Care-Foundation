@@ -627,10 +627,18 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
    */
 
   const aoTocar = (e: EventoDePonteiro) => {
+    // Se o toque começou num CONTROLE, o gesto não entra — Issue #51.
+    //
+    // As setas ficam sobrepostas ao palco, então o `pointerdown` delas
+    // borbulha até aqui. Capturar o ponteiro nesse caso redireciona o
+    // `pointerup` para o palco, o botão nunca recebe o seu, e O CLIQUE NUNCA
+    // COMPLETA. Foi assim que a correção do arrasto nativo quebrou as setas —
+    // e junto quebrou o teste da QUI-18, que nada tinha a ver com este gesto.
+    if ((e.target as HTMLElement).closest("button, a, audio, input")) return;
+
     inicioDoGesto.current = { x: e.clientX, y: e.clientY };
-    // Captura o ponteiro: sem isto, um arrasto que termina fora do elemento
-    // — ou sobre a seta sobreposta — não entrega o `pointerup` aqui, e o
-    // gesto morre no meio.
+    // Captura o ponteiro: sem isto, um arrasto que termina FORA do palco não
+    // entrega o `pointerup` aqui, e o gesto morre no meio.
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
 
