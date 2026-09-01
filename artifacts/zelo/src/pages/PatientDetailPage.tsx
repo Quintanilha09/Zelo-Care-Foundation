@@ -119,6 +119,13 @@ interface StockEntry {
   prescriptionExpiresAt: string | null;
   effectiveDaysRemaining: number | null;
   isLow: boolean;
+  /**
+   * Issue #65 — há tratamento ativo consumindo este estoque?
+   *
+   * Sem isto a tela mostrava igual o que está em uso e o que sobrou de um
+   * tratamento cancelado, e o segundo parecia estoque corrente acabando.
+   */
+  temTratamentoAtivo: boolean;
 }
 
 /**
@@ -237,6 +244,7 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
   const [adjustMode, setAdjustMode] = useState<"add" | "set">("add");
   const [adjustAmount, setAdjustAmount] = useState("");
   const [adjustReason, setAdjustReason] = useState("");
+  const [stockErro, setStockErro] = useState("");
 
   const { data: patient } = useQuery({ queryKey: ["patient", params.id], queryFn: () => fetchPatient(params.id) });
   const { data: treatments, isLoading } = useQuery({ queryKey: ["treatments", params.id], queryFn: () => fetchTreatments(params.id) });
@@ -355,6 +363,24 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
   // ZELO-40: liga/desliga é só permissão ("este paciente PODE usar o modo
   // idoso") — ativar de fato num aparelho específico é uma ação separada,
   // feita fisicamente naquele dispositivo (ver lib/elder-mode.ts).
+  /**
+   * Remove uma entrada de estoque — Issue #65.
+   *
+   * Antes não havia como: dava para ajustar a quantidade e nunca para tirar
+   * a linha da tela. Um tratamento cancelado deixava o estoque para trás.
+   */
+  const handleRemoveStock = async (medicationId: number, medicationName: string) => {
+    const res = await authFetch(`/api/patients/${params.id}/stock/${medicationId}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) {
+      setStockErro(`Não conseguimos remover ${medicationName} do estoque. Tente de novo.`);
+      return;
+    }
+    setStockErro("");
+    void queryClient.invalidateQueries({ queryKey: ["stock", params.id] });
+  };
+
   const handleToggleElderMode = async (enabled: boolean) => {
     setElderModeSaving(true);
     setElderModeError("");
@@ -741,23 +767,54 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
             <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
               <Package className="w-3.5 h-3.5" /> Estoque
             </h3>
+            {stockErro && (
+              <Alert variant="destructive"><AlertDescription>{stockErro}</AlertDescription></Alert>
+            )}
             {stock.map((s) => (
-              <div key={s.id} className={`p-4 rounded-xl border ${s.isLow ? "bg-zelo-amber-bg border-zelo-amber/30" : "bg-card"}`}>
+              // Issue #65: estoque sem tratamento ativo é SOBRA, não alerta.
+              // Não há nada de errado em ter comprimido sobrando de um
+              // tratamento que acabou — e âmbar aqui é ruído que ensina a
+              // ignorar âmbar, que no resto do app quer dizer dose atrasada.
+              <div key={s.id} className={`p-4 rounded-xl border ${s.isLow ? "bg-zelo-amber-bg border-zelo-amber/30" : "bg-card"} ${s.temTratamentoAtivo ? "" : "opacity-70"}`}>
                 <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-medium">{s.medicationName}</p>
+                  <div className="min-w-0">
+                    <p className="font-medium truncate">{s.medicationName}</p>
                     <p className="text-sm text-muted-foreground">
                       {s.quantityRemaining} {s.unit}
-                      {s.effectiveDaysRemaining !== null && ` · cerca de ${Math.round(s.effectiveDaysRemaining)} dia(s) restantes`}
+                      {s.temTratamentoAtivo && s.effectiveDaysRemaining !== null &&
+                        ` · cerca de ${Math.round(s.effectiveDaysRemaining)} dia(s) restantes`}
                     </p>
+                    {/* Sem tratamento ativo não há taxa de consumo, então
+                        "0 dias restantes" seria mentira — o que existe é
+                        sobra. Dizer isso é mais útil que um número falso. */}
+                    {!s.temTratamentoAtivo && (
+                      <p className="text-xs text-muted-foreground">
+                        Sobrou de um tratamento encerrado.
+                      </p>
+                    )}
                     {s.prescriptionExpiresAt && (
                       <p className="text-xs text-muted-foreground">Receita válida até {dataCurta(s.prescriptionExpiresAt)}</p>
                     )}
                   </div>
                   {adjustingMedicationId !== s.medicationId && (
-                    <Button size="sm" variant="outline" onClick={() => { setAdjustingMedicationId(s.medicationId); setAdjustMode("add"); setAdjustAmount(""); setAdjustReason(""); }}>
-                      Ajustar
-                    </Button>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <Button size="sm" variant="outline" onClick={() => { setAdjustingMedicationId(s.medicationId); setAdjustMode("add"); setAdjustAmount(""); setAdjustReason(""); }}>
+                        Ajustar
+                      </Button>
+                      {/* Remover é do estoque, não do histórico: `dose_records`
+                          e `audit_log` continuam intactos. Por isso não há
+                          confirmação destrutiva aqui — o que se apaga é
+                          "quanto tem na caixa", e recadastrar é trivial. */}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-muted-foreground"
+                        onClick={() => void handleRemoveStock(s.medicationId, s.medicationName)}
+                        aria-label={`Remover ${s.medicationName} do estoque`}
+                      >
+                        Remover
+                      </Button>
+                    </div>
                   )}
                 </div>
 

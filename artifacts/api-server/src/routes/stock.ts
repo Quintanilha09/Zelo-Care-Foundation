@@ -53,7 +53,10 @@ router.get("/patients/:patientId/stock", requireAuth, async (req, res): Promise<
     entries.map(async (entry) => {
       const activeTreatment = await loadActiveTreatmentSchedule(patientId, entry.medicationId);
       const days = computeDaysRemaining(entry, activeTreatment, patient.timezone);
-      return { ...entry, ...days };
+      // Issue #65: a tela precisa saber separar o que está em uso do que
+      // sobrou. Sem isto ela mostrava as duas coisas iguais, e o estoque de
+      // um tratamento cancelado parecia estoque corrente acabando.
+      return { ...entry, ...days, temTratamentoAtivo: activeTreatment !== null };
     })
   );
 
@@ -128,6 +131,52 @@ router.patch("/patients/:patientId/stock/:medicationId", requireAuth, requireCap
   }
 
   res.json({ ...updated, ...after });
+});
+
+// ── Remover uma entrada de estoque — Issue #65 ─────────────────────────────
+
+/**
+ * Antes desta rota o estoque era um beco sem saída: dava para ajustar a
+ * quantidade e nunca para tirar a linha da tela. Um tratamento cancelado
+ * deixava o estoque para trás e não havia o que fazer com ele.
+ *
+ * Mesma capacidade do PATCH ao lado: quem pode ajustar quantidade pode
+ * remover a entrada.
+ *
+ * NÃO encosta em histórico. Estoque é quanto tem na caixa hoje; `dose_records`
+ * e `audit_log` são o que aconteceu, e continuam intactos.
+ */
+router.delete("/patients/:patientId/stock/:medicationId", requireAuth, requireCapability("edit_treatment"), async (req, res): Promise<void> => {
+  const patientId = Number(req.params.patientId);
+  const medicationId = Number(req.params.medicationId);
+  if (isNaN(patientId) || isNaN(medicationId)) { res.status(400).json({ error: "ID inválido" }); return; }
+
+  // 404 e nunca 403 para paciente de outra família — invariante 2. O
+  // `familyId` vem do JWT, jamais da URL.
+  const patient = await loadPatientInFamily(patientId, getAuth(req).familyId);
+  if (!patient) { res.status(404).json({ error: "Paciente não encontrado" }); return; }
+
+  const [removida] = await db
+    .delete(stockEntriesTable)
+    .where(and(eq(stockEntriesTable.patientId, patientId), eq(stockEntriesTable.medicationId, medicationId)))
+    .returning({ id: stockEntriesTable.id });
+
+  if (!removida) { res.status(404).json({ error: "Nenhum estoque cadastrado para este medicamento" }); return; }
+
+  await audit({
+    familyId: getAuth(req).familyId,
+    entityType: "stock",
+    entityId: String(removida.id),
+    action: "deleted",
+    actorId: String(getAuth(req).caregiverId),
+    actorType: "caregiver",
+  });
+
+  // Sem evento em tempo real: o único tipo que existe é `low_stock`, e
+  // remover uma entrada não é um alerta de reposição. Inventar um tipo novo
+  // aqui seria mudar contrato para nada — quem está com a tela aberta
+  // recarrega a lista pela própria ação.
+  res.status(204).end();
 });
 
 export default router;
