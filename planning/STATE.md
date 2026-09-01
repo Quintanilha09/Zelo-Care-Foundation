@@ -53,22 +53,38 @@ Das 10 fases do backlog original só sobraram três buracos, todos deixados de p
 
 ## Onde o desenvolvimento parou
 
-**Doze Issues abertas e seis PRs, todos verdes e esperando revisão** — verificado em 31/08/2026,
-20h, com `gh`. Este bloco envelhece rápido: se a sessão for depois disso, meça de novo.
+**Seis Issues abertas, nenhum PR** — verificado em 01/09/2026, com `gh`. Este bloco envelhece
+rápido: se a sessão for depois disso, meça de novo.
 
-| PR | Issue | Estado |
-|---|---|---|
-| [#57](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/57) | #47 convites pendentes | `CLEAN` |
-| [#58](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/58) | #50 setas do visualizador | `CLEAN` |
-| [#59](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/59) | #55 botão Enviar acesso | `CLEAN` |
-| [#60](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/60) | #56 nome do paciente | `CLEAN` — **tem decisão do fundador dentro** |
-| [#61](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/61) | #54 atividade recente | `CLEAN` |
-| [#62](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/62) | #52 grade de Momentos | `CLEAN` |
+**As ondas 2 e 3 do refinamento entraram em 01/09/2026** — seis PRs mesclados, do `b81c165` ao
+`9510bc7`. Plano e refinamento em
+[refinamentos/interface-apos-teste-real.md](refinamentos/interface-apos-teste-real.md).
 
-São as ondas 2 e 3 do plano em [refinamentos/interface-apos-teste-real.md](refinamentos/interface-apos-teste-real.md).
-**Nenhum foi mesclado** — o fundador pediu para aprovar. Números da última execução verde
-(`33448419049`): servidor **580 testes, 568 passando, 12 pulados, 0 falhas**; tela **102 passando**
-em 4,8 min; `lib/scheduling` 33/33.
+| Issue · PR | O quê |
+|---|---|
+| #47 · [#57](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/57) | Convites pendentes mostrava título sozinho — a guarda contava um conjunto e a lista mostrava outro |
+| #54 · [#61](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/61) | Atividade recente com teto de altura. **A lista nunca cresceu sem limite**: já era 15 |
+| #55 · [#59](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/59) | Botão "Enviar acesso" estourava com nome longo |
+| #50 · [#58](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/58) | Setas do visualizador subiam e desciam conforme a proporção da foto |
+| #52 · [#62](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/62) | Grade de Momentos com teto de altura |
+| #56 · [#60](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/60) | Nome do paciente ganhou teto de 60, allow-list e exigência de sobrenome |
+
+**O que sobrou aberto**, e por quê:
+
+| Issue | Estado |
+|---|---|
+| [#53](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/53) foto some ao publicar no celular | **Espera reprodução no aparelho.** Quatro hipóteses eliminadas por leitura de código; sobrou o `start_url: "/"` do manifesto |
+| [#48](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/48) exportação LGPD incompleta | Pronta para começar. **Bloqueia a #49** |
+| [#45](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/45) alterar nome e senha | Pronta para começar |
+| [#51](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/51) deslizar para trocar de foto | Pronta — a #50 já entrou |
+| [#49](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/49) exportação em PDF | Depende da #48 |
+| [#46](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/46) trocar o e-mail | 🔒 Bloqueada por provedor de e-mail, que depende do domínio |
+
+**Uma decisão do fundador ficou registrada dentro do código** (`lib/nome-de-paciente.ts`): o pedido
+era limitar o nome a **exatamente** duas palavras; está implementado como **pelo menos duas**. O
+paciente de teste dele chama-se "Jailson Mendes Delicia" — três palavras — e a regra estrita
+recusava "Ana P Silva" e três nomes da própria suíte. O ponto de mudança é uma linha no
+`superRefine`, se a decisão for outra.
 
 As doze (**#45 a #56**) são a leva que saiu do **primeiro teste feito no aparelho**, com o app
 publicado e o deploy do Replit aplicado. Refinamento, plano em quatro ondas e as discordâncias
