@@ -53,8 +53,17 @@ Das 10 fases do backlog original só sobraram três buracos, todos deixados de p
 
 ## Onde o desenvolvimento parou
 
-**Duas Issues abertas, nenhum PR** — verificado em 01/09/2026, de madrugada, com `gh`. Este bloco
-envelhece rápido: se a sessão for depois disso, meça de novo.
+**Cinco Issues abertas, nenhum PR** — medido em 02/09/2026 com `gh`. Este bloco envelhece rápido:
+se a sessão for depois disso, meça de novo.
+
+| Issue | O quê |
+|---|---|
+| [#53](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/53) | foto some ao publicar no celular — espera duas respostas do fundador |
+| [#46](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/46) | trocar o e-mail da conta — **destravada** em 02/09 |
+| [#75](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/75) | reenviar o e-mail de confirmação: hoje quem não recebe fica preso |
+| [#76](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/76) | Termos, Privacidade e política de dados de saúde **não abrem** — os três links do cadastro estão mortos |
+| [#77](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/77) | confirmar a conta com código de 6 dígitos, no lugar do link — **planejada, aguarda decisão** |
+| [#78](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/78) | não dá para saber em que conta se está: duas contas da mesma pessoa ficam idênticas na tela |
 
 **O teste no aparelho mudou o rumo.** Em 31/08/2026 o fundador abriu o app no celular pela
 primeira vez, e o veredito sobre Momentos foi *"nada do que foi planejado funcionou"* — com razão.
@@ -74,7 +83,6 @@ Vale ler antes de mexer em Momentos ou em teste de tela.
 | [#53](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/53) foto some ao publicar no celular | **A mais grave: é a única que faz PERDER TRABALHO.** Espera duas respostas do fundador — o app foi aberto pelo ícone da tela de início ou por aba? E sair da ficha e voltar SEM escolher foto também volta para a inicial? Quatro hipóteses já eliminadas por leitura de código; sobrou o `start_url: "/"` do manifesto |
 | [#46](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/46) trocar o e-mail da conta | ▶️ **Destravada em 02/09/2026** pela Issue #73 (fase 11.1b): `zelocuida.com.br` verificado no Resend e o servidor manda e-mail de verdade. É trabalho disponível |
 
-| [#46](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/46) trocar o e-mail | ▶️ Destravada em 02/09/2026 pela Issue #73 |
 
 **Uma decisão do fundador ficou registrada dentro do código** (`lib/nome-de-paciente.ts`): o pedido
 era limitar o nome a **exatamente** duas palavras; está implementado como **pelo menos duas**. O
@@ -109,17 +117,18 @@ o PR #1, que registrava isso, foi fechado sem merge em 26/08/2026.
 
 **O trabalho nomeado é a fase 11 — correção pós-auditoria**
 ([phases/11-correcao-pos-auditoria/](phases/11-correcao-pos-auditoria/), plano em
-[auditorias/2026-08-23-gsd-secao-10.md](auditorias/2026-08-23-gsd-secao-10.md)). O item mais grave:
-**o cadastro por e-mail e senha não funciona em produção** — nenhum e-mail é enviado e o login exige
-e-mail verificado. Só o Google entra. Fora isso, o disponível é manutenção, correção, segurança e
-qualidade.
+[auditorias/2026-08-23-gsd-secao-10.md](auditorias/2026-08-23-gsd-secao-10.md)).
+
+**O item mais grave dela foi resolvido em 02/09/2026** (Issue #73, fase 11.1b): o cadastro por
+e-mail e senha voltou a funcionar, com envio real pelo Resend, verificado em ambiente real. Até
+então nenhum e-mail saía, o login exigia e-mail verificado, e só o Google entrava.
 
 **Onde a fase 11 está** — medido em 31/08/2026 contra o código, não copiado da auditoria:
 
 | | Estado |
 |---|---|
 | 11.1a destravar o cadastro · 11.2 rede de proteção · 11.3 tipografia | ✅ 23/08/2026 |
-| 11.1b integrar provedor de e-mail | ✅ 02/09/2026, Issue #73. Resend com `zelocuida.com.br` verificado; as quatro mensagens saem de verdade. Junto vieram as telas `/verificar-email` e `/redefinir-senha`, que **não existiam** — os endpoints de servidor existiam desde sempre e nenhuma tela os chamava |
+| 11.1b integrar provedor de e-mail | ✅ 02/09/2026, Issue #73. **Verificado em ambiente real no mesmo dia:** o fundador se cadastrou, o e-mail chegou e o link confirmou a conta. Junto vieram as telas `/verificar-email` e `/redefinir-senha`, que **não existiam** — os endpoints de servidor existiam desde sempre e nenhuma tela os chamava |
 | **11.5 testes de contrato do frontend** | ▶️ **destravada** — era "a UI não abre aqui", e o Playwright roda no CI desde 26/08 |
 | 11.4 fechar a auditoria | depende da 11.5 |
 | 11.6 papel por paciente | ⏸️ `ADIÁVEL` de propósito, sem caso de uso real |
@@ -202,6 +211,26 @@ os 33 testes do motor de recorrência **rodam** (`validate.yml:107` chama `test:
 efêmero com `crypto.randomBytes`). O registro de cada uma está na auditoria.
 
 ---
+
+## Testar e-mail exige modo produção — o workflow do Replit não serve
+
+Descoberto em 02/09/2026, testando a Issue #73.
+
+O workflow `artifacts/api-server: API Server` roda `pnpm run dev`, e esse script
+começa com `export NODE_ENV=development`. Nesse modo o cadastro **auto-verifica a
+conta e nunca chama o envio de e-mail** — então nenhum teste de e-mail feito por
+ele prova coisa alguma.
+
+Para exercitar e-mail de verdade, pare o workflow e rode à mão no Shell:
+
+```bash
+cd artifacts/api-server && NODE_ENV=production PORT=8080 APP_URL=<url de preview> pnpm run start
+```
+
+A URL de preview é a do navegador (`...spock.replit.dev`), não
+`zelo-care-foundation.replit.app` — **essa não existe**: o app não está publicado,
+por decisão registrada em
+[decisoes/ESTRATEGIA-ATE-A-VENDA.md](decisoes/ESTRATEGIA-ATE-A-VENDA.md).
 
 ## Decisões pendentes do fundador
 
