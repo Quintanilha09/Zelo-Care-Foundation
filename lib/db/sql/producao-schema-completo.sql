@@ -359,12 +359,14 @@ CREATE TABLE "email_verifications" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"user_id" integer NOT NULL,
 	"token_hash" text NOT NULL,
+	"attempts" integer DEFAULT 0 NOT NULL,
 	"expires_at" timestamp with time zone NOT NULL,
 	"used" boolean DEFAULT false NOT NULL,
 	"used_at" timestamp with time zone,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "email_verifications_token_hash_unique" UNIQUE("token_hash")
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
+--> statement-breakpoint
+CREATE INDEX "idx_email_verifications_ativo" ON "email_verifications" ("user_id","used","expires_at");
 --> statement-breakpoint
 CREATE TABLE "password_resets" (
 	"id" serial PRIMARY KEY NOT NULL,

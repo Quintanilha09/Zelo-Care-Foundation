@@ -151,8 +151,21 @@ type Mensagem = {
   assunto: string;
   titulo: string;
   paragrafos: string[];
-  acao: { rotulo: string; url: string };
-  /** Linha final, em cinza: prazo do link e o que fazer se não foi você. */
+  /**
+   * Botão. Opcional desde a Issue #77: o e-mail de verificação passou a levar
+   * um CÓDIGO e não tem para onde apontar — mandar a pessoa a uma tela que vai
+   * pedir o código que já está no e-mail é um clique sem função.
+   */
+  acao?: { rotulo: string; url: string };
+  /**
+   * Código de 6 dígitos, exibido grande. Ver `lib/codigo-de-verificacao.ts`.
+   *
+   * O fundador pediu explicitamente para **poder copiar e colar**, então nada
+   * de separar os dígitos em caixinhas aqui: é um texto contínuo, e selecionar
+   * devolve "123456" limpo, sem espaço no meio.
+   */
+  codigo?: string;
+  /** Linha final, em cinza: prazo e o que fazer se não foi você. */
   aviso: string;
 };
 
@@ -181,7 +194,27 @@ function montarHtml(m: Mensagem): string {
     )
     .join("");
 
-  const url = escapar(m.acao.url);
+  // O código vem numa caixa larga e com fonte monoespaçada: é o que faz seis
+  // dígitos serem lidos de uma vez por quem não enxerga bem, e o que faz o
+  // toque-e-arrasta do celular pegar o número inteiro.
+  const bloco = m.codigo
+    ? `<tr><td style="padding:20px 0;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+<td align="center" style="background:${COR_FUNDO};border:1px solid ${COR_BORDA};border-radius:12px;padding:20px;font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;font-size:34px;font-weight:700;letter-spacing:6px;color:${COR_TEXTO};">${escapar(m.codigo)}</td>
+</tr></table>
+</td></tr>`
+    : m.acao
+      ? `<tr><td style="padding:20px 0;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+<td style="background:${COR_VERDE};border-radius:8px;">
+<a href="${escapar(m.acao.url)}" style="display:inline-block;padding:14px 28px;font-size:16px;font-weight:600;color:#FFFFFF;text-decoration:none;">${escapar(m.acao.rotulo)}</a>
+</td></tr></table>
+</td></tr>`
+      : "";
+
+  const rodapeDoLink = m.acao
+    ? `<p style="margin:0;">Se o bot&atilde;o n&atilde;o funcionar, copie e cole este endere&ccedil;o no navegador:<br><span style="word-break:break-all;">${escapar(m.acao.url)}</span></p>`
+    : "";
 
   return `<!doctype html>
 <html lang="pt-BR">
@@ -196,15 +229,10 @@ function montarHtml(m: Mensagem): string {
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background:#FFFFFF;border-radius:12px;padding:32px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
 <tr><td style="padding-bottom:16px;font-size:20px;font-weight:600;color:${COR_TEXTO};">${escapar(m.titulo)}</td></tr>
 <tr><td>${paragrafos}</td></tr>
-<tr><td style="padding:20px 0;">
-<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
-<td style="background:${COR_VERDE};border-radius:8px;">
-<a href="${url}" style="display:inline-block;padding:14px 28px;font-size:16px;font-weight:600;color:#FFFFFF;text-decoration:none;">${escapar(m.acao.rotulo)}</a>
-</td></tr></table>
-</td></tr>
+${bloco}
 <tr><td style="font-size:14px;line-height:1.6;color:${COR_TEXTO_SUAVE};">
 <p style="margin:0 0 12px;">${escapar(m.aviso)}</p>
-<p style="margin:0;">Se o bot&atilde;o n&atilde;o funcionar, copie e cole este endere&ccedil;o no navegador:<br><span style="word-break:break-all;">${url}</span></p>
+${rodapeDoLink}
 </td></tr>
 <tr><td style="padding-top:24px;border-top:1px solid ${COR_BORDA};font-size:13px;color:${COR_TEXTO_SUAVE};">
 ZELO &mdash; cuidado compartilhado para fam&iacute;lias
@@ -217,13 +245,17 @@ ZELO &mdash; cuidado compartilhado para fam&iacute;lias
 }
 
 function montarTexto(m: Mensagem): string {
+  const bloco = m.codigo
+    ? [m.codigo, ""]
+    : m.acao
+      ? [`${m.acao.rotulo}:`, m.acao.url, ""]
+      : [];
+
   return [
     m.titulo,
     "",
     ...m.paragrafos.flatMap((p) => [p, ""]),
-    `${m.acao.rotulo}:`,
-    m.acao.url,
-    "",
+    ...bloco,
     m.aviso,
     "",
     "—",
@@ -300,21 +332,34 @@ async function enviar(m: Mensagem, tipo: string): Promise<boolean> {
   return false;
 }
 
-/** Envia e-mail de verificação de conta. */
-export async function sendVerificationEmail(email: string, token: string): Promise<boolean> {
-  const link = `${baseUrl()}/verificar-email?token=${token}`;
-  devLog("Verificação de e-mail", link);
+/**
+ * Envia o código de verificação de conta — Issue #77.
+ *
+ * O código vai **no assunto também**, como fazem GitHub e banco: dá para ler na
+ * notificação do celular sem abrir o e-mail, sem trocar de aplicativo, sem
+ * perder de vista a tela onde ele vai ser digitado. Num público que não navega
+ * com desenvoltura entre janelas, isso vale mais do que parece.
+ *
+ * Não há link nenhum aqui, e é de propósito: quem está lendo já tem a tela do
+ * código aberta do outro lado.
+ */
+export async function sendVerificationEmail(email: string, codigo: string): Promise<boolean> {
+  // O código NÃO passa pelo devLog. O link antigo era impresso em
+  // desenvolvimento porque não havia outro jeito de pegá-lo; o código aparece
+  // na tela do próprio e-mail e, sem provedor, a conta se auto-verifica de
+  // qualquer forma. Imprimir seria expor credencial sem ganhar nada.
+  devLog("Código de verificação emitido", `${baseUrl()}/verificar-email`);
 
   return enviar(
     {
       para: email,
-      assunto: "Confirme seu e-mail — ZELO",
-      titulo: "Falta um passo",
+      assunto: `${codigo} é o seu código de confirmação — ZELO`,
+      titulo: "Seu código de confirmação",
       paragrafos: [
-        "Sua conta no ZELO foi criada. Para poder entrar, confirme que este endereço é seu.",
+        "Digite este código na tela do ZELO para confirmar sua conta:",
       ],
-      acao: { rotulo: "Confirmar meu e-mail", url: link },
-      aviso: "O link vale 24 horas. Se não foi você quem criou a conta, ignore este e-mail — sem o clique, nada acontece.",
+      codigo,
+      aviso: "O código vale 10 minutos e só serve uma vez. Se não foi você quem criou a conta, ignore este e-mail — sem o código, nada acontece.",
     },
     "verificacao",
   );

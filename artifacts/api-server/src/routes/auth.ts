@@ -19,7 +19,7 @@ import { getAuth } from "../lib/auth-types.ts";
 
 import { Router } from "express";
 import { z } from "zod";
-import { eq, and, gt, } from "drizzle-orm";
+import { eq, and, gt, desc } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   usersTable,
@@ -56,6 +56,14 @@ import {
 import { Clock } from "../lib/clock";
 import { resolveActiveCaregiver } from "../lib/active-family.ts";
 import { allowsDevelopmentShortcuts } from "../lib/environment.ts";
+import {
+  gerarCodigo,
+  hashDoCodigo,
+  conferirHash,
+  normalizarCodigo,
+  expiraEm,
+  MAX_TENTATIVAS,
+} from "../lib/codigo-de-verificacao.ts";
 
 const router = Router();
 
@@ -235,19 +243,26 @@ router.post("/auth/register", registerLimiter, async (req, res): Promise<void> =
     return { userId: newUser.id, familyId: targetFamilyId, caregiverId: newCaregiver.id };
   });
 
-  // 6. Token de verificação de e-mail
-  const { raw: verifyRaw, hash: verifyHash } = generateOneTimeToken();
+  // 6. Código de verificação de e-mail — Issue #77, era token de 64 hex num
+  //    link e passou a ser 6 dígitos digitados na tela.
+  const codigo = gerarCodigo();
   await db.insert(emailVerificationsTable).values({
     userId,
-    tokenHash: verifyHash,
-    expiresAt: new Date(Clock.now().getTime() + 24 * 60 * 60 * 1000), // 24h
+    tokenHash: hashDoCodigo(userId, codigo),
+    expiresAt: expiraEm(Clock.now()),
   });
+
+  // O envio pode falhar sem lançar (ver lib/email.ts: falha de envio virando
+  // exceção transformaria a recuperação de senha num oráculo de enumeração).
+  // Então a resposta precisa dizer a verdade em vez de prometer um e-mail que
+  // não saiu — quem ficou sem código não tem como pedir outro hoje (Issue #75).
+  let enviado = true;
 
   if (allowsDevelopmentShortcuts()) {
     // ── DEV ONLY: auto-verificação imediata ──────────────────────────────
-    // Em produção este bloco não existe — o usuário DEVE clicar no link de e-mail.
+    // Em produção este bloco não existe — o usuário DEVE digitar o código.
     // Em desenvolvimento não há provedor de e-mail real, então a conta é ativada
-    // aqui mesmo e o token é exibido no console para uso manual se necessário.
+    // aqui mesmo e o código fica na tabela para uso manual se necessário.
     await db.transaction(async (tx) => {
       await tx.update(emailVerificationsTable)
         .set({ used: true, usedAt: Clock.now() })
@@ -256,49 +271,123 @@ router.post("/auth/register", registerLimiter, async (req, res): Promise<void> =
         .set({ emailVerified: true, status: "active" })
         .where(eq(usersTable.id, userId));
     });
-    // O token NÃO vai pro log, nem em desenvolvimento: `safeLog` sanitiza o
+    // O código NÃO vai pro log, nem em desenvolvimento: `safeLog` sanitiza o
     // CONTEXTO (1º argumento) mas não a MENSAGEM (2º), então interpolar um
-    // segredo aqui contornava a proteção inteira. Quem precisar do token pra
+    // segredo aqui contornava a proteção inteira. Quem precisar do código pra
     // testar o fluxo manual consulta a tabela email_verifications.
     safeLog.info(
       { action: "dev_auto_verify", familyId },
-      "[DEV] Conta auto-verificada — token disponível em email_verifications, se precisar testar o fluxo manual",
+      "[DEV] Conta auto-verificada — codigo disponivel em email_verifications, se precisar testar o fluxo manual",
     );
   } else {
     // ── PRODUÇÃO: envio real de e-mail ───────────────────────────────────
-    await sendVerificationEmail(body.data.email, verifyRaw);
+    enviado = await sendVerificationEmail(body.data.email, codigo);
   }
 
   safeLog.info({ action: "register", userId, familyId, caregiverId }, "Novo usuário cadastrado");
   await audit({ familyId, entityType: "user", entityId: String(userId), action: "created", actorType: "system", ipAddress: ip });
 
-  const devMessage = allowsDevelopmentShortcuts()
-    ? " Conta ativada automaticamente — faça login agora."
-    : " Verifique seu e-mail para ativar a conta.";
-  res.status(201).json({ message: `Conta criada.${devMessage}` });
+  // `precisaDeCodigo` é o que a tela usa para decidir se leva a pessoa à tela
+  // do código ou direto ao login — em vez de adivinhar pelo texto da mensagem.
+  if (allowsDevelopmentShortcuts()) {
+    res.status(201).json({
+      message: "Conta criada. Conta ativada automaticamente — faça login agora.",
+      precisaDeCodigo: false,
+    });
+    return;
+  }
+
+  if (!enviado) {
+    // A conta existe e o e-mail está queimado pela unicidade: mandar "verifique
+    // sua caixa" seria mentira, e a pessoa ficaria esperando para sempre.
+    res.status(201).json({
+      message:
+        "Conta criada, mas não conseguimos enviar o código de confirmação agora. Entre com o Google, que já vem confirmado, ou fale com o suporte.",
+      precisaDeCodigo: false,
+      envioFalhou: true,
+    });
+    return;
+  }
+
+  res.status(201).json({
+    message: "Conta criada. Enviamos um código de 6 dígitos para o seu e-mail.",
+    precisaDeCodigo: true,
+  });
 });
 
 // ── VERIFICAÇÃO DE E-MAIL ─────────────────────────────────────────────────
 
-router.post("/auth/verify-email", publicTokenLimiter, async (req, res): Promise<void> => {
-  const token = String(req.body?.token ?? "");
-  if (!token) { res.status(400).json({ error: "Token obrigatório" }); return; }
+/**
+ * Confirma a conta com o código de 6 dígitos — Issue #77.
+ *
+ * ── Uma resposta só para tudo que dá errado ───────────────────────────────
+ *
+ * Código errado, código expirado, código já usado, tentativas esgotadas e
+ * e-mail que não existe respondem **a mesma coisa**. Distinguir qualquer um
+ * deles entrega informação de graça: "este e-mail existe aqui" é o começo de
+ * qualquer ataque dirigido, e num app de saúde a própria existência da conta
+ * já é informação sensível.
+ *
+ * ── O limite de tentativas é a defesa, não o tamanho do código ────────────
+ *
+ * Seis dígitos são um milhão de combinações — minutos para uma máquina. Cinco
+ * tentativas por código deixam a chance em 1 para 200.000. Ver a conta inteira
+ * em `lib/codigo-de-verificacao.ts`.
+ */
+const RECUSA_GENERICA = "Código inválido ou expirado. Peça um novo cadastro se o prazo passou.";
 
-  const tokenHash = hashToken(token);
+router.post("/auth/verify-email", publicTokenLimiter, async (req, res): Promise<void> => {
+  const email = String(req.body?.email ?? "").toLowerCase().trim();
+  const codigo = normalizarCodigo(req.body?.codigo);
+
+  if (!email || !codigo) {
+    res.status(400).json({ error: RECUSA_GENERICA });
+    return;
+  }
+
+  const [user] = await db
+    .select({ id: usersTable.id, emailVerified: usersTable.emailVerified })
+    .from(usersTable)
+    .where(eq(usersTable.email, email))
+    .limit(1);
+
+  // Conta inexistente sai pela mesma porta que código errado.
+  if (!user) {
+    res.status(400).json({ error: RECUSA_GENERICA });
+    return;
+  }
+
   const [record] = await db
     .select()
     .from(emailVerificationsTable)
     .where(
       and(
-        eq(emailVerificationsTable.tokenHash, tokenHash),
+        eq(emailVerificationsTable.userId, user.id),
         eq(emailVerificationsTable.used, false),
         gt(emailVerificationsTable.expiresAt, Clock.now())
       )
     )
+    .orderBy(desc(emailVerificationsTable.id))
     .limit(1);
 
-  if (!record) {
-    res.status(400).json({ error: "Token inválido ou expirado" });
+  if (!record || record.attempts >= MAX_TENTATIVAS) {
+    res.status(400).json({ error: RECUSA_GENERICA });
+    return;
+  }
+
+  if (!conferirHash(record.tokenHash, hashDoCodigo(user.id, codigo))) {
+    // Gravar o erro é o que torna a força bruta inviável. Sem este UPDATE, o
+    // resto desta rota é decoração.
+    await db
+      .update(emailVerificationsTable)
+      .set({ attempts: record.attempts + 1 })
+      .where(eq(emailVerificationsTable.id, record.id));
+
+    safeLog.warn(
+      { action: "verify_email_codigo_errado", outcome: String(record.attempts + 1) },
+      "Codigo de verificacao incorreto",
+    );
+    res.status(400).json({ error: RECUSA_GENERICA });
     return;
   }
 
@@ -311,7 +400,8 @@ router.post("/auth/verify-email", publicTokenLimiter, async (req, res): Promise<
       .where(eq(usersTable.id, record.userId));
   });
 
-  res.json({ message: "E-mail verificado com sucesso. Faça login para continuar." });
+  safeLog.info({ action: "verify_email_ok" }, "Conta confirmada por codigo");
+  res.json({ message: "E-mail confirmado. Faça login para continuar." });
 });
 
 // ── LOGIN ────────────────────────────────────────────────────────────────
