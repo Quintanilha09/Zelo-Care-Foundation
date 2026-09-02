@@ -72,9 +72,9 @@ Vale ler antes de mexer em Momentos ou em teste de tela.
 | Issue | Estado |
 |---|---|
 | [#53](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/53) foto some ao publicar no celular | **A mais grave: é a única que faz PERDER TRABALHO.** Espera duas respostas do fundador — o app foi aberto pelo ícone da tela de início ou por aba? E sair da ficha e voltar SEM escolher foto também volta para a inicial? Quatro hipóteses já eliminadas por leitura de código; sobrou o `start_url: "/"` do manifesto |
-| [#46](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/46) trocar o e-mail da conta | 🔒 Bloqueada por provedor de e-mail, que depende do domínio — a mesma decisão que trava a fase 11.1b |
+| [#46](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/46) trocar o e-mail da conta | ▶️ **Destravada em 02/09/2026** pela Issue #73 (fase 11.1b): `zelocuida.com.br` verificado no Resend e o servidor manda e-mail de verdade. É trabalho disponível |
 
-| [#46](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/46) trocar o e-mail | 🔒 Bloqueada por provedor de e-mail, que depende do domínio |
+| [#46](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/46) trocar o e-mail | ▶️ Destravada em 02/09/2026 pela Issue #73 |
 
 **Uma decisão do fundador ficou registrada dentro do código** (`lib/nome-de-paciente.ts`): o pedido
 era limitar o nome a **exatamente** duas palavras; está implementado como **pelo menos duas**. O
@@ -119,7 +119,7 @@ qualidade.
 | | Estado |
 |---|---|
 | 11.1a destravar o cadastro · 11.2 rede de proteção · 11.3 tipografia | ✅ 23/08/2026 |
-| 11.1b integrar provedor de e-mail | 🔒 bloqueada: conta no Resend e **domínio verificado** |
+| 11.1b integrar provedor de e-mail | ✅ 02/09/2026, Issue #73. Resend com `zelocuida.com.br` verificado; as quatro mensagens saem de verdade. Junto vieram as telas `/verificar-email` e `/redefinir-senha`, que **não existiam** — os endpoints de servidor existiam desde sempre e nenhuma tela os chamava |
 | **11.5 testes de contrato do frontend** | ▶️ **destravada** — era "a UI não abre aqui", e o Playwright roda no CI desde 26/08 |
 | 11.4 fechar a auditoria | depende da 11.5 |
 | 11.6 papel por paciente | ⏸️ `ADIÁVEL` de propósito, sem caso de uso real |
@@ -206,14 +206,15 @@ efêmero com `crypto.randomBytes`). O registro de cada uma está na auditoria.
 ## Decisões pendentes do fundador
 
 1. **Preço** dos planos Família e Profissional — os limites já estão em vigor, falta o valor
-2. **Provedor de e-mail: decidido — Resend** (23/08/2026). Falta criar a conta, verificar o domínio
-   e provisionar `RESEND_API_KEY`. **Bloqueado pela decisão de domínio, abaixo.**
+2. ~~**Provedor de e-mail**~~ — **resolvido em 02/09/2026.** Resend, domínio `zelocuida.com.br`
+   verificado, `RESEND_API_KEY` (escopo `sending_access`, presa ao domínio) nos Secrets do Replit
 3. **PSP de pagamento** (QUI-12, era ZELO-39) — único fornecedor externo ainda em aberto, adiado de
    propósito para o fim do projeto: **não perguntar história a história.** SMS e ligação saíram do
    v1 em 24/08/2026 ([decisoes/PLATFORM_DECISIONS.md](decisoes/PLATFORM_DECISIONS.md) §12)
 4. Persona de entrada (recomendação: cuidador de idoso)
-5. **Nome definitivo (INPI e domínio)** — deixou de ser só identidade: **todo provedor de e-mail
-   exige domínio verificado por DNS**, então bloqueia o conserto do cadastro (fase 11.1b)
+5. **Registro da marca no INPI** — o domínio saiu da frente (`zelocuida.com.br`, registrado em
+   01/09/2026) e deixou de bloquear código. A **marca**, porém, não foi pesquisada nem depositada:
+   continua risco de identidade, agora sem prazo forçado por dependência técnica
 6. Encarregado de dados (DPO)
 7. O repositório GitHub está **público** — decidir se troca para privado
 8. Aumentar o limite de gasto do Replit para destravar o banco de produção

@@ -30,7 +30,25 @@ Orval, esbuild. Detalhe em [`planning/decisoes/FOUNDATION.md`](planning/decisoes
 ## Secrets necessários
 
 `DATABASE_URL`, `SESSION_SECRET`, `ANTHROPIC_API_KEY`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`,
-`VAPID_SUBJECT`, `ADMIN_PANEL_SECRET`, `APP_URL`.
+`VAPID_SUBJECT`, `ADMIN_PANEL_SECRET`, `APP_URL`, `RESEND_API_KEY`.
+
+### E-mail — `APP_URL` virou obrigatório de verdade (Issue #73, 02/09/2026)
+
+| Variável | Papel |
+|---|---|
+| `RESEND_API_KEY` | chave do Resend, escopo `sending_access`, presa a `zelocuida.com.br`. Sem ela **não há provedor**: o cadastro por e-mail e senha se recusa a criar conta e manda pelo Google |
+| `APP_URL` | `https://zelo-care-foundation.replit.app`. É a base de **todo link** que sai por e-mail |
+| `EMAIL_FROM` | opcional. Padrão: `ZELO <contato@zelocuida.com.br>` |
+
+**Por que `APP_URL` deixou de ser detalhe.** Até a Issue #73 ela era lida só por
+`lib/email.ts`, que não enviava nada — a auditoria de 23/08/2026 chegou a
+registrar que faltava nos Secrets e que não quebrava nada. Agora quebra: sem
+ela, `baseUrl()` cai em `http://localhost:5173` e **todo link sairia apontando
+para a máquina de quem lê**. O e-mail chegaria bonito e inútil.
+
+Por isso `hasEmailProvider()` exige as duas em produção: faltando `APP_URL`, o
+envio fica desligado de propósito e o cadastro segue pelo Google. Falha barulhenta
+em vez de e-mail morto.
 
 **`NODE_ENV` não é definido pelo Replit** — e o código trata a ausência como **produção**, de
 propósito. Não "conserte" isso definindo `NODE_ENV=development` no deploy: era exatamente essa
