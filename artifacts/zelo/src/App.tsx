@@ -25,6 +25,8 @@ import IOSInstallGuidePage from '@/pages/IOSInstallGuidePage';
 import AdminPage from '@/pages/AdminPage';
 import StatusPage from '@/pages/StatusPage';
 import AcceptInvitePage from '@/pages/AcceptInvitePage';
+import VerifyEmailPage from '@/pages/VerifyEmailPage';
+import ResetPasswordPage from '@/pages/ResetPasswordPage';
 import ElderModePage from '@/pages/ElderModePage';
 import PatientAccessActivationPage from '@/pages/PatientAccessActivationPage';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
@@ -75,6 +77,27 @@ function Router() {
     return (
       <RoutedErrorBoundary>
         <AcceptInvitePage />
+      </RoutedErrorBoundary>
+    );
+  }
+
+  // Issue #73: os dois destinos dos links de e-mail. Ficam aqui em cima pela
+  // mesma razão do /convite, mas o caso é ainda mais forte — quem chega nestas
+  // duas telas está, por definição, IMPEDIDO de logar: numa falta verificar o
+  // e-mail, na outra falta a senha. Cair no portão de autenticação abaixo era
+  // um beco sem saída perfeito, e foi o que aconteceu até 02/09/2026, quando o
+  // envio de e-mail passou a existir de verdade e o beco ganhou tráfego.
+  if (location.startsWith('/verificar-email')) {
+    return (
+      <RoutedErrorBoundary>
+        <VerifyEmailPage />
+      </RoutedErrorBoundary>
+    );
+  }
+  if (location.startsWith('/redefinir-senha')) {
+    return (
+      <RoutedErrorBoundary>
+        <ResetPasswordPage />
       </RoutedErrorBoundary>
     );
   }
