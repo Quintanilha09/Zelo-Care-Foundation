@@ -112,6 +112,31 @@ test.describe("Tela do código de confirmação", () => {
 
     await expect(page.getByText("Digite o e-mail que você usou no cadastro.")).toBeVisible();
   });
+
+  // ── Reenvio — Issue #75 ─────────────────────────────────────────────────
+
+  test("o reenvio nasce em espera, com o tempo à vista", async ({ page }) => {
+    await page.goto("/verificar-email");
+
+    // Quem chega aqui ACABOU de receber um código. Botão já aceso convidaria a
+    // gastar emissão à toa — e o servidor só concede cinco por hora.
+    const botao = page.getByRole("button", { name: /Enviar de novo em \d+s/ });
+    await expect(botao).toBeVisible();
+    await expect(botao).toBeDisabled();
+  });
+
+  test("a espera anda — não é um botão morto", async ({ page }) => {
+    await page.goto("/verificar-email");
+
+    const botao = page.getByRole("button", { name: /Enviar de novo em \d+s/ });
+    const primeiro = await botao.textContent();
+
+    // Mostrar um número parado seria pior que não mostrar nada: a pessoa não
+    // saberia se o app travou.
+    await expect
+      .poll(async () => (await botao.textContent()) !== primeiro, { timeout: 5000 })
+      .toBe(true);
+  });
 });
 
 test.describe("Link de nova senha", () => {
