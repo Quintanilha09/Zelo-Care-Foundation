@@ -138,8 +138,31 @@ router.post("/auth/register", registerLimiter, async (req, res): Promise<void> =
     .limit(1);
 
   if (existingUser) {
-    // Retorna o mesmo erro que "e-mail inválido" para não confirmar existência
-    res.status(400).json({ error: "Não foi possível criar a conta com esses dados" });
+    // ── Por que esta mensagem passou a ser clara — Issue #81 ─────────────
+    //
+    // Ela era genérica ("Não foi possível criar a conta com esses dados"), com
+    // a justificativa de não confirmar que o e-mail existe. **A justificativa
+    // não se sustentava**, e vale registrar o porquê para ninguém "consertar"
+    // isto de volta:
+    //
+    // 1. Esta rota tem cinco respostas 400, e as outras quatro têm texto
+    //    próprio (Zod, termos, consentimento de saúde, senha fraca). A
+    //    mensagem genérica era **exclusiva** deste caso — não se confundia com
+    //    nada. Quem sondasse com um corpo bem formado e senha forte lia
+    //    exatamente "existe" naquele texto.
+    //
+    // 2. Mesmo com textos idênticos, **201 e 400 já se distinguem**. Cadastro
+    //    ou cria a conta ou não cria; não há como esconder qual foi.
+    //
+    // Ou seja: custava clareza real e não comprava proteção nenhuma. Quem de
+    // fato limita sondagem aqui é o `registerLimiter`, que continua no lugar.
+    //
+    // ATENÇÃO: isto NÃO vale para `/auth/password-reset/request`. Lá a resposta
+    // é idêntica exista ou não a conta, e a generalidade funciona de verdade.
+    res.status(400).json({
+      error: "Este e-mail já tem uma conta no ZELO. Entre com ele, ou use “Recuperar” se esqueceu a senha.",
+      code: "EMAIL_JA_CADASTRADO",
+    });
     return;
   }
 
@@ -291,7 +314,10 @@ router.post("/auth/register", registerLimiter, async (req, res): Promise<void> =
   // do código ou direto ao login — em vez de adivinhar pelo texto da mensagem.
   if (allowsDevelopmentShortcuts()) {
     res.status(201).json({
-      message: "Conta criada. Conta ativada automaticamente — faça login agora.",
+      // "Conta ativada automaticamente" não diz nada a quem não sabe o que é
+      // ambiente de desenvolvimento — e ninguém deveria precisar saber para
+      // entender uma tela (Issue #81).
+      message: "Conta criada e já confirmada. Você já pode entrar com seu e-mail e senha.",
       precisaDeCodigo: false,
     });
     return;
