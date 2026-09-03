@@ -538,6 +538,35 @@ describe("Compressão de foto solta a memória do canvas", () => {
     );
   });
 
+  it("gera uma MINIATURA separada para a prévia", () => {
+    const fonte = readFileSync(compressor, "utf8");
+
+    // A correção que veio depois: soltar o canvas não bastou. A prévia mostrava
+    // o arquivo de 1600px numa <img> de 90px, e o CSS encolhe o DESENHO, não a
+    // decodificação — 7,7 MB de bitmap por foto, residentes na tela. Seis
+    // somavam ~46 MB e matavam a aba, sem erro nenhum, porque o JavaScript
+    // morria junto.
+    assert.match(
+      fonte,
+      /LADO_DA_MINIATURA/,
+      "sumiu a miniatura — a prévia volta a decodificar em tamanho cheio",
+    );
+    assert.match(fonte, /miniatura:\s*Blob/, "a miniatura precisa sair do compressor");
+  });
+
+  it("a prévia usa a miniatura, e não o arquivo de envio", () => {
+    const card = `${raiz}../../zelo/src/components/momentos-card.tsx`;
+    const fonte = readFileSync(card, "utf8");
+
+    // O ponto exato onde o defeito morava. Trocar `miniUrl` de volta por `url`
+    // é uma letra de diferença e devolve o problema inteiro.
+    assert.match(
+      fonte,
+      /src=\{item\.miniUrl\}/,
+      "a <img> da prévia precisa apontar para a miniatura",
+    );
+  });
+
   it("solta os pixels num `finally`, para valer também quando a foto falha", () => {
     const fonte = readFileSync(compressor, "utf8");
     const finallyIdx = fonte.lastIndexOf("} finally {");
