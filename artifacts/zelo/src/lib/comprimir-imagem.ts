@@ -35,8 +35,38 @@ export const LADO_MAXIMO = 1600;
 /** Qualidade do JPEG. 0.8 é o ponto onde o arquivo despenca e o olho não vê. */
 export const QUALIDADE = 0.8;
 
+/**
+ * Lado maior da MINIATURA de prévia — Issue #53.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * A PRÉVIA PRECISA DE UM ARQUIVO PRÓPRIO, E É POR ISSO QUE A ABA MORRIA.
+ *
+ * A prévia mostrava o arquivo de 1600px dentro de uma miniatura de ~90px na
+ * tela. O CSS encolhe o **desenho**; o navegador continua **decodificando no
+ * tamanho natural** — 1600 × 1200 × 4 bytes = **7,7 MB de bitmap por prévia**,
+ * residentes enquanto a imagem estiver na tela.
+ *
+ * Seis fotos escolhidas = ~46 MB só de prévias, além da compressão em curso.
+ * Num celular, o renderizador estoura: a aba morre, o navegador recarrega, e a
+ * pessoa volta para a ficha do paciente sem foto nenhuma e **sem mensagem de
+ * erro** — porque o JavaScript morreu junto e não teve como avisar.
+ *
+ * Era a assinatura exata do relato: cinco funcionava, seis não.
+ *
+ * Com 240px, a mesma prévia decodifica em ~230 KB. Seis delas somam 1,4 MB no
+ * lugar de 46 MB.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+export const LADO_DA_MINIATURA = 240;
+
 export interface FotoComprimida {
+  /** O que vai para o servidor: 1600px. */
   arquivo: File;
+  /**
+   * O que a tela mostra enquanto a foto espera para subir. **Nunca use
+   * `arquivo` numa `<img>` de prévia** — ver `LADO_DA_MINIATURA`.
+   */
+  miniatura: Blob;
   bytesAntes: number;
   bytesDepois: number;
   largura: number;
@@ -90,20 +120,66 @@ async function carregarImagem(arquivo: File): Promise<{ fonte: CanvasImageSource
 export async function comprimirFoto(arquivo: File): Promise<FotoComprimida> {
   const { fonte, largura, altura, liberar } = await carregarImagem(arquivo);
 
-  // Fora do `try` de propósito: o `finally` precisa alcançá-lo para soltar os
-  // pixels. Ver o comentário longo lá embaixo.
-  let canvas: HTMLCanvasElement | null = null;
-
   try {
-    const escala = Math.min(1, LADO_MAXIMO / Math.max(largura, altura));
-    const novaLargura = Math.round(largura * escala);
-    const novaAltura = Math.round(altura * escala);
+    const grande = await desenhar(fonte, largura, altura, LADO_MAXIMO, QUALIDADE);
+    if (!grande.blob) throw new Error("Não conseguimos preparar a foto para envio.");
 
-    // `tela` é o alias local; `canvas` guarda a mesma referência só para o
-    // `finally` alcançar. Sem o alias, o TypeScript perde o estreitamento de
-    // tipo dentro da closure do `toBlob`.
-    const tela = document.createElement("canvas");
-    canvas = tela;
+    // A miniatura sai do MESMO bitmap já carregado: desenhar duas vezes custa
+    // milissegundos, e é o que evita a prévia decodificar 7,7 MB por foto.
+    const mini = await desenhar(fonte, largura, altura, LADO_DA_MINIATURA, 0.7);
+    // Se a miniatura falhar, a prévia cai no arquivo grande: pior para a
+    // memória, melhor que a tela ficar sem imagem nenhuma.
+    const miniatura = mini.blob ?? grande.blob;
+
+    // Recomprimir nem sempre encolhe. Quando não encolhe, o original vence —
+    // e o original mantém o formato que o usuário escolheu.
+    if (grande.blob.size >= arquivo.size) {
+      return {
+        arquivo,
+        miniatura,
+        bytesAntes: arquivo.size,
+        bytesDepois: arquivo.size,
+        largura,
+        altura,
+      };
+    }
+
+    return {
+      arquivo: new File([grande.blob], "momento.jpg", { type: "image/jpeg" }),
+      miniatura,
+      bytesAntes: arquivo.size,
+      bytesDepois: grande.blob.size,
+      largura: grande.largura,
+      altura: grande.altura,
+    };
+  } finally {
+    liberar();
+  }
+}
+
+/**
+ * Desenha a imagem num canvas do tamanho pedido e devolve o JPEG.
+ *
+ * ── Por que isto virou função própria ─────────────────────────────────────
+ *
+ * O canvas é criado, usado e **solto aqui dentro**. Antes havia um canvas só,
+ * e soltá-lo era responsabilidade do `finally` lá de cima; com dois desenhos
+ * (o de envio e o da miniatura), essa responsabilidade se duplicaria — e a
+ * segunda cópia é a que alguém esquece.
+ */
+async function desenhar(
+  fonte: CanvasImageSource,
+  largura: number,
+  altura: number,
+  ladoMaximo: number,
+  qualidade: number,
+): Promise<{ blob: Blob | null; largura: number; altura: number }> {
+  const escala = Math.min(1, ladoMaximo / Math.max(largura, altura));
+  const novaLargura = Math.round(largura * escala);
+  const novaAltura = Math.round(altura * escala);
+
+  const tela = document.createElement("canvas");
+  try {
     tela.width = novaLargura;
     tela.height = novaAltura;
 
@@ -116,50 +192,21 @@ export async function comprimirFoto(arquivo: File): Promise<FotoComprimida> {
     ctx.drawImage(fonte, 0, 0, novaLargura, novaAltura);
 
     const blob = await new Promise<Blob | null>((resolve) => {
-      tela.toBlob(resolve, "image/jpeg", QUALIDADE);
+      tela.toBlob(resolve, "image/jpeg", qualidade);
     });
-    if (!blob) throw new Error("Não conseguimos preparar a foto para envio.");
-
-    // Recomprimir nem sempre encolhe. Quando não encolhe, o original vence —
-    // e o original mantém o formato que o usuário escolheu.
-    if (blob.size >= arquivo.size) {
-      return {
-        arquivo,
-        bytesAntes: arquivo.size,
-        bytesDepois: arquivo.size,
-        largura,
-        altura,
-      };
-    }
-
-    return {
-      arquivo: new File([blob], "momento.jpg", { type: "image/jpeg" }),
-      bytesAntes: arquivo.size,
-      bytesDepois: blob.size,
-      largura: novaLargura,
-      altura: novaAltura,
-    };
+    return { blob, largura: novaLargura, altura: novaAltura };
   } finally {
-    liberar();
     // ── Soltar o canvas na mão, e não esperar o coletor — Issue #53 ───────
     //
-    // Um canvas de 1600×1200 guarda ~7,7 MB de pixels, e essa memória **não
-    // é do JavaScript**: vive no processo do navegador e só sai quando o
-    // objeto é coletado. Num laço que comprime oito fotos seguidas, o
-    // coletor não roda entre as voltas — ele não tem por que rodar, já que
-    // sobra memória de heap — e os oito backing stores se acumulam junto com
-    // os bitmaps de origem.
+    // Um canvas de 1600×1200 guarda ~7,7 MB de pixels, e essa memória **não é
+    // do JavaScript**: vive no processo do navegador e só sai quando o objeto
+    // é coletado. Num laço que comprime oito fotos seguidas, o coletor não
+    // roda entre as voltas — não tem por que rodar, já que sobra heap — e os
+    // backing stores se acumulam.
     //
-    // Num celular isso estoura o teto do renderizador. Ele morre, o navegador
-    // recarrega a aba, e a pessoa perde as fotos que tinha escolhido. Era o
-    // sintoma da Issue #53, e explica por que UMA foto sempre funcionou e
-    // duas ou mais não.
-    //
-    // Zerar as dimensões descarta o backing store na hora. É feio e é a forma
-    // suportada de fazer isso — não existe `canvas.dispose()`.
-    if (canvas) {
-      canvas.width = 0;
-      canvas.height = 0;
-    }
+    // Zerar as dimensões descarta o backing store na hora. É feio, e é a forma
+    // suportada de fazer isso: não existe `canvas.dispose()`.
+    tela.width = 0;
+    tela.height = 0;
   }
 }

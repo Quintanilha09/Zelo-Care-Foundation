@@ -172,7 +172,9 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
    * Era UMA (`previa`). Quem voltava de um passeio com oito fotos repetia
    * oito vezes o ciclo escolher-esperar-publicar.
    */
-  const [escolhidas, setEscolhidas] = useState<{ url: string; arquivo: File; nome: string }[]>([]);
+  const [escolhidas, setEscolhidas] = useState<
+    { url: string; miniUrl: string; arquivo: File; nome: string }[]
+  >([]);
   /** Progresso honesto durante o lote: qual está subindo agora. */
   const [enviandoIndice, setEnviandoIndice] = useState(0);
   const [aApagar, setAApagar] = useState<Momento | null>(null);
@@ -297,6 +299,11 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
           ...antes,
           {
             url: URL.createObjectURL(comprimida.arquivo),
+            // A prévia usa a MINIATURA — Issue #53. Mostrar o arquivo de
+            // 1600px numa `<img>` de 90px faz o navegador decodificar 7,7 MB
+            // por foto: o CSS encolhe o desenho, não a decodificação. Seis
+            // delas somavam ~46 MB e matavam a aba no celular.
+            miniUrl: URL.createObjectURL(comprimida.miniatura),
             arquivo: comprimida.arquivo,
             nome: arquivo.name,
           },
@@ -326,13 +333,20 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
   const removerEscolhida = (indice: number) => {
     setEscolhidas((antes) => {
       const alvo = antes[indice];
-      if (alvo) URL.revokeObjectURL(alvo.url);
+      // As DUAS: cada objeto URL segura seu blob vivo enquanto existir.
+      if (alvo) {
+        URL.revokeObjectURL(alvo.url);
+        URL.revokeObjectURL(alvo.miniUrl);
+      }
       return antes.filter((_, i) => i !== indice);
     });
   };
 
   const limparEscolhidas = () => {
-    for (const e of escolhidas) URL.revokeObjectURL(e.url);
+    for (const e of escolhidas) {
+      URL.revokeObjectURL(e.url);
+      URL.revokeObjectURL(e.miniUrl);
+    }
     setEscolhidas([]);
     setLegenda("");
     if (inputArquivo.current) inputArquivo.current.value = "";
@@ -758,9 +772,13 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
             <ul className="grid grid-cols-3 sm:grid-cols-4 gap-2">
               {escolhidas.map((item, indice) => (
                 <li key={item.url} className="relative">
+                  {/* `miniUrl`, nunca `url` — Issue #53. O CSS encolhe o
+                      desenho, não a decodificação: o arquivo de 1600px numa
+                      miniatura de 90px continua custando 7,7 MB de bitmap. */}
                   <img
-                    src={item.url}
+                    src={item.miniUrl}
                     alt={`${item.nome}, escolhida e ainda não publicada`}
+                    decoding="async"
                     className="aspect-square w-full object-cover rounded-md bg-muted"
                   />
                   {!enviando && (
