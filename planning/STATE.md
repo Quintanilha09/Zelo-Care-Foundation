@@ -53,17 +53,19 @@ Das 10 fases do backlog original só sobraram três buracos, todos deixados de p
 
 ## Onde o desenvolvimento parou
 
-**Cinco Issues abertas, nenhum PR** — medido em 02/09/2026 com `gh`. Este bloco envelhece rápido:
+**Cinco Issues abertas, nenhum PR** — medido em 03/09/2026 com `gh`. Este bloco envelhece rápido:
 se a sessão for depois disso, meça de novo.
 
 | Issue | O quê |
 |---|---|
 | [#53](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/53) | foto some ao publicar no celular — espera duas respostas do fundador |
-| [#46](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/46) | trocar o e-mail da conta — **destravada** em 02/09 |
-| [#75](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/75) | reenviar o e-mail de confirmação: hoje quem não recebe fica preso |
-| [#76](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/76) | Termos, Privacidade e política de dados de saúde **não abrem** — os três links do cadastro estão mortos |
-| [#77](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/77) | confirmar a conta com código de 6 dígitos, no lugar do link — **planejada, aguarda decisão** |
+| [#46](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/46) | trocar o e-mail da conta — **destravada** desde 02/09, é trabalho disponível |
+| [#76](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/76) | Termos, Privacidade e política de dados de saúde **não abrem** — os três links do cadastro estão mortos. Espera **texto do fundador**, não código |
 | [#78](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/78) | não dá para saber em que conta se está: duas contas da mesma pessoa ficam idênticas na tela |
+| [#79](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/79) | código ao entrar de aparelho novo — **planejada**, espera duas decisões do fundador: opcional ou obrigatório, e se 90 dias de aparelho confiável serve |
+
+**Fechadas em 02–03/09/2026:** #73 (provedor de e-mail), #77 (código de 6 dígitos),
+#81 (mensagens do cadastro), #75 (reenvio) e #84 (piso de tempo).
 
 **O teste no aparelho mudou o rumo.** Em 31/08/2026 o fundador abriu o app no celular pela
 primeira vez, e o veredito sobre Momentos foi *"nada do que foi planejado funcionou"* — com razão.
@@ -128,7 +130,7 @@ então nenhum e-mail saía, o login exigia e-mail verificado, e só o Google ent
 | | Estado |
 |---|---|
 | 11.1a destravar o cadastro · 11.2 rede de proteção · 11.3 tipografia | ✅ 23/08/2026 |
-| 11.1b integrar provedor de e-mail | ✅ 02/09/2026, Issue #73. **Verificado em ambiente real no mesmo dia:** o fundador se cadastrou, o e-mail chegou e o link confirmou a conta. Junto vieram as telas `/verificar-email` e `/redefinir-senha`, que **não existiam** — os endpoints de servidor existiam desde sempre e nenhuma tela os chamava |
+| 11.1b integrar provedor de e-mail | ✅ 02/09/2026, Issue #73. **Verificado em ambiente real:** o fundador se cadastrou, o e-mail chegou e a conta foi confirmada. Junto vieram as telas `/verificar-email` e `/redefinir-senha`, que **não existiam**. Em 03/09 a confirmação virou **código de 6 dígitos** (#77), com reenvio e teto de emissão (#75) e piso de tempo contra vazamento por cronômetro (#84) |
 | **11.5 testes de contrato do frontend** | ▶️ **destravada** — era "a UI não abre aqui", e o Playwright roda no CI desde 26/08 |
 | 11.4 fechar a auditoria | depende da 11.5 |
 | 11.6 papel por paciente | ⏸️ `ADIÁVEL` de propósito, sem caso de uso real |

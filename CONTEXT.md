@@ -48,20 +48,18 @@ Medido nesta data, nesta máquina:
 | Modelo de visão | `claude-haiku-4-5-20251001` | `lib/vision.ts` |
 | Fila | **pg-boss** sobre o mesmo Postgres | `lib/queue.ts` |
 
-### Contagem de testes passando — medida em 01/09/2026
+### Contagem de testes passando — medida em 03/09/2026
 
-**Servidor: 592 testes, 580 passando, 12 pulados, zero falhas.**
-**Tela: 120 testes de ponta a ponta**, Playwright, em Desktop Chrome e Pixel 7. Duração: 5,7 min.
+**Servidor: 652 testes, 640 passando, 12 pulados, zero falhas.**
+**Tela: 164 testes de ponta a ponta**, Playwright, em Desktop Chrome e Pixel 7. Duração: 7,8 min.
+**Bibliotecas: 33 testes**, todos passando.
 
-O número de casos que **passam** vem da execução de CI `33354663972` (a do PR #37, verde de
-ponta a ponta) — **não** desta máquina. Ver o aviso logo abaixo. Já a **contagem** de 102 casos
-em 10 arquivos foi conferida aqui em 31/08/2026, no commit 4e3ca3e, com
-`pnpm exec playwright test --list` — enumerar teste não sobe a API, então isso ainda roda nesta
-máquina apesar do bloqueio descrito adiante. Contagem e resultado batem.
+Os números vêm da execução de CI **`33782193689`** — a do PR #85, verde de ponta a ponta —
+e **não** desta máquina. Ver o aviso logo abaixo.
 
-Em 27/08/2026 eram 545 no servidor e 42 na tela. A leva de QUI-15 a QUI-19 dobrou a suíte de
-interface: o cabeçalho com nome longo, o ciclo de vida do tratamento, exportar e excluir conta,
-Ajustes em seções, e o mural em grade.
+Em 01/09/2026 eram 592 no servidor e 120 na tela; em 27/08, 545 e 42. O salto de 02 e 03/09 é a
+leva de e-mail: provedor de verdade (#73), confirmação por código de 6 dígitos (#77), reenvio com
+teto de emissão (#75) e piso de tempo contra vazamento por cronômetro (#84).
 
 ### A suíte NÃO roda mais nesta máquina — 31/08/2026
 
