@@ -44,6 +44,9 @@ export const CHAVE_DO_EMAIL = "zelo:email-a-confirmar";
 
 const DIGITOS = 6;
 
+/** Segundos antes de o reenvio ficar disponível. Ver o comentário em `espera`. */
+const ESPERA_INICIAL_S = 60;
+
 export default function VerifyEmailPage() {
   const [, setLocation] = useLocation();
   const [email, setEmail] = useState("");
@@ -51,6 +54,17 @@ export default function VerifyEmailPage() {
   const [erro, setErro] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [pronto, setPronto] = useState(false);
+  const [reenviando, setReenviando] = useState(false);
+  const [avisoDoReenvio, setAvisoDoReenvio] = useState("");
+  /**
+   * Segundos até o botão de reenvio acender — Issue #75.
+   *
+   * Começa contando: quem chega aqui **acabou de receber** um código. Um botão
+   * de "enviar de novo" já aceso convida a gastar emissão à toa, e o teto é de
+   * cinco por hora. A espera também protege de duplo toque, que num aparelho
+   * lento é o que a pessoa faz quando nada parece acontecer.
+   */
+  const [espera, setEspera] = useState(ESPERA_INICIAL_S);
 
   useEffect(() => {
     try {
@@ -61,6 +75,48 @@ export default function VerifyEmailPage() {
       // motivo para a tela deixar de funcionar.
     }
   }, []);
+
+  // Contagem regressiva do reenvio. Um intervalo só, desmontado junto.
+  useEffect(() => {
+    if (espera <= 0) return;
+    const t = setTimeout(() => setEspera((s) => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [espera]);
+
+  async function reenviar() {
+    if (reenviando || espera > 0) return;
+    setErro("");
+
+    if (!email.trim()) {
+      setErro("Digite o e-mail que você usou no cadastro.");
+      return;
+    }
+
+    setReenviando(true);
+    try {
+      const resposta = await fetch(`${BASE}/api/auth/verify-email/resend`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim() }),
+      });
+      const dados = (await resposta.json().catch(() => ({}))) as { message?: string };
+
+      // O servidor responde a mesma coisa exista ou não a conta — a tela repete
+      // o que ele disser, sem inventar confirmação que ela não tem como dar.
+      setAvisoDoReenvio(
+        dados.message ??
+          "Se houver uma conta pendente com esse e-mail, enviamos um código novo.",
+      );
+      setCodigo("");
+    } catch {
+      setAvisoDoReenvio("Não foi possível falar com o servidor. Tente de novo em instantes.");
+    } finally {
+      setReenviando(false);
+      // A espera reinicia mesmo se deu erro: repetir rápido não ajudaria, e
+      // cada tentativa consome o teto de emissão do servidor.
+      setEspera(ESPERA_INICIAL_S);
+    }
+  }
 
   async function confirmar(codigoParaEnviar: string) {
     if (enviando) return;
@@ -191,10 +247,29 @@ export default function VerifyEmailPage() {
         </Button>
       </form>
 
-      <p className="text-xs text-muted-foreground">
-        Não recebeu? Confira a caixa de spam. Se o prazo passou, cadastre-se de novo com o mesmo
-        e-mail.
-      </p>
+      <div className="space-y-2 pt-2 border-t">
+        <p className="text-xs text-muted-foreground">
+          Não recebeu? Confira a caixa de spam.
+        </p>
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full"
+          disabled={espera > 0 || reenviando}
+          onClick={() => void reenviar()}
+        >
+          {reenviando
+            ? "Enviando…"
+            : espera > 0
+              ? `Enviar de novo em ${espera}s`
+              : "Enviar um código novo"}
+        </Button>
+        {avisoDoReenvio && (
+          <Alert>
+            <AlertDescription>{avisoDoReenvio}</AlertDescription>
+          </Alert>
+        )}
+      </div>
     </Moldura>
   );
 }

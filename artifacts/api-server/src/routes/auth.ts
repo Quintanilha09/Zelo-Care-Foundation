@@ -19,7 +19,7 @@ import { getAuth } from "../lib/auth-types.ts";
 
 import { Router } from "express";
 import { z } from "zod";
-import { eq, and, gt, desc } from "drizzle-orm";
+import { eq, and, gt, gte, desc, count } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   usersTable,
@@ -52,6 +52,7 @@ import {
   passwordResetLimiter,
   publicTokenLimiter,
   refreshLimiter,
+  resendVerificationLimiter,
 } from "../lib/rate-limit";
 import { Clock } from "../lib/clock";
 import { resolveActiveCaregiver } from "../lib/active-family.ts";
@@ -63,6 +64,9 @@ import {
   normalizarCodigo,
   expiraEm,
   MAX_TENTATIVAS,
+  MAX_CODIGOS_POR_HORA,
+  inicioDaMedicao,
+  esperarAtePiso,
 } from "../lib/codigo-de-verificacao.ts";
 
 const router = Router();
@@ -334,14 +338,34 @@ router.post("/auth/register", registerLimiter, async (req, res): Promise<void> =
  * tentativas por código deixam a chance em 1 para 200.000. Ver a conta inteira
  * em `lib/codigo-de-verificacao.ts`.
  */
-const RECUSA_GENERICA = "Código inválido ou expirado. Peça um novo cadastro se o prazo passou.";
+const RECUSA_GENERICA = "Código inválido ou expirado. Peça um código novo.";
+
+/**
+ * Resposta única do reenvio — Issue #75.
+ *
+ * A mesma para conta que existe, conta que não existe, conta já confirmada e
+ * conta que estourou o teto de emissão. Se o teto tivesse recado próprio, ele
+ * mesmo viraria o oráculo que a resposta genérica existe para fechar: "esta
+ * conta existe, está pendente, e alguém andou pedindo código".
+ */
+const RESPOSTA_DO_REENVIO =
+  "Se houver uma conta pendente com esse e-mail, enviamos um código novo. Confira sua caixa de entrada e o spam.";
 
 router.post("/auth/verify-email", publicTokenLimiter, async (req, res): Promise<void> => {
+  // Issue #84: toda resposta desta rota sai depois do mesmo tempo mínimo. Sem
+  // isso, conta inexistente respondia mais rápido que conta existente — e o
+  // relógio contava o que o corpo da resposta calava.
+  const inicio = inicioDaMedicao();
+  const recusar = async (): Promise<void> => {
+    await esperarAtePiso(inicio);
+    res.status(400).json({ error: RECUSA_GENERICA });
+  };
+
   const email = String(req.body?.email ?? "").toLowerCase().trim();
   const codigo = normalizarCodigo(req.body?.codigo);
 
   if (!email || !codigo) {
-    res.status(400).json({ error: RECUSA_GENERICA });
+    await recusar();
     return;
   }
 
@@ -353,7 +377,7 @@ router.post("/auth/verify-email", publicTokenLimiter, async (req, res): Promise<
 
   // Conta inexistente sai pela mesma porta que código errado.
   if (!user) {
-    res.status(400).json({ error: RECUSA_GENERICA });
+    await recusar();
     return;
   }
 
@@ -371,7 +395,7 @@ router.post("/auth/verify-email", publicTokenLimiter, async (req, res): Promise<
     .limit(1);
 
   if (!record || record.attempts >= MAX_TENTATIVAS) {
-    res.status(400).json({ error: RECUSA_GENERICA });
+    await recusar();
     return;
   }
 
@@ -387,7 +411,7 @@ router.post("/auth/verify-email", publicTokenLimiter, async (req, res): Promise<
       { action: "verify_email_codigo_errado", outcome: String(record.attempts + 1) },
       "Codigo de verificacao incorreto",
     );
-    res.status(400).json({ error: RECUSA_GENERICA });
+    await recusar();
     return;
   }
 
@@ -401,7 +425,117 @@ router.post("/auth/verify-email", publicTokenLimiter, async (req, res): Promise<
   });
 
   safeLog.info({ action: "verify_email_ok" }, "Conta confirmada por codigo");
+  await esperarAtePiso(inicio);
   res.json({ message: "E-mail confirmado. Faça login para continuar." });
+});
+
+/**
+ * Reenviar o código de confirmação — Issue #75.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ESTA ROTA DEVOLVE TENTATIVAS AO ATACANTE. O TETO DE EMISSÃO ABAIXO NÃO É
+ * ACABAMENTO — É O QUE IMPEDE O REENVIO DE VIRAR MÁQUINA DE ADIVINHAR.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Antes desta rota existir, o sistema tinha **um** código por conta, para
+ * sempre: cinco tentativas e acabou, 1 chance em 200.000. Essa robustez era
+ * acidental — vinha justamente da falta de um jeito de pedir outro código.
+ *
+ * Cada reenvio devolve cinco palpites. Sem teto, o número acima deixa de valer
+ * e o limite passa a ser a paciência de quem ataca. Com o teto por conta:
+ *
+ *   5 códigos/hora × 5 tentativas = 25 palpites/hora em 1.000.000
+ *
+ * ── Por que a rota existe, apesar disso ───────────────────────────────────
+ *
+ * Sem ela, cinco erros de digitação **trancavam a pessoa para sempre**: o
+ * e-mail fica queimado pela checagem de unicidade, e não havia como pedir outro
+ * código. Num app de medicamento de idoso, cuidador trancado do lado de fora é
+ * problema de segurança do paciente, não de conveniência.
+ *
+ * ── Uma resposta só, sempre ───────────────────────────────────────────────
+ *
+ * Existe, não existe, já confirmada, teto estourado: a mesma frase, o mesmo
+ * status, o mesmo tempo. Ver `RESPOSTA_DO_REENVIO`.
+ */
+router.post("/auth/verify-email/resend", resendVerificationLimiter, async (req, res): Promise<void> => {
+  const inicio = inicioDaMedicao();
+  const responder = async (): Promise<void> => {
+    await esperarAtePiso(inicio);
+    res.json({ message: RESPOSTA_DO_REENVIO });
+  };
+
+  const email = String(req.body?.email ?? "").toLowerCase().trim();
+  if (!email) {
+    await responder();
+    return;
+  }
+
+  // Sem provedor não há o que enviar. Responde igual mesmo assim: quem está
+  // sondando não precisa saber que o envio está fora do ar.
+  if (!allowsDevelopmentShortcuts() && !hasEmailProvider()) {
+    await responder();
+    return;
+  }
+
+  const [user] = await db
+    .select({ id: usersTable.id, emailVerified: usersTable.emailVerified })
+    .from(usersTable)
+    .where(eq(usersTable.email, email))
+    .limit(1);
+
+  // Conta inexistente e conta já confirmada saem pela mesma porta. A segunda
+  // importa tanto quanto a primeira: reenviar código para conta confirmada não
+  // faz sentido, e responder diferente entregaria o estado dela.
+  if (!user || user.emailVerified) {
+    await responder();
+    return;
+  }
+
+  const umaHoraAtras = new Date(Clock.now().getTime() - 60 * 60 * 1000);
+  const [emitidos] = await db
+    .select({ total: count() })
+    .from(emailVerificationsTable)
+    .where(
+      and(
+        eq(emailVerificationsTable.userId, user.id),
+        gte(emailVerificationsTable.createdAt, umaHoraAtras)
+      )
+    );
+
+  if ((emitidos?.total ?? 0) >= MAX_CODIGOS_POR_HORA) {
+    safeLog.warn(
+      { action: "reenvio_acima_do_teto", outcome: String(emitidos?.total ?? 0) },
+      "Teto de emissao de codigo atingido para uma conta",
+    );
+    await responder();
+    return;
+  }
+
+  const codigo = gerarCodigo();
+  await db.transaction(async (tx) => {
+    // Aposenta os anteriores ANTES de emitir. Cada código vivo é mais cinco
+    // tentativas oferecidas — deixar dois valendo dobraria a janela de graça.
+    await tx
+      .update(emailVerificationsTable)
+      .set({ used: true, usedAt: Clock.now() })
+      .where(
+        and(
+          eq(emailVerificationsTable.userId, user.id),
+          eq(emailVerificationsTable.used, false)
+        )
+      );
+    await tx.insert(emailVerificationsTable).values({
+      userId: user.id,
+      tokenHash: hashDoCodigo(user.id, codigo),
+      expiresAt: expiraEm(Clock.now()),
+    });
+  });
+
+  await sendVerificationEmail(email, codigo);
+
+  safeLog.info({ action: "reenvio_de_codigo" }, "Codigo de confirmacao reenviado");
+  await responder();
 });
 
 // ── LOGIN ────────────────────────────────────────────────────────────────

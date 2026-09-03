@@ -49,6 +49,62 @@ export const VALIDADE_MINUTOS = 10;
 export const MAX_TENTATIVAS = 5;
 
 /**
+ * Códigos que uma CONTA pode receber por hora — Issue #75.
+ *
+ * Por conta, e não só por IP, porque botnet troca de IP e não troca de conta.
+ * É este teto que impede o reenvio de virar máquina de tentativas: sem ele,
+ * cada pedido devolveria mais cinco palpites, sem fim.
+ *
+ *   5 códigos × 5 tentativas = 25 palpites por hora em 1.000.000
+ *   → ~20.000 horas (mais de dois anos) para chegar a 50% numa conta só
+ *
+ * Enquanto o reenvio não existia, o sistema tinha UM código por conta, para
+ * sempre — 1 chance em 200.000. Aquela robustez era acidental, vinda da falta
+ * desta rota. Este número é o que a substitui de propósito.
+ */
+export const MAX_CODIGOS_POR_HORA = 5;
+
+/**
+ * Tempo mínimo de resposta das rotas de código — Issue #84.
+ *
+ * **O problema.** A confirmação responde a mesma coisa para código errado,
+ * expirado, esgotado e conta inexistente. O conteúdo é idêntico; o **tempo**
+ * não era: conta inexistente saía depois de uma consulta, conta existente fazia
+ * duas, mais hash, mais às vezes um `UPDATE`. Quem cronometrasse distinguia os
+ * dois — e descobria quais e-mails têm conta no ZELO, que é exatamente o que a
+ * resposta genérica existe para esconder.
+ *
+ * **Por que piso e não "igualar as consultas".** Igualar cobre a leitura e não
+ * cobre a escrita: o `UPDATE` do contador de tentativas só acontece num dos
+ * caminhos. O piso mascara tudo o que estiver abaixo dele, inclusive isso.
+ *
+ * **Isto é mitigação, não tempo constante.** Tempo constante de verdade contra
+ * um banco de dados não existe: uma consulta lenta por contenção estoura
+ * qualquer piso. O que o piso faz é tirar do atacante o sinal barato — e o
+ * caro, ele já não tem, porque o `publicTokenLimiter` corta a coleta.
+ *
+ * 250 ms: acima de qualquer caminho normal desta rota, e imperceptível numa
+ * ação que a pessoa faz uma vez na vida.
+ */
+export const PISO_DE_RESPOSTA_MS = 250;
+
+/**
+ * Marca o início, para o piso de tempo. `performance.now()` de propósito:
+ * é monotônico, então ajuste de relógio não produz duração negativa. Também
+ * não é leitura de relógio de parede, então não conflita com a regra do
+ * `lint:clock` — isto mede duração, não decide "que horas são".
+ */
+export function inicioDaMedicao(): number {
+  return performance.now();
+}
+
+/** Segura a resposta até `PISO_DE_RESPOSTA_MS` desde `inicio`. */
+export async function esperarAtePiso(inicio: number): Promise<void> {
+  const falta = PISO_DE_RESPOSTA_MS - (performance.now() - inicio);
+  if (falta > 0) await new Promise((r) => setTimeout(r, falta));
+}
+
+/**
  * Sorteia o código.
  *
  * `randomInt` do módulo `crypto`, nunca `Math.random()`: o segundo é previsível
