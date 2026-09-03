@@ -274,9 +274,9 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
               onCheckedChange={(v) => setConsentTerms(v === true)} />
             <Label htmlFor="consent-terms" className="text-sm leading-relaxed cursor-pointer">
               Li e aceito os{' '}
-              <a href="/termos" className="underline" target="_blank" rel="noopener">Termos de Uso</a>
+              <a href={`${BASE}/termos`} className="underline" target="_blank" rel="noopener">Termos de Uso</a>
               {' '}e a{' '}
-              <a href="/privacidade" className="underline" target="_blank" rel="noopener">Política de Privacidade</a>
+              <a href={`${BASE}/privacidade`} className="underline" target="_blank" rel="noopener">Política de Privacidade</a>
               {' '}(versão v1.0)
             </Label>
           </div>
@@ -286,7 +286,7 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
             <Label htmlFor="consent-health" className="text-sm leading-relaxed cursor-pointer">
               Consinto com o tratamento de <strong>dados de saúde do paciente</strong>{' '}
               (medicamentos, doses, aferições) conforme a{' '}
-              <a href="/consentimento-saude" className="underline" target="_blank" rel="noopener">
+              <a href={`${BASE}/consentimento-saude`} className="underline" target="_blank" rel="noopener">
                 política de dados de saúde
               </a>
               {' '}(versão v1.0 — rascunho, pendente de revisão jurídica)
