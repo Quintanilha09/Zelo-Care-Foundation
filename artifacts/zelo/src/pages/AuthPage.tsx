@@ -13,6 +13,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useLocation } from 'wouter';
+import { CHAVE_DO_EMAIL } from './VerifyEmailPage';
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
 
@@ -116,6 +118,7 @@ function LoginForm() {
 // ── Cadastro ───────────────────────────────────────────────────────────────
 
 function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
+  const [, setLocation] = useLocation();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -158,8 +161,30 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
           ...(inviteToken ? { inviteToken } : {}),
         }),
       });
-      const data = await res.json() as { error?: string; message?: string };
+      const data = await res.json() as {
+        error?: string; message?: string; precisaDeCodigo?: boolean;
+      };
       if (!res.ok) throw new Error(data.error ?? 'Erro ao criar conta');
+
+      // Issue #77: quando o servidor mandou um código, a pessoa vai direto
+      // digitá-lo. Sem isto, o cadastro terminava numa mensagem e num
+      // redirecionamento para o login — que ela ainda não pode usar, porque
+      // entrar exige e-mail confirmado. Um beco de três segundos.
+      //
+      // Quem decide é o servidor, pelo campo `precisaDeCodigo`: em
+      // desenvolvimento a conta já nasce ativa, e ali não há código nenhum.
+      if (data.precisaDeCodigo) {
+        try {
+          // Pelo sessionStorage e não pela URL: e-mail em query string vaza
+          // para histórico, log de servidor e cabeçalho Referer.
+          sessionStorage.setItem(CHAVE_DO_EMAIL, email);
+        } catch {
+          // Armazenamento bloqueado: a tela do código pede o e-mail. Segue.
+        }
+        setLocation('/verificar-email');
+        return;
+      }
+
       // A mensagem vem do servidor: ele é quem sabe se a conta já ficou ativa
       // (desenvolvimento) ou se falta confirmar o e-mail. O texto fixo que
       // estava aqui dizia 'em desenvolvimento a conta já está ativa' para

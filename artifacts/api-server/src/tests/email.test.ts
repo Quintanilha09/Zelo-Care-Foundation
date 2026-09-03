@@ -126,11 +126,11 @@ describe("Envio de e-mail pelo Resend", () => {
 
   it("manda HTML e texto puro, e os dois carregam o MESMO link", async () => {
     responderSempre(200);
-    const { sendVerificationEmail } = await importarEmail();
-    await sendVerificationEmail("alguem@exemplo.com", "tok123");
+    const { sendPasswordResetEmail } = await importarEmail();
+    await sendPasswordResetEmail("alguem@exemplo.com", "tok123");
 
     const { html, text } = corpoEnviado();
-    const esperado = `${APP}/verificar-email?token=tok123`;
+    const esperado = `${APP}/redefinir-senha?token=tok123`;
 
     assert.ok(html.length > 0 && text.length > 0, "as duas versões precisam existir");
     assert.ok(html.includes(esperado), "o HTML precisa levar ao link certo");
@@ -144,17 +144,62 @@ describe("Envio de e-mail pelo Resend", () => {
     responderSempre(200);
     const email = await importarEmail();
 
-    await email.sendVerificationEmail("a@exemplo.com", "t1");
     await email.sendPasswordResetEmail("a@exemplo.com", "t2");
     await email.sendCaregiverInviteEmail("a@exemplo.com", "t3");
     await email.sendDeletionNotification(["a@exemplo.com"], new Date("2026-09-09T12:00:00Z"));
 
-    // As três primeiras têm tela desde a Issue #73; a quarta apontava para
+    // Estes três têm tela desde a Issue #73; o aviso de exclusão apontava para
     // `/conta/exclusao`, rota que nunca existiu — a real é `/ajustes/seus-dados`.
-    assert.ok(corpoEnviado(0).text.includes(`${APP}/verificar-email?token=t1`));
-    assert.ok(corpoEnviado(1).text.includes(`${APP}/redefinir-senha?token=t2`));
-    assert.ok(corpoEnviado(2).text.includes(`${APP}/convite?token=t3`));
-    assert.ok(corpoEnviado(3).text.includes(`${APP}/ajustes/seus-dados`));
+    // A verificação saiu desta lista na Issue #77: virou código, não tem link.
+    assert.ok(corpoEnviado(0).text.includes(`${APP}/redefinir-senha?token=t2`));
+    assert.ok(corpoEnviado(1).text.includes(`${APP}/convite?token=t3`));
+    assert.ok(corpoEnviado(2).text.includes(`${APP}/ajustes/seus-dados`));
+  });
+
+  // ── O e-mail de verificação virou código — Issue #77 ───────────────────
+
+  it("o e-mail de verificação leva o CÓDIGO, no corpo e no assunto", async () => {
+    responderSempre(200);
+    const { sendVerificationEmail } = await importarEmail();
+    await sendVerificationEmail("alguem@exemplo.com", "482915");
+
+    const { html, text, subject } = corpoEnviado();
+
+    assert.ok(text.includes("482915"), "a versão texto precisa trazer o código");
+    assert.ok(html.includes("482915"), "o HTML precisa trazer o código");
+    // No assunto porque é o que aparece na notificação do celular: dá para ler
+    // sem abrir o e-mail, sem trocar de aplicativo, sem perder de vista a tela
+    // onde o código vai ser digitado.
+    assert.ok(subject.startsWith("482915"), `o código precisa abrir o assunto, veio: ${subject}`);
+  });
+
+  it("o e-mail de verificação NÃO tem link — não há para onde mandar a pessoa", async () => {
+    responderSempre(200);
+    const { sendVerificationEmail } = await importarEmail();
+    await sendVerificationEmail("alguem@exemplo.com", "482915");
+
+    const { html, text } = corpoEnviado();
+    for (const [nome, conteudo] of [["html", html], ["texto", text]] as const) {
+      assert.ok(
+        !conteudo.includes("/verificar-email?"),
+        `${nome}: sobrou link com token do desenho antigo`,
+      );
+      assert.ok(!/<a\s/i.test(conteudo), `${nome}: não deve haver botão nem link`);
+    }
+  });
+
+  it("o código sai copiável — dígitos juntos, sem espaço no meio", async () => {
+    responderSempre(200);
+    const { sendVerificationEmail } = await importarEmail();
+    await sendVerificationEmail("alguem@exemplo.com", "482915");
+
+    // O fundador pediu para poder copiar e colar. Separar os dígitos com espaço
+    // (`4 8 2 9 1 5`) ou com traço faria o valor colado não bater com o que a
+    // tela espera. O afastamento visual é `letter-spacing`, que não entra na
+    // seleção.
+    const { html, text } = corpoEnviado();
+    assert.ok(html.includes(">482915<"), "no HTML o código é um texto contínuo");
+    assert.ok(text.split("\n").includes("482915"), "no texto o código ocupa uma linha só, limpa");
   });
 
   it("o corpo do e-mail não vaza o token de outra pessoa nem nome de paciente", async () => {
