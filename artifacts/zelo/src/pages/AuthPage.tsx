@@ -128,6 +128,7 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [mensagemSucesso, setMensagemSucesso] = useState('');
+  const [jaTemConta, setJaTemConta] = useState(false);
   // Existe provedor de e-mail? Mesmo contrato do /auth/google/status.
   // Sem ele, o cadastro por e-mail e senha cria uma conta que nunca poderá
   // ser verificada — então o formulário não é oferecido.
@@ -162,9 +163,16 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
         }),
       });
       const data = await res.json() as {
-        error?: string; message?: string; precisaDeCodigo?: boolean;
+        error?: string; message?: string; precisaDeCodigo?: boolean; code?: string;
       };
-      if (!res.ok) throw new Error(data.error ?? 'Erro ao criar conta');
+      if (!res.ok) {
+        // Issue #81: quando o e-mail ja tem conta, a tela oferece o caminho em
+        // vez de so informar o problema. Ler "ja existe" e ter que descobrir
+        // sozinho onde clicar e meio caminho de ajuda.
+        setJaTemConta(data.code === 'EMAIL_JA_CADASTRADO');
+        throw new Error(data.error ?? 'Erro ao criar conta');
+      }
+      setJaTemConta(false);
 
       // Issue #77: quando o servidor mandou um código, a pessoa vai direto
       // digitá-lo. Sem isto, o cadastro terminava numa mensagem e num
@@ -191,7 +199,11 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
       // qualquer pessoa, inclusive em produção.
       setMensagemSucesso(data.message ?? 'Conta criada.');
       setSuccess(true);
-      setTimeout(() => onSuccess(), 3000);
+      // Issue #81: aqui havia `setTimeout(() => onSuccess(), 3000)`. A tela
+      // trocava sozinha em três segundos, tivesse a pessoa terminado de ler ou
+      // não — e o caso mais grave é justamente o que mais precisa de calma: o
+      // "não conseguimos enviar o código", em que o caminho dela muda. Quem
+      // decide quando sair agora é ela, pelo botão abaixo.
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao criar conta');
     } finally {
@@ -201,9 +213,14 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
 
   if (success) {
     return (
-      <Alert>
-        <AlertDescription>{mensagemSucesso}</AlertDescription>
-      </Alert>
+      <div className="space-y-4">
+        <Alert>
+          <AlertDescription>{mensagemSucesso}</AlertDescription>
+        </Alert>
+        <Button className="w-full" onClick={onSuccess}>
+          Ir para a entrada
+        </Button>
+      </div>
     );
   }
 
@@ -230,6 +247,11 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
     <div className="space-y-4">
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
+        {jaTemConta && (
+          <Button type="button" variant="outline" className="w-full" onClick={onSuccess}>
+            Ir para a entrada
+          </Button>
+        )}
         <div className="space-y-2">
           <CampoLabel htmlFor="reg-name" obrigatorio>Nome completo</CampoLabel>
           <Input id="reg-name" value={name} onChange={(e) => setName(e.target.value)} required minLength={2} />
