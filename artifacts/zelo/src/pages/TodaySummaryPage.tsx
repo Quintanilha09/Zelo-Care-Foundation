@@ -21,6 +21,7 @@ import { Link } from "wouter";
 import { authFetch } from "@/lib/auth-client";
 import { AppHeader } from "@/components/app-header";
 import { AreaCarregando, Esqueleto } from "@/components/esqueleto";
+import { nomeCurto } from "@workspace/nomes";
 import { CheckCircle2, AlertCircle, ChevronRight, Users, Clock } from "lucide-react";
 
 interface PatientSummary {
@@ -143,7 +144,9 @@ export default function TodaySummaryPage() {
                       }`}
                     >
                       <div className="flex-1 min-w-0">
-                        <p className="text-[17px] font-medium truncate">{p.patientName}</p>
+                        <p className="text-[17px] font-medium truncate" title={p.patientName}>
+                          {nomeCurto(p.patientName)}
+                        </p>
                         <p className={`text-sm ${atencao ? "text-zelo-amber-fg" : "text-muted-foreground"}`}>
                           {statusLine(p)}
                         </p>

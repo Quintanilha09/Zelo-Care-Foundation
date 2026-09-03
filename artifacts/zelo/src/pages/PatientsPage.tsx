@@ -12,6 +12,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
 import { AreaCarregando, Esqueleto } from "@/components/esqueleto";
+import { nomeCurto } from "@workspace/nomes";
 import { Plus, User, ChevronRight } from "lucide-react";
 
 /**
@@ -138,8 +139,22 @@ export default function PatientsPage() {
                 <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center shrink-0">
                   <User className="w-6 h-6 text-muted-foreground" />
                 </div>
-                <div className="flex-1">
-                  <p className="text-[18px] font-medium">{patient.name}</p>
+                {/* Issue #88. Duas coisas, e as duas precisam existir:
+
+                    `min-w-0` - sem ele este item de flex NAO ENCOLHE abaixo
+                    da largura do proprio conteudo (`min-width: auto` e o
+                    padrao), entao uma palavra comprida empurra a linha e a
+                    pagina inteira ganha rolagem horizontal. `flex-1` nao
+                    resolve: ele e `flex: 1 1 0%`, e o `min-width: auto`
+                    vence a base zero.
+
+                    `nomeCurto` - decisao do fundador: guardar completo,
+                    mostrar curto. O nome inteiro fica no `title`, e continua
+                    inteiro na ficha e na exportacao. */}
+                <div className="flex-1 min-w-0">
+                  <p className="text-[18px] font-medium break-words" title={patient.name}>
+                    {nomeCurto(patient.name)}
+                  </p>
                   <p className="text-sm text-muted-foreground">{patient.timezone}</p>
                 </div>
                 <ChevronRight className="w-5 h-5 text-muted-foreground" />

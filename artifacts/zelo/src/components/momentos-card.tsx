@@ -1087,7 +1087,8 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
                     entre uma foto com legenda longa e uma sem legenda. Antes
                     essa diferença ia para a altura do diálogo. */}
                 <div className="flex-1 min-h-0 overflow-y-auto space-y-2">
-                {momentoAberto.caption && <p className="text-sm">{momentoAberto.caption}</p>}
+                {/* Issue #88: legenda tambem e texto livre do usuario. */}
+                {momentoAberto.caption && <p className="text-sm break-words">{momentoAberto.caption}</p>}
   
                 {/* QUI-10 — quem reagiu, por extenso.
                     `quemReagiu.length` existe, mas ninguém o escreve na tela:

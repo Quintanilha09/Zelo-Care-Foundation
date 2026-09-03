@@ -28,6 +28,7 @@ import {
 import { AreaCarregando, Esqueleto } from "@/components/esqueleto";
 import { ArrowLeft, Plus, Pill, Package, Trash2, Smartphone, Tablet, Pause, Play, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { nomeCurto, foiEncurtado } from "@workspace/nomes";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -459,12 +460,20 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
             e **o que dá para fazer** nela. */}
         <div className="space-y-4">
           <div className="min-w-0">
-            {/* `title` guarda o nome inteiro. Truncar na tela não pode
-                significar perder a informação — nem para quem passa o
-                mouse, nem para quem usa leitor de tela. */}
-            <h2 className="text-2xl font-semibold truncate" title={patient?.name}>
-              {patient?.name ?? "…"}
+            {/* Issue #88: aqui era `truncate` no nome completo, e truncar
+                produzia "Maria Aparecida da Concei…" - que nao e o nome de
+                ninguem. Agora o titulo e o nome curto, e o completo aparece
+                logo abaixo quando os dois diferem.
+
+                Esta e a tela onde o nome completo TEM que estar visivel: e
+                a que o cuidador abre quando precisa do nome como esta no
+                documento - farmacia, consulta, receita. */}
+            <h2 className="text-2xl font-semibold break-words" title={patient?.name}>
+              {patient ? nomeCurto(patient.name) : "…"}
             </h2>
+            {patient && foiEncurtado(patient.name) && (
+              <p className="text-sm text-muted-foreground break-words">{patient.name}</p>
+            )}
             <p className="text-muted-foreground text-[17px] truncate">{patient?.timezone}</p>
           </div>
 
@@ -848,7 +857,7 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
               <div>
                 <p className="font-medium">Modo idoso</p>
                 <p className="text-sm text-muted-foreground">
-                  Uma tela simples, com letra grande, só para {patient?.name ?? "a pessoa"} confirmar que tomou o remédio.
+                  Uma tela simples, com letra grande, só para {patient ? nomeCurto(patient.name) : "a pessoa"} confirmar que tomou o remédio.
                 </p>
               </div>
               <Switch
@@ -873,14 +882,14 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
                         sem isso um nome longo empurra o "recomendado" para
                         fora da linha. Mesmo padrao provado pela QUI-15 no
                         cabecalho da ficha (Issue #55). */}
-                    <p className="text-sm font-medium min-w-0 truncate">No celular de {patient.name}</p>
+                    <p className="text-sm font-medium min-w-0 truncate" title={patient.name}>No celular de {nomeCurto(patient.name)}</p>
                     <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-zelo-green-bg text-zelo-green-fg shrink-0">recomendado</span>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Envie um link. {patient.name} abre no próprio celular e pronto — sem criar senha, sem preencher nada.
+                    Envie um link. {nomeCurto(patient.name)} abre no próprio celular e pronto — sem criar senha, sem preencher nada.
                     O aparelho dela não fica com o seu acesso de cuidador.
                   </p>
-                  <PatientAccessCard patientId={Number(params.id)} patientName={patient.name} />
+                  <PatientAccessCard patientId={Number(params.id)} patientName={nomeCurto(patient.name)} />
                 </div>
 
                 <div className="rounded-lg border p-3 space-y-2">
@@ -889,7 +898,7 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
                     <p className="text-sm font-medium">Neste aparelho que você está usando agora</p>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Só faz sentido num tablet ou celular que fique com {patient.name} — por exemplo, um aparelho fixo na casa.
+                    Só faz sentido num tablet ou celular que fique com {nomeCurto(patient.name)} — por exemplo, um aparelho fixo na casa.
                     Ele vai usar a <strong>sua</strong> sessão, e sair exige a sua senha.
                   </p>
                   <Button variant="outline" size="sm" onClick={handleActivateElderModeOnDevice}>
@@ -908,7 +917,7 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
         {/* QUI-7: seção própria do paciente, ao lado de Rotina, Consultas e
             Histórico. Não cabe dentro de nenhuma delas — não é sobre um
             remédio nem sobre uma consulta, é sobre a pessoa. */}
-        {patient && <MomentosCard patientId={Number(params.id)} patientName={patient.name} />}
+        {patient && <MomentosCard patientId={Number(params.id)} patientName={nomeCurto(patient.name)} />}
 
         <NotificationPreferencesCard patientId={Number(params.id)} />
 
@@ -917,7 +926,7 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
             <div>
               <p className="font-medium text-destructive">Excluir paciente</p>
               <p className="text-sm text-muted-foreground">
-                Apaga {patient.name} e todo o histórico (tratamentos, doses, consultas, aferições) de forma permanente. Não é o mesmo que arquivar — não tem como desfazer.
+                Apaga {nomeCurto(patient.name)} e todo o histórico (tratamentos, doses, consultas, aferições) de forma permanente. Não é o mesmo que arquivar — não tem como desfazer.
               </p>
             </div>
             <Dialog
@@ -929,7 +938,7 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
               </Button>
               <DialogContent className="max-w-md">
                 <DialogHeader>
-                  <DialogTitle>Excluir {patient.name}</DialogTitle>
+                  <DialogTitle>Excluir {nomeCurto(patient.name)}</DialogTitle>
                   <DialogDescription>
                     Esta ação é permanente e apaga todo o histórico do paciente. Conte rapidamente o motivo e digite o nome completo pra confirmar.
                   </DialogDescription>
@@ -947,7 +956,11 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="del-confirm">
-                      Digite <span className="font-semibold">{patient.name}</span> pra confirmar
+                      {/* Nome COMPLETO de proposito, e sem encurtar: e o
+                          texto que a pessoa vai digitar para confirmar uma
+                          exclusao permanente. `break-words` porque um nome
+                          de 60 caracteres nao pode estourar o dialogo. */}
+                      Digite <span className="font-semibold break-words">{patient.name}</span> pra confirmar
                     </Label>
                     <Input
                       id="del-confirm"
