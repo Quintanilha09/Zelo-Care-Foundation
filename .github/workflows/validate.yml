@@ -13,36 +13,124 @@ concurrency:
   group: validate-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# ─────────────────────────────────────────────────────────────────────────────
+# TRES JOBS EM PARALELO, E NAO UM EM SEQUENCIA.
+#
+# Medido na execucao 33782193689 (verde, 03/09/2026), quando tudo rodava num
+# job so:
+#
+#   preparo + typecheck + lint + build + testes de lib .....  ~1min30
+#   testes de integracao ...................................  8min43
+#   Playwright .............................................  7min49
+#   ------------------------------------------------------------------
+#   total ..................................................  18min
+#
+# As duas etapas longas sao independentes e estavam esperando uma pela outra.
+# Em paralelo, o relogio marca a mais longa e nao a soma: ~9 minutos.
+#
+# ── O que se perde, e por que vale ──────────────────────────────────────────
+#
+# Antes, o Playwright era o ultimo passo e so rodava se todo o resto passasse.
+# Agora ele comeca junto, entao um PR com erro de typecheck gasta minutos de
+# Playwright a toa.
+#
+# O repositorio e publico, e minuto de Actions em repositorio publico e de
+# graca. Estamos trocando computacao que nao pagamos por nove minutos de espera
+# em todo PR — e a espera e paga por quem esta revisando.
+#
+# ── Por que o preparo aparece tres vezes ────────────────────────────────────
+#
+# Checkout, pnpm, Node e install se repetem em cada job. Daria para extrair
+# numa action composta; ficaria mais curto e menos legivel. Arquivo de CI e lido
+# por quem esta investigando uma falha, muitas vezes com pressa — explicito
+# ganha de seco aqui.
+# ─────────────────────────────────────────────────────────────────────────────
+
+env:
+  DATABASE_URL: postgresql://zelo_ci:zelo_ci@localhost:5432/zelo_ci
+  # Os dois PRECISAM ser diferentes. Eram identicos ate 23/08/2026, e isso
+  # fundia o painel operacional e a sessao de cuidador num unico dominio de
+  # confianca: um token de admin passava por verifyAccessToken como se fosse
+  # sessao. O teste que protege essa fronteira falhou com 404 em vez de 401.
+  ADMIN_PANEL_SECRET: ci-admin-${{ github.run_id }}-${{ github.run_attempt }}
+  SESSION_SECRET: ci-session-${{ github.run_id }}-${{ github.run_attempt }}
+  NODE_ENV: test
+  CI: "true"
+  # Os dois vite.config.ts (zelo e mockup-sandbox) exigem PORT no topo do
+  # arquivo e lancam sem ele. A exigencia faz sentido para `vite dev`, que
+  # precisa saber onde servir; para `vite build`, que so gera arquivo, o
+  # valor e irrelevante — mas o throw esta no topo e roda nos dois casos.
+  #
+  # Sem esta linha o passo de Build falhava SEMPRE, desde que este workflow
+  # veio para o main, e por um motivo sem relacao com o codigo em revisao.
+  # CI sempre vermelho e CI que ninguem olha.
+  #
+  # Sao exatamente DUAS as exigidas, confirmado lendo os dois configs
+  # inteiros: PORT e BASE_PATH. REPL_ID e so consultada, nunca exigida.
+  # O valor de BASE_PATH nao importa aqui — o build do CI valida que
+  # compila, nunca e publicado.
+  PORT: "5000"
+  BASE_PATH: "/"
+
 jobs:
-  verify:
-    name: Typecheck, test, and build
+  # ── Rapido, e sem banco ───────────────────────────────────────────────────
+  # Nada aqui precisa de Postgres. Termina em ~1min30 e da o primeiro sinal
+  # de vida do PR muito antes dos outros dois.
+  estatico:
+    name: Typecheck, lint e build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Enforce clock usage
+        run: pnpm --filter @workspace/api-server lint:clock
+
+      # Biome e PORTAO: falha o build. As regras foram calibradas para pegar
+      # defeito, nao estilo — ver os comentarios em biome.jsonc.
+      - name: Lint (Biome)
+        run: pnpm run lint
+
+      # Knip e RELATORIO, nao portao: `|| true` de proposito.
+      #
+      # A primeira execucao achou 98 arquivos sem uso. Fazer o CI falhar com
+      # esse numero criaria um portao que ninguem atravessa — e portao assim se
+      # contorna, nao se respeita. O numero aparece no log; apertar ate virar
+      # portao e trabalho de outra historia.
+      - name: Codigo morto (Knip, so relatorio)
+        run: pnpm run deadcode || true
+
+      # Rapidos e sem banco. Ficaram fora do CI ate 23/08/2026 — 33 casos que
+      # passavam e nunca eram exercidos (auditoria §10).
+      - name: Run library tests
+        run: pnpm run test:libs
+
+      - name: Build
+        run: pnpm run build
+
+  # ── A suite do servidor ───────────────────────────────────────────────────
+  integracao:
+    name: Testes de servidor
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    env:
-      DATABASE_URL: postgresql://zelo_ci:zelo_ci@localhost:5432/zelo_ci
-      # Os dois PRECISAM ser diferentes. Eram identicos ate 23/08/2026, e isso
-      # fundia o painel operacional e a sessao de cuidador num unico dominio de
-      # confianca: um token de admin passava por verifyAccessToken como se fosse
-      # sessao. O teste que protege essa fronteira falhou com 404 em vez de 401.
-      ADMIN_PANEL_SECRET: ci-admin-${{ github.run_id }}-${{ github.run_attempt }}
-      SESSION_SECRET: ci-session-${{ github.run_id }}-${{ github.run_attempt }}
-      NODE_ENV: test
-      CI: "true"
-      # Os dois vite.config.ts (zelo e mockup-sandbox) exigem PORT no topo do
-      # arquivo e lancam sem ele. A exigencia faz sentido para `vite dev`, que
-      # precisa saber onde servir; para `vite build`, que so gera arquivo, o
-      # valor e irrelevante — mas o throw esta no topo e roda nos dois casos.
-      #
-      # Sem esta linha o passo de Build falhava SEMPRE, desde que este workflow
-      # veio para o main, e por um motivo sem relacao com o codigo em revisao.
-      # CI sempre vermelho e CI que ninguem olha.
-      #
-      # Sao exatamente DUAS as exigidas, confirmado lendo os dois configs
-      # inteiros: PORT e BASE_PATH. REPL_ID e so consultada, nunca exigida.
-      # O valor de BASE_PATH nao importa aqui — o build do CI valida que
-      # compila, nunca e publicado.
-      PORT: "5000"
-      BASE_PATH: "/"
     services:
       postgres:
         image: postgres:16-alpine
@@ -80,38 +168,58 @@ jobs:
           pnpm --filter @workspace/db push
           pnpm --filter @workspace/db push:raw
 
-      - name: Typecheck
-        run: pnpm run typecheck
-
-      - name: Enforce clock usage
-        run: pnpm --filter @workspace/api-server lint:clock
-
-      # Rápidos e sem banco: falham antes de subir o Postgres se o motor de
-      # recorrência quebrar. Ficaram fora do CI até 23/08/2026 — 33 casos que
-      # passavam e nunca eram exercidos (auditoria §10).
-      # Biome e PORTAO: falha o build. As regras foram calibradas para pegar
-      # defeito, nao estilo — ver os comentarios em biome.jsonc.
-      - name: Lint (Biome)
-        run: pnpm run lint
-
-      # Knip e RELATORIO, nao portao: `|| true` de proposito.
-      #
-      # A primeira execucao achou 98 arquivos sem uso. Fazer o CI falhar com
-      # esse numero criaria um portao que ninguem atravessa — e portao assim se
-      # contorna, nao se respeita. O numero aparece no log; apertar ate virar
-      # portao e trabalho de outra historia.
-      - name: Codigo morto (Knip, so relatorio)
-        run: pnpm run deadcode || true
-
-      - name: Run library tests
-        run: pnpm run test:libs
-
+      # `--test-concurrency=1` esta no proprio script e e obrigatorio: a suite
+      # divide um banco so. Paralelizar aqui exigiria um banco por worker, que
+      # e outra historia.
       - name: Run integration tests
         run: pnpm --filter @workspace/api-server test:all
 
-      # Playwright por ultimo: e o passo mais caro, e so faz sentido rodar se
-      # tudo o mais ja passou. Instala so o chromium — os outros navegadores
-      # triplicariam o tempo sem mudar nada do que este app precisa provar.
+  # ── A suite de tela ───────────────────────────────────────────────────────
+  # Precisa de Postgres tambem: o `webServer` do Playwright sobe a API de
+  # verdade, e ela nao abre sem banco.
+  ponta-a-ponta:
+    name: Testes de tela (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: zelo_ci
+          POSTGRES_USER: zelo_ci
+          POSTGRES_PASSWORD: zelo_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U zelo_ci -d zelo_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Create test database schema
+        run: |
+          pnpm --filter @workspace/db push
+          pnpm --filter @workspace/db push:raw
+
+      # So o chromium — os outros navegadores triplicariam o tempo sem mudar
+      # nada do que este app precisa provar.
       - name: Instalar navegador do Playwright
         run: pnpm exec playwright install chromium --with-deps
 
@@ -129,6 +237,3 @@ jobs:
             playwright-report/
             test-results/
           retention-days: 7
-
-      - name: Build
-        run: pnpm run build

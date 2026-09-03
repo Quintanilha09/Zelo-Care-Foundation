@@ -371,8 +371,12 @@ describe("Painel operacional e sessão de cuidador não compartilham segredo", (
     const workflow = `${raiz}../../../.github/workflows/validate.yml`;
     if (!existsSync(workflow)) return;
     const conteudo = readFileSync(workflow, "utf8");
-    const admin = conteudo.match(/ADMIN_PANEL_SECRET:s*(.+)/)?.[1]?.trim();
-    const session = conteudo.match(/SESSION_SECRET:s*(.+)/)?.[1]?.trim();
+    // `\s*`, com a barra. Estava `s*` — que casa com "zero letras s" e por
+    // acaso funcionava, porque o formato tem um espaço depois dos dois pontos.
+    // Regex quebrada num teste de segurança é o tipo de coisa que só aparece
+    // no dia em que o formato muda e o guardrail para de guardar em silêncio.
+    const admin = conteudo.match(/ADMIN_PANEL_SECRET:\s*(.+)/)?.[1]?.trim();
+    const session = conteudo.match(/\bSESSION_SECRET:\s*(.+)/)?.[1]?.trim();
     assert.ok(admin && session, "o workflow precisa definir os dois segredos");
     assert.notEqual(
       admin,
