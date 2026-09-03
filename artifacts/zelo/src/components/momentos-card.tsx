@@ -119,6 +119,12 @@ const MS_DE_SAIDA = 120;
  * Casado com o `mediaUploadLimiter` do servidor (100/hora por pessoa): cinco
  * lotes cheios cabem numa hora. Sem teto, escolher a galeria inteira no
  * celular levaria 429 no meio do envio.
+ *
+ * **Este número e o do servidor são um par, e já divergiram** — Issue #90. O
+ * limitador ficou em 30/hora por dois meses enquanto o comentário dele mesmo
+ * anunciava 100: a correção do PR #70 foi escrita em prosa e nunca aplicada ao
+ * valor. Um guardrail em `environment-hardening.test.ts` agora lê os dois
+ * arquivos e falha se voltarem a discordar.
  */
 const MAX_POR_LOTE = 20;
 

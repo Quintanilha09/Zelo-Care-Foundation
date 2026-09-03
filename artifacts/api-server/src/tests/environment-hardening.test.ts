@@ -579,3 +579,54 @@ describe("Compressão de foto solta a memória do canvas", () => {
     );
   });
 });
+
+/**
+ * O teto do lote e o limitador de envio moram em pacotes diferentes — #90.
+ *
+ * ── O que aconteceu, e por que uma varredura é a resposta ─────────────────
+ *
+ * O comentário do `mediaUploadLimiter` dizia, desde o PR #70, que o limite
+ * havia subido de 30 para 100 por hora — e explicava por quê: com o lote da
+ * Issue #64, um passeio de fim de semana batia no teto e o próprio app levava
+ * 429.
+ *
+ * **A linha do `limit` nunca foi trocada.** A correção existiu só em prosa, e
+ * `MAX_POR_LOTE = 20` foi calibrado acreditando nela. Ficou assim por dois
+ * meses, até o fundador reportar que não conseguia enviar mais fotos.
+ *
+ * Nada pegou porque os dois números vivem em pacotes diferentes: um no
+ * servidor, outro na tela, sem nada ligando um ao outro. Corrigir só os valores
+ * deixaria a mesma armadilha armada.
+ */
+describe("O lote da tela cabe no limitador do servidor", () => {
+  /** Quantos lotes cheios o comentário do limitador promete numa hora. */
+  const LOTES_POR_HORA_PROMETIDOS = 5;
+
+  it("os dois números existem onde a varredura espera", () => {
+    const card = `${raiz}../../zelo/src/components/momentos-card.tsx`;
+    assert.ok(existsSync(card), "momentos-card.tsx mudou de lugar — atualize este guardrail");
+    assert.ok(existsSync(`${raiz}lib/rate-limit.ts`));
+  });
+
+  it("MAX_POR_LOTE cabe no mediaUploadLimiter, com a folga que o comentário promete", () => {
+    const card = readFileSync(`${raiz}../../zelo/src/components/momentos-card.tsx`, "utf8");
+    const limites = ler("lib/rate-limit.ts");
+
+    const porLote = Number(/const MAX_POR_LOTE = (\d+)/.exec(card)?.[1]);
+    // A linha do limitador é `limit: N * M`; só o N interessa aqui, porque em
+    // produção M vale 1.
+    const trecho = limites.slice(limites.indexOf("export const mediaUploadLimiter"));
+    const porHora = Number(/limit:\s*(\d+)\s*\*\s*M/.exec(trecho)?.[1]);
+
+    assert.ok(Number.isFinite(porLote), "não consegui ler MAX_POR_LOTE");
+    assert.ok(Number.isFinite(porHora), "não consegui ler o limite do mediaUploadLimiter");
+
+    assert.ok(
+      porHora >= porLote * LOTES_POR_HORA_PROMETIDOS,
+      `o limitador aceita ${porHora}/hora e a tela permite lotes de ${porLote}: ` +
+        `cabem ${Math.floor(porHora / porLote)} lotes, e o comentário promete ` +
+        `${LOTES_POR_HORA_PROMETIDOS}. Foi exatamente essa divergência que fez o ` +
+        "segundo lote de um passeio levar 429 no meio do envio.",
+    );
+  });
+});
