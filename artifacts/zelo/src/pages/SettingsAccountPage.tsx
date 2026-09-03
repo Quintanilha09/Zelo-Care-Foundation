@@ -23,7 +23,8 @@
  * nome definitivo. Está na Issue #46, bloqueada. Nome e senha não dependem de
  * nada — por isso vieram primeiro.
  */
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { CampoLabel } from "@/components/campo-label";
 import { Link } from "wouter";
 import { authFetch, setTokens } from "@/lib/auth-client";
 import { useAuth } from "@/context/AuthContext";
@@ -48,6 +49,89 @@ export default function SettingsAccountPage() {
   const [trocandoSenha, setTrocandoSenha] = useState(false);
   const [erroDaSenha, setErroDaSenha] = useState("");
   const [senhaTrocada, setSenhaTrocada] = useState(false);
+
+  // ── Troca de e-mail — Issue #46 ────────────────────────────────────────
+  const [emailNovo, setEmailNovo] = useState("");
+  const [senhaParaEmail, setSenhaParaEmail] = useState("");
+  const [codigo, setCodigo] = useState("");
+  const [salvandoEmail, setSalvandoEmail] = useState(false);
+  const [erroDoEmail, setErroDoEmail] = useState("");
+  const [emailTrocado, setEmailTrocado] = useState(false);
+  /** Pedido de troca esperando confirmação, se houver. */
+  const [pendente, setPendente] = useState<{ novoEmail: string } | null>(null);
+
+  // Quem recarrega a página no meio da troca precisa reencontrar o pedido —
+  // senão pediria de novo e gastaria outro código à toa.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await authFetch("/api/account/email/change");
+        if (!res.ok) return;
+        const dados = (await res.json()) as { pendente: { novoEmail: string } | null };
+        setPendente(dados.pendente);
+      } catch {
+        // Sem conexão: a tela abre no formulário normal. Pedir de novo é
+        // recuperável; travar a tela por causa disto não seria.
+      }
+    })();
+  }, []);
+
+  const pedirTroca = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSalvandoEmail(true);
+    setErroDoEmail("");
+    try {
+      const res = await authFetch("/api/account/email/change", {
+        method: "POST",
+        body: JSON.stringify({ novoEmail: emailNovo, senhaAtual: senhaParaEmail }),
+      });
+      const corpo = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(corpo.error ?? "Não conseguimos pedir a troca.");
+
+      setPendente({ novoEmail: emailNovo.trim().toLowerCase() });
+      setSenhaParaEmail("");
+    } catch (err) {
+      setErroDoEmail(err instanceof Error ? err.message : "Não conseguimos pedir a troca.");
+    } finally {
+      setSalvandoEmail(false);
+    }
+  };
+
+  const confirmarTroca = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSalvandoEmail(true);
+    setErroDoEmail("");
+    try {
+      const res = await authFetch("/api/account/email/confirm", {
+        method: "POST",
+        body: JSON.stringify({ codigo }),
+      });
+      const corpo = (await res.json().catch(() => ({}))) as {
+        error?: string; accessToken?: string; refreshToken?: string; expiresIn?: number;
+      };
+      if (!res.ok) throw new Error(corpo.error ?? "Código inválido.");
+
+      // O servidor derruba todas as sessões e devolve um par novo — sem
+      // guardá-lo, a própria pessoa que trocou seria deslogada no ato.
+      if (corpo.accessToken && corpo.refreshToken && corpo.expiresIn) {
+        setTokens({
+          accessToken: corpo.accessToken,
+          refreshToken: corpo.refreshToken,
+          expiresIn: corpo.expiresIn,
+        });
+      }
+      await recarregarUsuario();
+      setPendente(null);
+      setCodigo("");
+      setEmailNovo("");
+      setEmailTrocado(true);
+    } catch (err) {
+      setErroDoEmail(err instanceof Error ? err.message : "Código inválido.");
+      setCodigo("");
+    } finally {
+      setSalvandoEmail(false);
+    }
+  };
 
   const salvarNome = async () => {
     setSalvandoNome(true);
@@ -248,12 +332,103 @@ export default function SettingsAccountPage() {
           </div>
         </section>
 
-        {/* Dito, e não escondido: quem procura trocar o e-mail precisa saber
-            por que não acha, senão procura para sempre. */}
-        <p className="text-sm text-muted-foreground">
-          Trocar o e-mail ainda não está disponível — ele é o seu login, e a
-          troca só é segura com confirmação no endereço novo.
-        </p>
+        {/* ── Trocar o e-mail — Issue #46 ─────────────────────────────────
+            Deixou de ser o aviso de "ainda não dá" quando o provedor de e-mail
+            passou a existir (Issue #73) e a confirmação por código ficou pronta
+            (#77). */}
+        <section className="space-y-4 pt-2 border-t">
+          <div>
+            <h2 className="font-medium">Trocar o e-mail de acesso</h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              É com ele que você entra. A troca só vale depois que você confirmar
+              um código enviado ao endereço novo — e avisamos o endereço atual de
+              que a troca foi pedida.
+            </p>
+          </div>
+
+          {pendente ? (
+            <div className="space-y-3">
+              <Alert>
+                <AlertDescription>
+                  Enviamos um código para <strong>{pendente.novoEmail}</strong>. Digite
+                  abaixo para concluir. Até lá, seu acesso continua pelo e-mail atual.
+                </AlertDescription>
+              </Alert>
+
+              <form onSubmit={confirmarTroca} className="space-y-3">
+                <div className="space-y-2">
+                  <CampoLabel htmlFor="codigo-email" obrigatorio>
+                    Código de 6 dígitos
+                  </CampoLabel>
+                  <Input
+                    id="codigo-email"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    value={codigo}
+                    onChange={(e) => setCodigo(e.target.value)}
+                    required
+                  />
+                </div>
+                {erroDoEmail && (
+                  <Alert><AlertDescription>{erroDoEmail}</AlertDescription></Alert>
+                )}
+                <Button type="submit" disabled={salvandoEmail}>
+                  {salvandoEmail ? "Confirmando…" : "Confirmar troca"}
+                </Button>
+              </form>
+            </div>
+          ) : (
+            <form onSubmit={pedirTroca} className="space-y-3">
+              <div className="space-y-2">
+                <CampoLabel htmlFor="email-novo" obrigatorio>
+                  E-mail novo
+                </CampoLabel>
+                <Input
+                  id="email-novo"
+                  type="email"
+                  autoComplete="email"
+                  value={emailNovo}
+                  onChange={(e) => setEmailNovo(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <CampoLabel htmlFor="senha-para-email" obrigatorio>
+                  Sua senha atual
+                </CampoLabel>
+                <Input
+                  id="senha-para-email"
+                  type="password"
+                  autoComplete="current-password"
+                  value={senhaParaEmail}
+                  onChange={(e) => setSenhaParaEmail(e.target.value)}
+                  required
+                />
+                {/* A senha não é burocracia: sessão aberta não prova quem está
+                    sentado ali, e trocar o e-mail entrega os links de
+                    recuperação a quem trocou. */}
+                <p className="text-xs text-muted-foreground">
+                  Pedimos a senha porque trocar o e-mail dá acesso à recuperação
+                  da conta.
+                </p>
+              </div>
+              {erroDoEmail && (
+                <Alert><AlertDescription>{erroDoEmail}</AlertDescription></Alert>
+              )}
+              <Button type="submit" disabled={salvandoEmail}>
+                {salvandoEmail ? "Enviando…" : "Enviar código para o e-mail novo"}
+              </Button>
+            </form>
+          )}
+
+          {emailTrocado && (
+            <Alert>
+              <AlertDescription>
+                E-mail trocado. Use o endereço novo da próxima vez que entrar.
+              </AlertDescription>
+            </Alert>
+          )}
+        </section>
       </main>
     </div>
   );
