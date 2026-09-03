@@ -102,6 +102,21 @@ arquivo, e monitor de janela de contexto.
 - **Bug reportado em ambiente real que você não explica pelo código: reproduza ANTES de editar.**
   Corrigir pelo sintoma já falhou duas vezes seguidas no mesmo bug.
 - **Ao fechar uma história, informe proativamente os comandos de deploy do Replit**, mesmo sem ninguém perguntar.
+- **Toda implementação testável termina com um roteiro de teste para o fundador.** Regra dele,
+  03/09/2026. Testável = tem comportamento que uma pessoa verifica usando o app. Mudança só de
+  documentação, refatoração sem efeito observável e configuração de CI não geram roteiro.
+  - **Publique como artefato e entregue o link.** Ele segue os passos com o celular na mão,
+    numa tela diferente da do chat — rolagem de terminal é o pior lugar possível para isso.
+  - **Cada passo diz o que fazer, o que esperar, e como é a falha.** "Testar o cadastro" não é
+    passo; "criar conta com um e-mail que já existe, e a mensagem tem que dizer que já existe" é.
+  - **Separe o que precisa de modo produção.** O workflow do Replit roda
+    `NODE_ENV=development`, e nele a conta se auto-verifica e **nenhum e-mail sai** — roteiro que
+    ignora isso manda o fundador testar e-mail num ambiente onde e-mail não existe. Já aconteceu.
+  - **Marque o passo que mais importa, e diga por quê.** Num lote de sete, ele precisa saber qual
+    não pode pular.
+  - **Não peça o que o CI já prova.** Roteiro é para o que só o aparelho dele responde: tela,
+    celular, e-mail chegando de verdade. Repetir asserção de teste automatizado gasta o tempo dele
+    e não acrescenta nada.
 - **Responda ao fundador em português, e de forma simples.** Ele não é leigo, mas a resposta
   precisa deixar claro **o que você fez, o que está fazendo e o que vai fazer** — sem exigir que
   ele decifre jargão ou reconstrua o raciocínio sozinho. Frase curta, termo técnico só quando
