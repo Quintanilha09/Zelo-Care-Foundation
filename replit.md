@@ -13,6 +13,23 @@ de medicamentos, consultas e aferições de um paciente — sem duplicidade e se
   ser iniciado manualmente**, não sobe sozinho. Depois de `git pull`, reiniciar por ali.
 - **Nunca rodar `pnpm run dev` no Shell para isso** — dá erro de `PORT` faltando. Quem define
   essa variável é o mecanismo de Workflow, não o shell.
+
+### Os workflows liberam a própria porta antes de subir
+
+Cada um roda `scripts/liberar-porta.mjs` antes do comando. **Dar play sempre funciona**, mesmo
+que a porta esteja ocupada — o processo anterior é encerrado e o novo assume.
+
+Isso existe porque a porta ocupada era o erro mais frequente e o mais opaco daqui:
+
+- O botão **Run** monta sozinho um workflow **"Project"** que roda os três em paralelo. Ele
+  **não está no `.replit`** — o Replit o gera a partir do `runButton`. Com ele ligado, as três
+  portas estão tomadas, e clicar em play num workflow individual falhava com `EADDRINUSE`
+- Subir um servidor à mão no Shell também travava o workflow depois. E subir à mão é
+  **necessário** para testar e-mail: o workflow roda `NODE_ENV=development`, e nesse modo o
+  cadastro auto-verifica a conta e **nenhum e-mail é enviado**
+
+O script mata **só quem está escutando naquela porta** — lendo `/proc`, porque `lsof`, `fuser` e
+`ss` não existem nesta imagem. Nunca por nome nem por padrão de linha de comando.
 - `pnpm run typecheck` — typecheck de todos os pacotes
 - `pnpm run build` — typecheck + build
 - `pnpm --filter @workspace/api-server run test:all` — suíte completa (precisa de `DATABASE_URL`

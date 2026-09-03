@@ -22,7 +22,7 @@ artifactId = "artifacts/zelo"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "pnpm --filter @workspace/zelo run dev"
+args = "node ../../scripts/liberar-porta.mjs 22427; pnpm --filter @workspace/zelo run dev"
 cwd = "./artifacts/zelo"
 waitForPort = 22427
 ensurePreviewReachable = "/"
@@ -44,7 +44,7 @@ isCanvasWorkflow = true
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "pnpm --filter @workspace/mockup-sandbox run dev"
+args = "node ../../scripts/liberar-porta.mjs 8081; pnpm --filter @workspace/mockup-sandbox run dev"
 cwd = "./artifacts/mockup-sandbox"
 waitForPort = 8081
 ensurePreviewReachable = "/"
@@ -65,7 +65,7 @@ artifactId = "3B4_FFSkEVBkAeYMFRJ2e"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "pnpm --filter @workspace/api-server run dev"
+args = "node ../../scripts/liberar-porta.mjs 8080; pnpm --filter @workspace/api-server run dev"
 cwd = "./artifacts/api-server"
 waitForPort = 8080
 ensurePreviewReachable = "/"
