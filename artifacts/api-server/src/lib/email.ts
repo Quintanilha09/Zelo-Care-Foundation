@@ -365,6 +365,73 @@ export async function sendVerificationEmail(email: string, codigo: string): Prom
   );
 }
 
+/**
+ * Código para confirmar o endereço NOVO, numa troca de e-mail — Issue #46.
+ *
+ * Vai para o endereço novo, e é a prova de que quem pediu a troca controla o
+ * destino. Sem isso, um erro de digitação viraria conta inacessível e um
+ * atacante escreveria o próprio endereço na conta alheia.
+ */
+export async function sendEmailChangeCode(novoEmail: string, codigo: string): Promise<boolean> {
+  devLog("Código de troca de e-mail emitido", `${baseUrl()}/ajustes/conta`);
+
+  return enviar(
+    {
+      para: novoEmail,
+      assunto: `${codigo} é o seu código para trocar o e-mail — ZELO`,
+      titulo: "Confirme este endereço",
+      paragrafos: [
+        "Alguém pediu para passar a usar este endereço como e-mail de acesso ao ZELO. Digite o código na tela do aplicativo para confirmar.",
+      ],
+      codigo,
+      aviso: "O código vale 10 minutos. Se você não pediu isso, ignore este e-mail — sem o código, a troca não acontece e a conta continua com o endereço atual.",
+    },
+    "troca_de_email",
+  );
+}
+
+/**
+ * Aviso ao endereço ANTIGO de que a troca foi pedida — Issue #46.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ESTE É O E-MAIL QUE SALVA UMA CONTA SEQUESTRADA.
+ *
+ * Os outros dois controles da troca — senha atual e código no endereço novo —
+ * já falharam quando alguém está sentado numa sessão aberta e conhece a senha.
+ * Este aviso é o único que chega a quem foi lesado, e é o que dá a ela a
+ * chance de reagir antes de perder o acesso.
+ *
+ * Ele sai **quando a troca é PEDIDA**, não quando é concluída: avisar depois é
+ * avisar tarde.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * O endereço novo aparece por inteiro, e não mascarado: quem lê é a dona da
+ * conta, e o endereço é a prova do que aconteceu.
+ */
+export async function sendEmailChangeWarning(
+  emailAntigo: string,
+  novoEmail: string,
+): Promise<boolean> {
+  const link = `${baseUrl()}/ajustes/conta`;
+  devLog("Aviso de troca de e-mail ao endereço antigo", link);
+
+  return enviar(
+    {
+      para: emailAntigo,
+      assunto: "Pediram para trocar o e-mail da sua conta — ZELO",
+      titulo: "Alguém pediu para trocar seu e-mail",
+      paragrafos: [
+        `Foi pedida a troca do e-mail de acesso da sua conta no ZELO para ${novoEmail}.`,
+        "Se foi você, não precisa fazer nada: basta confirmar o código que enviamos para o endereço novo.",
+        "Se NÃO foi você, alguém tem acesso à sua conta. Troque sua senha agora — isso encerra todas as sessões abertas e cancela a troca.",
+      ],
+      acao: { rotulo: "Trocar minha senha agora", url: link },
+      aviso: "Enquanto o código não for confirmado, seu e-mail de acesso continua sendo este.",
+    },
+    "aviso_de_troca_de_email",
+  );
+}
+
 /** Envia e-mail de recuperação de senha. */
 export async function sendPasswordResetEmail(email: string, token: string): Promise<boolean> {
   const link = `${baseUrl()}/redefinir-senha?token=${token}`;

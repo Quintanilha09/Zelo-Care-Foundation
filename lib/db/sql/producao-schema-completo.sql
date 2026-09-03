@@ -368,6 +368,21 @@ CREATE TABLE "email_verifications" (
 --> statement-breakpoint
 CREATE INDEX "idx_email_verifications_ativo" ON "email_verifications" ("user_id","used","expires_at");
 --> statement-breakpoint
+CREATE TABLE "email_changes" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"user_id" integer NOT NULL,
+	"novo_email" text NOT NULL,
+	"codigo_hash" text NOT NULL,
+	"attempts" integer DEFAULT 0 NOT NULL,
+	"expires_at" timestamp with time zone NOT NULL,
+	"used" boolean DEFAULT false NOT NULL,
+	"used_at" timestamp with time zone,
+	"request_ip" text,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE INDEX "idx_email_changes_pendente" ON "email_changes" ("user_id","used","expires_at");
+--> statement-breakpoint
 CREATE TABLE "password_resets" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"user_id" integer NOT NULL,
@@ -497,6 +512,7 @@ ALTER TABLE "push_subscriptions" ADD CONSTRAINT "push_subscriptions_family_id_fa
 ALTER TABLE "notification_preferences" ADD CONSTRAINT "notification_preferences_caregiver_id_caregivers_id_fk" FOREIGN KEY ("caregiver_id") REFERENCES "public"."caregivers"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "notification_preferences" ADD CONSTRAINT "notification_preferences_patient_id_patients_id_fk" FOREIGN KEY ("patient_id") REFERENCES "public"."patients"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "email_verifications" ADD CONSTRAINT "email_verifications_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "email_changes" ADD CONSTRAINT "email_changes_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "password_resets" ADD CONSTRAINT "password_resets_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "export_tokens" ADD CONSTRAINT "export_tokens_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "export_tokens" ADD CONSTRAINT "export_tokens_family_id_families_id_fk" FOREIGN KEY ("family_id") REFERENCES "public"."families"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

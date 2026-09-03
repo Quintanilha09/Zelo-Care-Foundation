@@ -24,6 +24,7 @@ export * from "./notification-preferences";
 export * from "./operational-alerts";
 // autenticação: tokens e fluxos
 export * from "./email-verifications";
+export * from "./email-changes";
 export * from "./password-resets";
 export * from "./export-tokens";
 export * from "./oauth-login-codes";

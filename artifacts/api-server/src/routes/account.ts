@@ -15,7 +15,7 @@ import { apagarMidiasDaFamilia } from "../lib/media-cleanup.ts";
  */
 
 import { Router } from "express";
-import { eq, and, lte, gt, inArray } from "drizzle-orm";
+import { eq, and, lte, gt, desc, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@workspace/db";
 import {
@@ -25,9 +25,15 @@ import {
   patientsTable,
   familiesTable,
   refreshTokensTable,
+  emailChangesTable,
 } from "@workspace/db";
 import { requireAuth, requirePrimaryCaregiver } from "../middleware/require-auth";
-import { sendDeletionNotification } from "../lib/email";
+import {
+  sendDeletionNotification,
+  sendEmailChangeCode,
+  sendEmailChangeWarning,
+  hasEmailProvider,
+} from "../lib/email";
 import { audit } from "../lib/audit";
 import { safeLog } from "../lib/safe-logger";
 import { revokeAllAccessTokensForUser, generateAccessToken, generateRefreshToken } from "../lib/tokens";
@@ -35,7 +41,18 @@ import { Clock } from "../lib/clock";
 import { listCaregiverLinks, switchActiveFamily } from "../lib/active-family.ts";
 import { getPlanTier, PLAN_LIMITS, PLAN_LABELS } from "../lib/plan-limits.ts";
 import { verifyPassword, hashPassword, validatePasswordStrength } from "../lib/password";
-import { verifyPasswordLimiter } from "../lib/rate-limit";
+import { verifyPasswordLimiter, publicTokenLimiter } from "../lib/rate-limit";
+import { allowsDevelopmentShortcuts } from "../lib/environment.ts";
+import {
+  gerarCodigo,
+  hashDoCodigo,
+  conferirHash,
+  normalizarCodigo,
+  expiraEm,
+  MAX_TENTATIVAS,
+  inicioDaMedicao,
+  esperarAtePiso,
+} from "../lib/codigo-de-verificacao.ts";
 
 const router = Router();
 
@@ -655,6 +672,290 @@ router.post("/account/password", requireAuth, verifyPasswordLimiter, async (req,
   });
 
   res.json({ accessToken, refreshToken: refreshRaw, expiresIn: 900 });
+});
+
+// ── TROCAR O E-MAIL DA CONTA — Issue #46 ─────────────────────────────────
+//
+// ═══════════════════════════════════════════════════════════════════════════
+// A ROTA MAIS PERIGOSA DA CONTA.
+//
+// Quem troca o e-mail passa a receber os próprios links de recuperação de
+// senha. Uma sessão esquecida num computador emprestado, ou um XSS de um
+// minuto, viram **sequestro permanente** se a troca valer sem prova.
+//
+// Três controles, e nenhum é opcional:
+//
+//   1. senha atual         — sessão aberta não prova quem está ali
+//   2. código no NOVO      — só quem controla o destino confirma
+//   3. aviso ao ANTIGO     — é o único que chega a quem foi lesado
+//
+// O terceiro é o que costuma faltar nos produtos que erram isso, e é o único
+// que ainda funciona quando os dois primeiros já foram vencidos. Ele sai
+// quando a troca é PEDIDA, não quando é concluída: avisar depois é tarde.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const TrocarEmailBody = z.object({
+  novoEmail: z.string().email().max(254),
+  senhaAtual: z.string().min(1),
+});
+
+/** O que a tela precisa saber para mostrar "aguardando confirmação". */
+router.get("/account/email/change", requireAuth, async (req, res): Promise<void> => {
+  const [pendente] = await db
+    .select({ novoEmail: emailChangesTable.novoEmail, expiraEm: emailChangesTable.expiresAt })
+    .from(emailChangesTable)
+    .where(
+      and(
+        eq(emailChangesTable.userId, getAuth(req).userId),
+        eq(emailChangesTable.used, false),
+        gt(emailChangesTable.expiresAt, Clock.now())
+      )
+    )
+    .orderBy(desc(emailChangesTable.id))
+    .limit(1);
+
+  res.json({ pendente: pendente ?? null });
+});
+
+router.post("/account/email/change", requireAuth, verifyPasswordLimiter, async (req, res): Promise<void> => {
+  if (!allowsDevelopmentShortcuts() && !hasEmailProvider()) {
+    res.status(503).json({
+      error: "Não é possível trocar o e-mail agora, porque não conseguimos enviar a confirmação. Tente mais tarde.",
+      code: "EMAIL_PROVIDER_UNAVAILABLE",
+    });
+    return;
+  }
+
+  const body = TrocarEmailBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: "Informe o e-mail novo e a sua senha atual." });
+    return;
+  }
+
+  const novoEmail = body.data.novoEmail.toLowerCase().trim();
+
+  const [user] = await db
+    .select({ email: usersTable.email, passwordHash: usersTable.passwordHash })
+    .from(usersTable)
+    .where(eq(usersTable.id, getAuth(req).userId))
+    .limit(1);
+
+  if (!user) {
+    res.status(404).json({ error: "Conta não encontrada." });
+    return;
+  }
+
+  // Conta só do Google não tem senha — e sem senha falta um dos três controles,
+  // então a troca não é oferecida. Mesmo tratamento do `/account/password`.
+  if (!user.passwordHash || user.passwordHash === "!") {
+    res.status(400).json({
+      error: "Esta conta entra pelo Google, e o e-mail dela é o da conta Google. Para trocar, troque no Google.",
+      code: "NO_PASSWORD_SET",
+    });
+    return;
+  }
+
+  if (!(await verifyPassword(user.passwordHash, body.data.senhaAtual))) {
+    res.status(401).json({ error: "Senha atual incorreta.", code: "INVALID_PASSWORD" });
+    return;
+  }
+
+  if (novoEmail === user.email.toLowerCase()) {
+    res.status(400).json({ error: "Este já é o e-mail da sua conta." });
+    return;
+  }
+
+  // Dizer claramente que o endereço está em uso, e não esconder: quem pergunta
+  // já está autenticado e já provou a senha. Mesma conclusão da Issue #81 —
+  // vaguidão que não protege só atrapalha quem é de verdade.
+  const [ocupado] = await db
+    .select({ id: usersTable.id })
+    .from(usersTable)
+    .where(eq(usersTable.email, novoEmail))
+    .limit(1);
+
+  if (ocupado) {
+    res.status(409).json({
+      error: "Já existe uma conta no ZELO com esse e-mail.",
+      code: "EMAIL_JA_CADASTRADO",
+    });
+    return;
+  }
+
+  const codigo = gerarCodigo();
+  await db.transaction(async (tx) => {
+    // Aposenta pedidos anteriores: dois códigos vivos seriam dez tentativas em
+    // vez de cinco, e dois endereços de destino concorrendo pela mesma conta.
+    await tx
+      .update(emailChangesTable)
+      .set({ used: true, usedAt: Clock.now() })
+      .where(and(eq(emailChangesTable.userId, getAuth(req).userId), eq(emailChangesTable.used, false)));
+
+    await tx.insert(emailChangesTable).values({
+      userId: getAuth(req).userId,
+      novoEmail,
+      codigoHash: hashDoCodigo(getAuth(req).userId, codigo),
+      expiresAt: expiraEm(Clock.now()),
+      requestIp: req.ip ?? null,
+    });
+  });
+
+  // Os dois envios, nesta ordem. O aviso ao antigo NÃO é condicionado ao
+  // sucesso do primeiro: se o código não sair, a dona da conta ainda precisa
+  // saber que alguém tentou.
+  await sendEmailChangeCode(novoEmail, codigo);
+  await sendEmailChangeWarning(user.email, novoEmail);
+
+  safeLog.info({ action: "email_change_requested", userId: getAuth(req).userId }, "Troca de e-mail pedida");
+  await audit({
+    familyId: getAuth(req).familyId,
+    entityType: "user",
+    entityId: String(getAuth(req).userId),
+    action: "updated",
+    actorId: String(getAuth(req).caregiverId),
+    actorType: "caregiver",
+    ipAddress: req.ip ?? undefined,
+  });
+
+  res.json({
+    message: "Enviamos um código de 6 dígitos para o endereço novo. Avisamos o endereço atual de que a troca foi pedida.",
+  });
+});
+
+const ConfirmarEmailBody = z.object({ codigo: z.string().min(1) });
+
+router.post("/account/email/confirm", requireAuth, publicTokenLimiter, async (req, res): Promise<void> => {
+  const inicio = inicioDaMedicao();
+  const recusar = async (): Promise<void> => {
+    await esperarAtePiso(inicio);
+    res.status(400).json({ error: "Código inválido ou expirado. Peça a troca de novo." });
+  };
+
+  const body = ConfirmarEmailBody.safeParse(req.body);
+  const codigo = body.success ? normalizarCodigo(body.data.codigo) : null;
+  if (!codigo) {
+    await recusar();
+    return;
+  }
+
+  const [pedido] = await db
+    .select()
+    .from(emailChangesTable)
+    .where(
+      and(
+        eq(emailChangesTable.userId, getAuth(req).userId),
+        eq(emailChangesTable.used, false),
+        gt(emailChangesTable.expiresAt, Clock.now())
+      )
+    )
+    .orderBy(desc(emailChangesTable.id))
+    .limit(1);
+
+  if (!pedido || pedido.attempts >= MAX_TENTATIVAS) {
+    await recusar();
+    return;
+  }
+
+  if (!conferirHash(pedido.codigoHash, hashDoCodigo(getAuth(req).userId, codigo))) {
+    await db
+      .update(emailChangesTable)
+      .set({ attempts: pedido.attempts + 1 })
+      .where(eq(emailChangesTable.id, pedido.id));
+    safeLog.warn(
+      { action: "email_change_codigo_errado", outcome: String(pedido.attempts + 1) },
+      "Codigo de troca de e-mail incorreto",
+    );
+    await recusar();
+    return;
+  }
+
+  // Última conferência antes de gravar: o endereço pode ter sido tomado por
+  // outra conta entre o pedido e a confirmação. Sem isto, a transação
+  // estouraria com violação de unicidade e a pessoa veria um erro sem sentido.
+  const [ocupadoAgora] = await db
+    .select({ id: usersTable.id })
+    .from(usersTable)
+    .where(eq(usersTable.email, pedido.novoEmail))
+    .limit(1);
+
+  if (ocupadoAgora) {
+    await db
+      .update(emailChangesTable)
+      .set({ used: true, usedAt: Clock.now() })
+      .where(eq(emailChangesTable.id, pedido.id));
+    await esperarAtePiso(inicio);
+    res.status(409).json({
+      error: "Esse e-mail foi cadastrado em outra conta enquanto você confirmava. Peça a troca com outro endereço.",
+      code: "EMAIL_JA_CADASTRADO",
+    });
+    return;
+  }
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(usersTable)
+      .set({ email: pedido.novoEmail, updatedAt: Clock.now() })
+      .where(eq(usersTable.id, getAuth(req).userId));
+
+    // `caregivers.email` guarda uma cópia do endereço (ver o schema). Deixar a
+    // cópia velha faria a lista de cuidadores mostrar o e-mail antigo para
+    // sempre — e é por ela que os convites são reconhecidos.
+    await tx
+      .update(caregiversTable)
+      .set({ email: pedido.novoEmail, updatedAt: Clock.now() })
+      .where(eq(caregiversTable.userId, getAuth(req).userId));
+
+    await tx
+      .update(emailChangesTable)
+      .set({ used: true, usedAt: Clock.now() })
+      .where(eq(emailChangesTable.id, pedido.id));
+  });
+
+  // Derruba TODAS as sessões — inclusive esta, que ganha um par novo abaixo.
+  // A identidade de login mudou; sessão emitida para a identidade anterior não
+  // deveria sobreviver a isso. É o mesmo tratamento da troca de senha.
+  await db
+    .update(refreshTokensTable)
+    .set({ revoked: true })
+    .where(and(eq(refreshTokensTable.userId, getAuth(req).userId), eq(refreshTokensTable.revoked, false)));
+  revokeAllAccessTokensForUser(getAuth(req).userId);
+
+  const accessToken = generateAccessToken(
+    getAuth(req).userId,
+    getAuth(req).familyId,
+    getAuth(req).caregiverId,
+    getAuth(req).role
+  );
+  const { raw: refreshRaw, hash: refreshHash } = generateRefreshToken(getAuth(req).userId);
+  const REFRESH_TTL_DAYS = 30;
+  await db.insert(refreshTokensTable).values({
+    userId: getAuth(req).userId,
+    tokenHash: refreshHash,
+    userAgent: req.headers["user-agent"] ?? null,
+    ipAddress: req.ip ?? null,
+    expiresAt: new Date(Clock.now().getTime() + REFRESH_TTL_DAYS * 24 * 60 * 60 * 1000),
+  });
+
+  // NUNCA o endereço, nem o antigo nem o novo: `safeLog` descarta o que não
+  // está na lista, e a mensagem é escrita à mão.
+  safeLog.info({ action: "email_changed", userId: getAuth(req).userId }, "E-mail da conta alterado");
+  await audit({
+    familyId: getAuth(req).familyId,
+    entityType: "user",
+    entityId: String(getAuth(req).userId),
+    action: "updated",
+    actorId: String(getAuth(req).caregiverId),
+    actorType: "caregiver",
+    ipAddress: req.ip ?? undefined,
+  });
+
+  await esperarAtePiso(inicio);
+  res.json({
+    message: "E-mail trocado. Use o endereço novo para entrar da próxima vez.",
+    accessToken,
+    refreshToken: refreshRaw,
+    expiresIn: 900,
+  });
 });
 
 export default router;
