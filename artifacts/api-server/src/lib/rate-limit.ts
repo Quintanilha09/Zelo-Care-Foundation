@@ -220,10 +220,21 @@ export const refreshLimiter = rateLimit({
  *
  * 100/hora continua sendo teto de verdade: o lote é capado em 20 por vez na
  * tela, então são cinco lotes cheios numa hora.
+ *
+ * ── O valor ficou 30 por dois meses, contra o que este comentário dizia ───
+ *
+ * O texto acima entrou no PR #70 e descreve a mudança de 30 para 100. **A
+ * linha do `limit` nunca foi trocada** — a correção existiu só em prosa, e o
+ * servidor continuou recusando o segundo lote de um passeio.
+ *
+ * `MAX_POR_LOTE` em `momentos-card.tsx` foi calibrado acreditando neste
+ * comentário. Um guardrail em `environment-hardening.test.ts` agora lê os dois
+ * arquivos e falha se voltarem a divergir: eles moram em pacotes diferentes,
+ * e foi essa distância que deixou a mentira de pé por dois meses.
  */
 export const mediaUploadLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
-  limit: 30 * M,
+  limit: 100 * M,
   standardHeaders: "draft-7",
   legacyHeaders: false,
   keyGenerator: (req) => {
