@@ -491,3 +491,62 @@ describe("Limite de taxa — o atalho de teste não atravessa para produção", 
     assert.equal(multiplicadorDeLimite(true, "999999"), 1000, "o teto evita desligar o limitador por engano");
   });
 });
+
+/**
+ * Memória de canvas no celular — Issue #53.
+ *
+ * ── Por que isto é guardado por varredura, e não por teste de verdade ─────
+ *
+ * O defeito era invisível no desktop e fatal no celular: comprimir várias
+ * fotos seguidas acumulava um `canvas` por foto — ~7,7 MB de pixels cada, em
+ * memória do NAVEGADOR, não do heap do JavaScript. O coletor não tinha por
+ * que rodar entre as voltas do laço, o renderizador do celular estourava, a
+ * aba recarregava e a pessoa perdia as fotos escolhidas.
+ *
+ * Assinatura clássica: **uma foto sempre funcionou, duas ou mais não.**
+ *
+ * Nenhum teste desta suíte reproduz isso. O Playwright roda em desktop, onde
+ * sobra memória; `node:test` não tem canvas. O que dá para garantir é que a
+ * linha que solta os pixels **continue existindo** — porque ela parece
+ * supérflua para quem lê rápido, e é exatamente o tipo de coisa que some numa
+ * "limpeza".
+ */
+describe("Compressão de foto solta a memória do canvas", () => {
+  const compressor = `${raiz}../../zelo/src/lib/comprimir-imagem.ts`;
+
+  it("o arquivo existe onde a varredura espera", () => {
+    assert.ok(
+      existsSync(compressor),
+      "comprimir-imagem.ts mudou de lugar — atualize este guardrail em vez de apagá-lo",
+    );
+  });
+
+  it("zera largura E altura do canvas depois de usar", () => {
+    const fonte = readFileSync(compressor, "utf8");
+
+    // Não existe `canvas.dispose()`. Zerar as dimensões é a forma suportada de
+    // descartar o backing store na hora, em vez de esperar o coletor.
+    assert.match(
+      fonte,
+      /\.width\s*=\s*0\s*;/,
+      "sumiu o `width = 0` — o canvas volta a vazar em celular",
+    );
+    assert.match(
+      fonte,
+      /\.height\s*=\s*0\s*;/,
+      "sumiu o `height = 0` — zerar só a largura não solta os pixels",
+    );
+  });
+
+  it("solta os pixels num `finally`, para valer também quando a foto falha", () => {
+    const fonte = readFileSync(compressor, "utf8");
+    const finallyIdx = fonte.lastIndexOf("} finally {");
+    const zeraIdx = fonte.indexOf(".width = 0");
+
+    assert.ok(finallyIdx > -1, "o `finally` precisa existir");
+    assert.ok(
+      zeraIdx > finallyIdx,
+      "a liberação está fora do `finally` — uma foto ilegível vazaria o canvas dela",
+    );
+  });
+});
