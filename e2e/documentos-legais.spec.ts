@@ -1,4 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import { naoRolaNaHorizontal } from "./apoio";
 
 /**
  * As três telas dos documentos legais — Issue #76.
@@ -44,16 +45,6 @@ const DOCUMENTOS = [
   { rota: "/privacidade", titulo: "Política de Privacidade" },
   { rota: "/consentimento-saude", titulo: "Política de Dados de Saúde" },
 ] as const;
-
-/** O `document` inteiro não pode transbordar na horizontal. Ver `Tabela`. */
-async function naoRolaNaHorizontal(page: Page): Promise<boolean> {
-  return page.evaluate(() => {
-    const raiz = document.documentElement;
-    // Um pixel de folga: zoom e arredondamento de subpixel produzem diferenças
-    // de fração que não são transbordo nenhum.
-    return raiz.scrollWidth <= raiz.clientWidth + 1;
-  });
-}
 
 test.describe("O seletor de controle", () => {
   test("uma rota qualquer sem sessão AINDA cai no login — o seletor não é vazio", async ({
@@ -106,7 +97,7 @@ for (const documento of DOCUMENTOS) {
       // `overflow-x-auto` no envelope, elas empurram a página inteira no
       // celular — o mesmo defeito da Issue #88, por outro caminho. Este teste
       // roda também no projeto "celular" (Pixel 7).
-      expect(await naoRolaNaHorizontal(page)).toBe(true);
+      await naoRolaNaHorizontal(page);
     });
 
     test("tem o caminho de volta", async ({ page }) => {
