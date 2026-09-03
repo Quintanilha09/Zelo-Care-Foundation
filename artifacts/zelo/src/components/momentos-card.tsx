@@ -265,7 +265,9 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
     // Uma por vez, e não `Promise.all`: comprimir usa canvas e memória, e
     // oito ao mesmo tempo derrubam a aba num celular. Em sequência é mais
     // lento e termina; em paralelo é mais rápido e às vezes não termina.
-    const novas: { url: string; arquivo: File; nome: string }[] = [];
+    //
+    // Sequência sozinha não bastou (Issue #53): faltava soltar o canvas de
+    // cada foto e ceder a vez ao navegador entre elas. Ver abaixo.
     for (const arquivo of recortada) {
       try {
       // Comprime ANTES de mostrar a prévia: a prévia então mostra exatamente
@@ -283,11 +285,27 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
           `${comprimida.largura}×${comprimida.altura})`
       );
 
-        novas.push({
-          url: URL.createObjectURL(comprimida.arquivo),
-          arquivo: comprimida.arquivo,
-          nome: arquivo.name,
-        });
+        // ── Entra na lista JÁ, e não no fim do laço — Issue #53 ───────────
+        //
+        // Antes, as comprimidas se acumulavam numa variável local e só viravam
+        // estado depois que TODAS terminassem. Quando o renderizador morria no
+        // meio (ver `comprimir-imagem.ts`), perdiam-se inclusive as que já
+        // tinham dado certo. Uma a uma, o pior caso passa a ser perder o que
+        // ainda não foi processado — e a pessoa vê a lista crescer, que é o
+        // sinal de que o app não travou.
+        setEscolhidas((antes) => [
+          ...antes,
+          {
+            url: URL.createObjectURL(comprimida.arquivo),
+            arquivo: comprimida.arquivo,
+            nome: arquivo.name,
+          },
+        ]);
+
+        // Devolve o controle ao navegador entre uma foto e outra: sem isto o
+        // laço monopoliza a thread, e o navegador não repinta nem tem folga
+        // para coletar o que a foto anterior soltou.
+        await new Promise((r) => setTimeout(r, 0));
       } catch (e) {
         // Uma foto ilegível não pode derrubar o lote inteiro: as outras
         // sete continuam válidas.
@@ -299,7 +317,6 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
       }
     }
 
-    setEscolhidas((antes) => [...antes, ...novas]);
     // Zerar o input: sem isto, escolher o MESMO arquivo de novo não dispara
     // `onChange` e parece que o app ignorou o toque.
     if (inputArquivo.current) inputArquivo.current.value = "";

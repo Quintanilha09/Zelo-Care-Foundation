@@ -90,16 +90,24 @@ async function carregarImagem(arquivo: File): Promise<{ fonte: CanvasImageSource
 export async function comprimirFoto(arquivo: File): Promise<FotoComprimida> {
   const { fonte, largura, altura, liberar } = await carregarImagem(arquivo);
 
+  // Fora do `try` de propósito: o `finally` precisa alcançá-lo para soltar os
+  // pixels. Ver o comentário longo lá embaixo.
+  let canvas: HTMLCanvasElement | null = null;
+
   try {
     const escala = Math.min(1, LADO_MAXIMO / Math.max(largura, altura));
     const novaLargura = Math.round(largura * escala);
     const novaAltura = Math.round(altura * escala);
 
-    const canvas = document.createElement("canvas");
-    canvas.width = novaLargura;
-    canvas.height = novaAltura;
+    // `tela` é o alias local; `canvas` guarda a mesma referência só para o
+    // `finally` alcançar. Sem o alias, o TypeScript perde o estreitamento de
+    // tipo dentro da closure do `toBlob`.
+    const tela = document.createElement("canvas");
+    canvas = tela;
+    tela.width = novaLargura;
+    tela.height = novaAltura;
 
-    const ctx = canvas.getContext("2d");
+    const ctx = tela.getContext("2d");
     if (!ctx) throw new Error("Este navegador não conseguiu preparar a foto.");
     // Fundo branco: JPEG não tem transparência, e sem isto um PNG com fundo
     // transparente vira preto.
@@ -108,7 +116,7 @@ export async function comprimirFoto(arquivo: File): Promise<FotoComprimida> {
     ctx.drawImage(fonte, 0, 0, novaLargura, novaAltura);
 
     const blob = await new Promise<Blob | null>((resolve) => {
-      canvas.toBlob(resolve, "image/jpeg", QUALIDADE);
+      tela.toBlob(resolve, "image/jpeg", QUALIDADE);
     });
     if (!blob) throw new Error("Não conseguimos preparar a foto para envio.");
 
@@ -133,5 +141,25 @@ export async function comprimirFoto(arquivo: File): Promise<FotoComprimida> {
     };
   } finally {
     liberar();
+    // ── Soltar o canvas na mão, e não esperar o coletor — Issue #53 ───────
+    //
+    // Um canvas de 1600×1200 guarda ~7,7 MB de pixels, e essa memória **não
+    // é do JavaScript**: vive no processo do navegador e só sai quando o
+    // objeto é coletado. Num laço que comprime oito fotos seguidas, o
+    // coletor não roda entre as voltas — ele não tem por que rodar, já que
+    // sobra memória de heap — e os oito backing stores se acumulam junto com
+    // os bitmaps de origem.
+    //
+    // Num celular isso estoura o teto do renderizador. Ele morre, o navegador
+    // recarrega a aba, e a pessoa perde as fotos que tinha escolhido. Era o
+    // sintoma da Issue #53, e explica por que UMA foto sempre funcionou e
+    // duas ou mais não.
+    //
+    // Zerar as dimensões descarta o backing store na hora. É feio e é a forma
+    // suportada de fazer isso — não existe `canvas.dispose()`.
+    if (canvas) {
+      canvas.width = 0;
+      canvas.height = 0;
+    }
   }
 }
