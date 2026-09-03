@@ -52,7 +52,33 @@ after(async () => {
   await db.delete(familiesTable).where(like(familiesTable.name, "Família Fictícia Reenvio %"));
 });
 
-async function api(path: string, body?: unknown) {
+/**
+ * Um IP diferente a cada chamada.
+ *
+ * ── Por que isto é necessário, e por que melhora o teste ──────────────────
+ *
+ * Os limitadores deste projeto contam **por IP** (`resendVerificationLimiter`:
+ * 2/hora; `publicTokenLimiter`: 100/15min). Um arquivo de teste que bate
+ * dezenas de vezes de `127.0.0.1` esgota o orçamento no meio do caminho, e os
+ * últimos casos recebem `429` — foi exatamente o que derrubou o CI na primeira
+ * execução deste arquivo.
+ *
+ * Trocar de IP a cada requisição não é contornar a proteção: é **exercitar
+ * justamente o que o teto por CONTA existe para cobrir**. A defesa por IP cai
+ * contra quem tem muitos IPs; a defesa por conta, não. Rotacionando IP, o
+ * teste passa a simular um atacante com botnet — o cenário real — em vez de um
+ * cliente educado atrás de um IP só.
+ *
+ * O `429` em si não vaza nada, vale registrar: ele depende do IP e da contagem
+ * de requisições, nunca de a conta existir ou não.
+ */
+let contadorDeIp = 0;
+function ipUnico(): string {
+  contadorDeIp += 1;
+  return `10.${(contadorDeIp >> 16) & 255}.${(contadorDeIp >> 8) & 255}.${contadorDeIp & 255}`;
+}
+
+async function api(path: string, body?: unknown, ip: string = ipUnico()) {
   const payload = body ? JSON.stringify(body) : undefined;
   return new Promise<{ status: number; body: Record<string, unknown>; ms: number }>(
     (resolve, reject) => {
@@ -65,6 +91,7 @@ async function api(path: string, body?: unknown) {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            "x-forwarded-for": ip,
             ...(payload ? { "Content-Length": Buffer.byteLength(payload) } : {}),
           },
         },
@@ -138,6 +165,10 @@ describe("Reenvio — o teto de emissão por conta", () => {
     // A conta já nasce com 1 código (o do cadastro).
     const { email, userId } = await contaPendente("111111");
 
+    // Cada chamada sai de um IP diferente — `ipUnico()` é o padrão do helper.
+    // É de propósito: prova que o teto é **por conta** e não se contorna
+    // trocando de endereço, que é o que uma botnet faz. A defesa por IP
+    // sozinha cairia aqui; esta não cai.
     for (let i = 0; i < MAX_CODIGOS_POR_HORA + 3; i++) {
       await api("/auth/verify-email/resend", { email });
     }
@@ -164,6 +195,29 @@ describe("Reenvio — o teto de emissão por conta", () => {
     // andou pedindo código".
     assert.equal(depoisDoTeto.status, primeira.status);
     assert.deepEqual(depoisDoTeto.body, primeira.body);
+  });
+});
+
+describe("Reenvio — o limitador por IP continua vivo", () => {
+  it("insistir do MESMO endereço acaba em 429", async () => {
+    // Caso de controle. Todo o resto deste arquivo rotaciona IP de propósito
+    // (ver `ipUnico`), e sem este caso o limitador por IP poderia ser removido
+    // sem nada ficar vermelho — as duas defesas somem, e ninguém percebe.
+    //
+    // Em teste o multiplicador é 10, então o teto é 2 × 10 = 20 por hora.
+    const { email } = await contaPendente("111111");
+    const mesmoIp = "203.0.113.7"; // faixa TEST-NET-3, reservada para documentação
+
+    let vistos429 = 0;
+    for (let i = 0; i < 25; i++) {
+      const res = await api("/auth/verify-email/resend", { email }, mesmoIp);
+      if (res.status === 429) vistos429 += 1;
+    }
+
+    assert.ok(
+      vistos429 > 0,
+      "25 pedidos do mesmo IP e nenhum 429 — o limitador por IP sumiu",
+    );
   });
 });
 
