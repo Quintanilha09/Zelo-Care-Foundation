@@ -27,6 +27,9 @@ import StatusPage from '@/pages/StatusPage';
 import AcceptInvitePage from '@/pages/AcceptInvitePage';
 import VerifyEmailPage from '@/pages/VerifyEmailPage';
 import ResetPasswordPage from '@/pages/ResetPasswordPage';
+import TermosPage from '@/pages/legal/TermosPage';
+import PrivacidadePage from '@/pages/legal/PrivacidadePage';
+import DadosDeSaudePage from '@/pages/legal/DadosDeSaudePage';
 import ElderModePage from '@/pages/ElderModePage';
 import PatientAccessActivationPage from '@/pages/PatientAccessActivationPage';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
@@ -98,6 +101,38 @@ function Router() {
     return (
       <RoutedErrorBoundary>
         <ResetPasswordPage />
+      </RoutedErrorBoundary>
+    );
+  }
+
+  // Issue #76: os tres documentos legais. Ficam fora do gate pela mesma razao
+  // do /convite, e o caso e o mesmo do /verificar-email: quem le estes textos
+  // esta, quase sempre, DECIDINDO se cria a conta — os tres links saem do
+  // proprio formulario de cadastro. Exigir sessao para ler o que se aceita ao
+  // criar a sessao e circular, e era exatamente o que acontecia ate 03/09/2026:
+  // as rotas nao existiam e os tres links caiam na tela de login.
+  //
+  // Comparacao exata (`===`) e nao `startsWith`: nenhum dos tres carrega token
+  // ou parametro no caminho, e `/consentimento-saude` nao pode canibalizar o
+  // `/consentimento` que existe dentro do Switch la embaixo.
+  if (location === '/termos') {
+    return (
+      <RoutedErrorBoundary>
+        <TermosPage />
+      </RoutedErrorBoundary>
+    );
+  }
+  if (location === '/privacidade') {
+    return (
+      <RoutedErrorBoundary>
+        <PrivacidadePage />
+      </RoutedErrorBoundary>
+    );
+  }
+  if (location === '/consentimento-saude') {
+    return (
+      <RoutedErrorBoundary>
+        <DadosDeSaudePage />
       </RoutedErrorBoundary>
     );
   }
