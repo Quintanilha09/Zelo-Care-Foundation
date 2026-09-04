@@ -647,3 +647,55 @@ export async function sendRecoveryEmailWarning(
     "aviso_de_email_de_recuperacao",
   );
 }
+
+/**
+ * Avisa quem foi resgatado — Issue #87.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * SE A PESSOA NÃO PEDIU O RESGATE, ESTE E-MAIL É A ÚNICA COISA QUE A AVISA.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * O resgate pela família não concede poder novo ao cuidador principal — ele já
+ * via e fazia tudo naquela família. O que ele abre é um caminho para **pular o
+ * segundo fator** de outra pessoa, e isso importa quando alguém já tem a senha
+ * dela.
+ *
+ * O aviso é a contrapartida. Mesmo papel do aviso de troca de e-mail (#46): não
+ * impede o abuso, mas tira dele o silêncio.
+ *
+ * O nome de quem resgatou vai por inteiro. Quem lê precisa saber de quem
+ * cobrar explicação — e as duas pessoas já compartilham os dados de saúde de um
+ * paciente, então não há nada a proteger escondendo.
+ */
+export async function sendRescueNotice(
+  emailResgatado: string,
+  nomeDeQuemResgatou: string,
+  nomeDaFamilia: string,
+  validoAte: Date,
+): Promise<boolean> {
+  const link = `${baseUrl()}/ajustes/conta`;
+  devLog("Aviso de resgate de acesso", link);
+
+  const quando = validoAte.toLocaleString("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    dateStyle: "short",
+    timeStyle: "short",
+  });
+
+  return enviar(
+    {
+      para: emailResgatado,
+      assunto: "Seu acesso ao ZELO foi restaurado — ZELO",
+      titulo: "Restauraram o seu acesso",
+      paragrafos: [
+        `${nomeDeQuemResgatou}, cuidador principal da família ${nomeDaFamilia}, restaurou o seu acesso ao ZELO.`,
+        `Isso significa que a sua próxima entrada, até ${quando}, não vai pedir o código de aparelho novo. Sua senha continua sendo necessária.`,
+        "Se foi você quem pediu, não precisa fazer nada — é só entrar.",
+        "Se NÃO foi você, troque sua senha agora e fale com essa pessoa. O resgate não dá acesso à sua conta sozinho, mas com a sua senha daria.",
+      ],
+      acao: { rotulo: "Trocar minha senha", url: link },
+      aviso: "O resgate vale uma vez só, e expira sozinho se você não usar.",
+    },
+    "aviso_de_resgate",
+  );
+}
