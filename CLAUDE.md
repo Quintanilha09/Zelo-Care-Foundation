@@ -95,6 +95,22 @@ arquivo, e monitor de janela de contexto.
   - **Exceção única:** mudança só de documentação (`planning/`, `CLAUDE.md`, `CONTEXT.md`) vai
     direto ao `main`. Qualquer coisa em `artifacts/`, `lib/` ou `.github/workflows/` passa por PR.
   - O Linear continua sendo o backlog de **produto**; a Issue é a unidade de **trabalho no código**.
+- **Quem faz o merge, e sob que condição.** Configurado em 04/09/2026, quando o fundador pediu
+  que o merge deixasse de depender dele estar presente.
+  - `main` exige os **três checks do CI** — `Typecheck, lint e build`, `Testes de servidor`,
+    `Testes de tela (Playwright)`. PR vermelho não entra, por ninguém.
+  - `enforce_admins` está **desligado** de propósito: o fundador continua podendo empurrar
+    documentação direto para o `main`, que é a exceção logo acima.
+  - `allow_auto_merge` e `delete_branch_on_merge` estão **ligados**. Com isso o
+    "Mesclar automaticamente quando pronto" do app fica disponível: o PR entra sozinho quando o
+    CI fecha verde, e a branch é apagada.
+  - **O agente não faz merge sozinho.** A tentativa de me autorizar foi barrada pelo
+    classificador do modo automático — e a barreira está certa: quem executa a ação não deve
+    poder desligar a checagem que o limita. O caminho é o botão do app, não uma exceção escrita
+    por mim. Se um agente precisar de merge, **peça**; não contorne por `gh api` nem por outra
+    porta que faça a mesma coisa.
+  - Para desfazer tudo isto: `gh api -X DELETE repos/<owner>/<repo>/branches/main/protection` e
+    `gh api -X PATCH repos/<owner>/<repo> -F allow_auto_merge=false`.
 - **Ordem numérica estrita das histórias:** terminar a de menor número por completo antes da próxima.
 - **Commit + push por história**, sempre. Mensagem em português, sem acentos no assunto.
 - **Uma sessão de agente por vez no `main`.** Duas sessões simultâneas já geraram um rebase preso e uma referência
