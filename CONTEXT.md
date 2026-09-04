@@ -61,22 +61,46 @@ Em 01/09/2026 eram 592 no servidor e 120 na tela; em 27/08, 545 e 42. O salto de
 leva de e-mail: provedor de verdade (#73), confirmação por código de 6 dígitos (#77), reenvio com
 teto de emissão (#75) e piso de tempo contra vazamento por cronômetro (#84).
 
-### A suíte NÃO roda mais nesta máquina — 31/08/2026
+### A suíte não roda nesta máquina — e a causa mudou em 04/09/2026
 
-O Windows ligou o **Smart App Control** (`VerifiedAndReputablePolicyState = 1` em
-`HKLM:SYSTEMCurrentControlSetControlCIPolicy`), que bloqueia binário nativo sem assinatura
-reconhecida. Dois são recusados:
+**O diagnóstico de 31/08 está superado.** Ele dizia que o Smart App Control bloqueava
+`argon2.glibc.node` e `biome.exe`. Medido de novo em 04/09/2026:
 
-- `argon2.glibc.node` → `ERR_DLOPEN_FAILED`, e **sem ele a API nem sobe** — some a suíte de
-  integração e o Playwright junto
-- `biome.exe` → o lint local não roda
+| O que se dizia | O que foi medido agora |
+|---|---|
+| `argon2` bloqueado, "sem ele a API nem sobe" | **funciona** — gera hash de 97 caracteres |
+| `biome.exe` bloqueado, lint local não roda | **funciona** — `pnpm run lint` sai com código 0 |
 
-**O CI em Linux não é afetado, e passou a ser a única verificação real.** Continua valendo a
-regra do GSD: número que não foi medido não se escreve — e a partir daqui os números vêm do log
-do CI, com o id da execução.
+O Smart App Control continua **ligado** (`VerifiedAndReputablePolicyState = 1`), e não é ele que
+impede a suíte hoje.
 
-Desligar o Smart App Control é decisão do fundador e **é irreversível**: uma vez desligado, só
-volta reinstalando o Windows. Nada foi mexido.
+**O que impede é só o banco.** E são dois fatos separados:
+
+1. O cluster do projeto (`C:\Projetos\Zelo\zelo-local-pgdata`, porta **5433**) **não sobe**:
+   `postgres.exe` recebe `Permission denied` ao fazer bind em `127.0.0.1` e em `::1`, e morre com
+   `could not create any TCP/IP sockets`. Não é porta ocupada nem faixa reservada do Windows
+   (`netsh interface ipv4 show excludedportrange` não lista a 5433), e não é restrição geral de
+   socket — o `node` escuta na mesma faixa sem problema. É específico daquele binário. Falha
+   dentro e fora do sandbox.
+2. **Existe um Postgres rodando**: o serviço `postgresql-x64-18`, na porta **5432**, com dados em
+   `C:\Program Files\PostgreSQL\18\data`. Ele não tem o papel nem o banco `zelo_dev`, e o
+   `pg_hba.conf` dele exige `scram-sha-256` — então não dá para criar nada ali sem a senha do
+   superusuário.
+
+**Três saídas, da mais barata para a mais cara:**
+
+- **Docker.** Está instalado (v29.7.2) e o daemon está desligado. Com o Docker Desktop aberto, um
+  `postgres:16-alpine` na 5433 resolve — e é a **mesma versão do CI**, então o que passa aqui
+  passa lá.
+- **Usar o serviço da 5432**, criando `zelo_dev` nele e apontando o `.env.local` para a 5432.
+  Precisa da senha do superusuário `postgres`.
+- **Consertar o cluster da 5433**, investigando por que aquele binário não consegue bind.
+
+Enquanto nenhuma delas acontece, **o CI em Linux é a única verificação real** da integração e do
+Playwright. Continua valendo a regra do GSD: número que não foi medido não se escreve.
+
+Typecheck, lint, build e os testes de `lib/` (que não precisam de banco) **rodam aqui** e devem
+ser rodados antes de todo push.
 
 O bloqueio anterior, de 23/08, era outro e continua resolvido: era o container `zelo-test-pg`
 parado e o `.env.local` apontando para uma URL sem senha — o runbook
