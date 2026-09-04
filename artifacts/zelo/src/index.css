@@ -166,30 +166,44 @@
    * Quase todo texto deste app é escrito por alguém: nome de paciente, de
    * cuidador, de medicamento, legenda de foto, pergunta ao médico, contato
    * de emergência. O padrão do CSS é não quebrar dentro da palavra, então
-   * uma palavra que não cabe simplesmente VAZA para fora da caixa — e a
-   * largura de rolagem do documento cresce junto, que é a rolagem
-   * horizontal que o fundador relatou.
+   * uma palavra que não cabe VAZA para fora da caixa — e a largura de
+   * rolagem do documento cresce junto, que é a rolagem horizontal que o
+   * fundador relatou.
    *
-   * A primeira tentativa foi pôr `break-words` em cada lugar. O CI provou
-   * que era insuficiente: o título da ficha quebrava certo e a frase do
-   * "Modo idoso", logo abaixo, vazava — porque ninguém lembra de pensar em
-   * nome comprido ao escrever uma frase com o nome do paciente no meio.
+   * A primeira tentativa foi pôr `break-words` em cada lugar onde eu
+   * lembrei. O CI reprovou: sobrou a frase do "Modo idoso", porque ninguém
+   * pensa em nome comprido ao escrever uma frase com o nome do paciente no
+   * meio. O padrão seguro é o contrário — quebrar por default.
    *
-   * O padrão seguro é o contrário: quebrar por default, e não ter que
-   * lembrar.
+   * ── `anywhere`, e não `break-word`: a diferença é de LAYOUT ───────────
    *
-   * ── `break-word` e não `anywhere` ─────────────────────────────────────
+   * As duas renderizam igual. Elas diferem em uma coisa só, e é justamente
+   * a que importa aqui: **`anywhere` conta na largura mínima intrínseca do
+   * elemento, `break-word` não.**
    *
-   * `anywhere` também encolheria a largura MÍNIMA intrínseca dos elementos,
-   * e isso mudaria o tamanho de botão e de célula de tabela no app inteiro
-   * — risco grande para resolver um problema que é de texto corrido.
+   * Isso decide o caso do flexbox. Um filho de flex nasce com
+   * `min-width: auto` = "não encolha abaixo do seu min-content". Com
+   * `break-word`, o min-content continua sendo a palavra inteira: o filho
+   * se recusa a encolher e empurra a linha, o cartão e a página. Com
+   * `anywhere`, o min-content vira uma letra, e ele encolhe.
    *
-   * O que `break-word` NÃO faz é desligar o `min-width: auto` de item de
-   * flex. Para isso continua sendo preciso `min-w-0` no item, e é por isso
-   * que as duas correções existem juntas nesta Issue.
+   * Medido em 03/09/2026, mesma estrutura da ficha, tela de 380px:
+   *
+   *   sem nada .................... 73px de estouro
+   *   overflow-wrap: break-word ... 73px de estouro  (não muda NADA)
+   *   overflow-wrap: anywhere ..... cabe, com 2px de folga
+   *
+   * O risco que me fez escolher `break-word` primeiro era botão e célula
+   * de tabela encolhendo. Não se aplica: `Button`, `Badge` e
+   * `SelectTrigger` já trazem `whitespace-nowrap`, e sem quebra possível o
+   * `overflow-wrap` não tem efeito nenhum sobre eles. Confirmado na mesma
+   * medição — o botão manteve os 90px.
+   *
+   * `min-w-0` continua útil onde a intenção é explícita (uma faixa que
+   * rola, um texto que trunca), mas deixou de ser a única defesa.
    */
   body {
-    overflow-wrap: break-word;
+    overflow-wrap: anywhere;
   }
 }
 /**

@@ -635,20 +635,31 @@ describe("O lote da tela cabe no limitador do servidor", () => {
   });
 });
 
+
 /**
  * A quebra de palavra comprida é global — Issue #88.
  *
  * ── Por que um guardrail, e num arquivo do servidor ───────────────────────
  *
- * O conserto da #88 tem duas metades, e a primeira tentativa só teve uma. Pôr
- * `break-words` em cada lugar onde eu lembrei falhou no CI: o título da ficha
- * quebrava certo e a frase logo abaixo vazava, porque ninguém pensa em nome
- * comprido ao escrever uma frase com o nome do paciente no meio.
+ * O conserto da #88 passou por duas versões erradas antes desta, e as duas
+ * falharam do mesmo jeito: no CI, no projeto "celular", com 93px de rolagem
+ * horizontal na ficha.
  *
- * A regra passou a ser global, no `body` do `index.css`. Regra global é
- * exatamente o tipo de coisa que alguém remove num refactor de CSS sem saber o
- * que ela segurava — e o defeito volta calado, em telas que ninguém está
- * olhando naquele dia.
+ *   1. `break-words` em cada lugar onde eu lembrei — sobrou a frase do
+ *      "Modo idoso", porque ninguém pensa em nome comprido ao escrever uma
+ *      frase com o nome do paciente no meio.
+ *   2. `overflow-wrap: break-word` global — não mudou NADA, e o mesmo 93px
+ *      voltou. Ele não conta na largura mínima intrínseca, então um filho de
+ *      flex com `min-width: auto` continua se recusando a encolher.
+ *
+ * `anywhere` é o que conta na largura mínima, e é por isso que resolve.
+ * Medido isolado em 03/09/2026, numa tela de 380px com a mesma estrutura da
+ * ficha: sem nada 73px de estouro, `break-word` 73px, `anywhere` cabe.
+ *
+ * Uma regra global é exatamente o tipo de coisa que alguém troca de volta num
+ * refactor de CSS sem saber o que ela segurava — e `break-word` parece a
+ * escolha "mais segura" para quem não conhece essa diferença. Foi o que eu
+ * mesmo escolhi primeiro. Por isso o teste trava o VALOR, e não só a presença.
  *
  * Fica aqui pelo mesmo motivo dos outros deste arquivo: é a suíte que roda em
  * todo PR e não precisa de navegador. O front não tem suíte unitária.
@@ -656,30 +667,39 @@ describe("O lote da tela cabe no limitador do servidor", () => {
 describe("Quebra de palavra comprida — Issue #88", () => {
   const css = `${raiz}../../zelo/src/index.css`;
 
-  it("o `overflow-wrap` global continua no index.css", () => {
-    const conteudo = readFileSync(css, "utf8");
+  /**
+   * O CSS sem os comentários.
+   *
+   * Obrigatório aqui, e a primeira versão deste teste esqueceu: o comentário
+   * ao lado da regra **explica** por que `break-word` foi descartado, e cita a
+   * expressão. Sem tirar comentário, o teste de baixo reprovava a própria
+   * documentação da decisão que ele existe para proteger.
+   */
+  const declaracoes = (): string =>
+    readFileSync(css, "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
 
+  it("o `overflow-wrap: anywhere` global continua no index.css", () => {
     assert.match(
-      conteudo,
-      /overflow-wrap:\s*break-word/,
-      "sumiu o `overflow-wrap: break-word` global do index.css. Sem ele, " +
-        "qualquer frase com nome de paciente no meio volta a vazar para fora " +
-        "da tela no celular — que foi o defeito relatado na Issue #88.",
+      declaracoes(),
+      /overflow-wrap:\s*anywhere/,
+      "sumiu o `overflow-wrap: anywhere` global do index.css. Sem ele, nome " +
+        "de paciente comprido volta a empurrar a página inteira de lado no " +
+        "celular — que foi o defeito relatado na Issue #88.",
     );
   });
 
-  it("não virou `anywhere`, que mexeria na largura de botão e de tabela", () => {
-    const conteudo = readFileSync(css, "utf8");
-
-    // `anywhere` também encolhe a largura mínima intrínseca dos elementos.
-    // Resolveria o mesmo problema e mudaria o tamanho de botão e de célula no
-    // app inteiro — troca que não foi feita, e que não deve entrar sem
-    // alguém decidir por ela.
+  it("não voltou para `break-word`, que já foi tentado e não resolve", () => {
+    // Não é preciosismo. `break-word` foi a primeira correção global: passou
+    // no build, passou no typecheck, e falhou no CI com exatamente o mesmo
+    // estouro de quando não havia regra nenhuma. Ele renderiza igual a
+    // `anywhere` e NÃO conta na largura mínima intrínseca — que é a única
+    // coisa que importa dentro de um flex.
     assert.doesNotMatch(
-      conteudo,
-      /overflow-wrap:\s*anywhere/,
-      "`overflow-wrap: anywhere` global muda a largura mínima de todo " +
-        "elemento. Se for mesmo desejado, decida e apague este teste.",
+      declaracoes(),
+      /overflow-wrap:\s*break-word/,
+      "`overflow-wrap: break-word` não desliga o `min-width: auto` de item " +
+        "de flex — foi medido, e deixa o estouro exatamente igual a não ter " +
+        "regra nenhuma. Use `anywhere`.",
     );
   });
 });
