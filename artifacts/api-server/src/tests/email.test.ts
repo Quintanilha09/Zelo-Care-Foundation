@@ -125,12 +125,15 @@ describe("Envio de e-mail pelo Resend", () => {
   });
 
   it("manda HTML e texto puro, e os dois carregam o MESMO link", async () => {
+    // O convite, e não mais a redefinição de senha: desde a Issue #102 ela
+    // manda código e não tem link nenhum. O convite continua precisando de
+    // link — quem recebe ainda não tem conta, então não há tela onde digitar.
     responderSempre(200);
-    const { sendPasswordResetEmail } = await importarEmail();
-    await sendPasswordResetEmail("alguem@exemplo.com", "tok123");
+    const { sendCaregiverInviteEmail } = await importarEmail();
+    await sendCaregiverInviteEmail("alguem@exemplo.com", "tok123");
 
     const { html, text } = corpoEnviado();
-    const esperado = `${APP}/redefinir-senha?token=tok123`;
+    const esperado = `${APP}/convite?token=tok123`;
 
     assert.ok(html.length > 0 && text.length > 0, "as duas versões precisam existir");
     assert.ok(html.includes(esperado), "o HTML precisa levar ao link certo");
@@ -144,16 +147,51 @@ describe("Envio de e-mail pelo Resend", () => {
     responderSempre(200);
     const email = await importarEmail();
 
-    await email.sendPasswordResetEmail("a@exemplo.com", "t2");
     await email.sendCaregiverInviteEmail("a@exemplo.com", "t3");
     await email.sendDeletionNotification(["a@exemplo.com"], new Date("2026-09-09T12:00:00Z"));
 
-    // Estes três têm tela desde a Issue #73; o aviso de exclusão apontava para
-    // `/conta/exclusao`, rota que nunca existiu — a real é `/ajustes/seus-dados`.
-    // A verificação saiu desta lista na Issue #77: virou código, não tem link.
-    assert.ok(corpoEnviado(0).text.includes(`${APP}/redefinir-senha?token=t2`));
-    assert.ok(corpoEnviado(1).text.includes(`${APP}/convite?token=t3`));
-    assert.ok(corpoEnviado(2).text.includes(`${APP}/ajustes/seus-dados`));
+    // O aviso de exclusão apontava para `/conta/exclusao`, rota que nunca
+    // existiu — a real é `/ajustes/seus-dados`. Foi o defeito que criou este
+    // teste.
+    //
+    // A lista encolheu duas vezes, e as duas por bom motivo: a verificação
+    // saiu na Issue #77 e a redefinição de senha na #102. As duas viraram
+    // código, e código não tem para onde mandar ninguém.
+    assert.ok(corpoEnviado(0).text.includes(`${APP}/convite?token=t3`));
+    assert.ok(corpoEnviado(1).text.includes(`${APP}/ajustes/seus-dados`));
+  });
+
+
+  // ── O e-mail de senha virou código — Issue #102 ────────────────────────
+
+  it("o e-mail de senha leva o CÓDIGO, no corpo e no assunto", async () => {
+    responderSempre(200);
+    const { sendPasswordResetEmail } = await importarEmail();
+    await sendPasswordResetEmail("alguem@exemplo.com", "482915");
+
+    const { html, text, subject } = corpoEnviado();
+
+    assert.ok(text.includes("482915"), "a versão texto precisa trazer o código");
+    assert.ok(html.includes("482915"), "o HTML precisa trazer o código");
+    assert.ok(subject.startsWith("482915"), `o código precisa abrir o assunto, veio: ${subject}`);
+  });
+
+  it("o e-mail de senha NÃO tem link — foi o link que quebrou", async () => {
+    responderSempre(200);
+    const { sendPasswordResetEmail } = await importarEmail();
+    await sendPasswordResetEmail("alguem@exemplo.com", "482915");
+
+    // Em 03/09/2026 este e-mail chegou perfeito e o botão levava a uma página
+    // de erro do Replit: `APP_URL` apontava para um app não publicado. Este
+    // caso trava a volta do link, que é a volta do defeito.
+    const { html, text } = corpoEnviado();
+    for (const [nome, conteudo] of [["html", html], ["texto", text]] as const) {
+      assert.ok(
+        !conteudo.includes("/redefinir-senha?"),
+        `${nome}: sobrou link com token do desenho antigo`,
+      );
+      assert.ok(!/<a\s/i.test(conteudo), `${nome}: não deve haver botão nem link`);
+    }
   });
 
   // ── O e-mail de verificação virou código — Issue #77 ───────────────────

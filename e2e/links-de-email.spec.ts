@@ -139,7 +139,76 @@ test.describe("Tela do código de confirmação", () => {
   });
 });
 
-test.describe("Link de nova senha", () => {
+test.describe("Tela de nova senha", () => {
+  const CAMPO_DO_CODIGO = 'input[autocomplete="one-time-code"]';
+
+  // ── Sem token: o caminho de hoje (Issue #102) ────────────────────────────
+  //
+  // O e-mail deixou de trazer link e passou a trazer código, pelo mesmo motivo
+  // que a confirmação de conta já tinha feito na #77: em 03/09/2026 o link
+  // levou a uma página de erro do Replit, porque `APP_URL` apontava para um app
+  // não publicado. Foi o terceiro tropeço na mesma variável em dois dias.
+
+  test("sem token, pede e-mail e código — e não é a tela de login", async ({ page }) => {
+    await page.goto("/redefinir-senha");
+
+    await expect(page.getByText("Nova senha", { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole(ABA_DE_LOGIN.role, { name: ABA_DE_LOGIN.name }),
+    ).toHaveCount(0);
+
+    await expect(page.getByLabel(/^E-mail do cadastro/)).toBeVisible();
+    await expect(page.locator(CAMPO_DO_CODIGO)).toBeAttached();
+    await expect(page.getByLabel(/^Senha nova/)).toBeVisible();
+  });
+
+  test("diz o prazo do código antes de a pessoa perder tempo", async ({ page }) => {
+    await page.goto("/redefinir-senha");
+    await expect(page.getByText(/vale 10 minutos/)).toBeVisible();
+  });
+
+  test("sem os 6 dígitos, avisa em vez de mandar pedido incompleto", async ({ page }) => {
+    await page.goto("/redefinir-senha");
+
+    await page.getByLabel(/^E-mail do cadastro/).fill("alguem@zelo.test");
+    await page.locator(CAMPO_DO_CODIGO).fill("4829");
+    await page.getByLabel(/^Senha nova/).fill("senha-boa-1234");
+    await page.getByLabel(/^Repita a senha nova/).fill("senha-boa-1234");
+    await page.getByRole("button", { name: "Trocar a senha" }).click();
+
+    await expect(page.getByText(/Digite os 6 dígitos/)).toBeVisible();
+  });
+
+  test("código errado devolve recado, e a mesma resposta para tudo", async ({ page }) => {
+    await page.goto("/redefinir-senha");
+
+    await page.getByLabel(/^E-mail do cadastro/).fill("ninguem-aqui@zelo.test");
+    await page.locator(CAMPO_DO_CODIGO).fill("000000");
+    await page.getByLabel(/^Senha nova/).fill("senha-boa-1234");
+    await page.getByLabel(/^Repita a senha nova/).fill("senha-boa-1234");
+    await page.getByRole("button", { name: "Trocar a senha" }).click();
+
+    // Conta que não existe sai pela mesma porta que código errado.
+    await expect(page.getByText(/Código inválido ou expirado/)).toBeVisible();
+  });
+
+  test("tem saída para quem não recebeu o código", async ({ page }) => {
+    await page.goto("/redefinir-senha");
+
+    // Ficar preso numa tela pedindo um código que não chegou é o beco que a
+    // Issue #73 consertou noutra tela. Aqui a saída é explícita.
+    await page.getByRole("button", { name: /Não recebi o código/ }).click();
+    await expect(
+      page.getByRole(ABA_DE_LOGIN.role, { name: ABA_DE_LOGIN.name }),
+    ).toBeVisible();
+  });
+
+  // ── Com token: a ponte para os links já enviados ─────────────────────────
+  //
+  // Eles valem uma hora. Recusá-los transformaria a melhoria em quebra para
+  // quem pediu a senha cinco minutos antes do deploy. Nenhum token novo é
+  // emitido — este caminho se apaga sozinho.
+
   test("com token, mostra o formulário — e não a tela de login", async ({ page }) => {
     await page.goto("/redefinir-senha?token=token-qualquer");
 
@@ -150,15 +219,11 @@ test.describe("Link de nova senha", () => {
 
     await expect(page.getByLabel(/^Senha nova/)).toBeVisible();
     await expect(page.getByLabel(/^Repita a senha nova/)).toBeVisible();
-  });
 
-  test("sem token, nem mostra o formulário", async ({ page }) => {
-    await page.goto("/redefinir-senha");
-
-    await expect(page.getByText(/link está incompleto/)).toBeVisible();
-    // Preencher uma senha inteira para descobrir no fim que o endereço estava
-    // quebrado é gasto de paciência que a tela pode evitar.
-    await expect(page.getByLabel(/^Senha nova/)).toHaveCount(0);
+    // Com token, nem e-mail nem código são pedidos: o token já identifica a
+    // pessoa e já prova que ela recebeu o e-mail.
+    await expect(page.getByLabel(/^E-mail do cadastro/)).toHaveCount(0);
+    await expect(page.locator(CAMPO_DO_CODIGO)).toHaveCount(0);
   });
 
   test("senhas diferentes são barradas antes de qualquer ida ao servidor", async ({ page }) => {
@@ -192,13 +257,50 @@ test.describe("Link de nova senha", () => {
     ).toBeVisible();
   });
 
-  test("token recusado pelo servidor vira recado com o caminho de volta", async ({ page }) => {
+  test("token recusado pelo servidor vira recado", async ({ page }) => {
     await page.goto("/redefinir-senha?token=token-que-nao-existe");
 
     await page.getByLabel(/^Senha nova/).fill("senha-boa-1234");
     await page.getByLabel(/^Repita a senha nova/).fill("senha-boa-1234");
     await page.getByRole("button", { name: "Trocar a senha" }).click();
 
-    await expect(page.getByText(/já foi usado ou passou de 1 hora/)).toBeVisible();
+    // A mesma recusa genérica do código: token e código saem pela mesma porta,
+    // e a porta não diz qual dos dois estava errado.
+    await expect(page.getByText(/Código inválido ou expirado/)).toBeVisible();
+  });
+});
+
+/**
+ * Da aba "Recuperar" até a tela do código — Issue #102.
+ *
+ * É a costura nova, e a que some sem ninguém perceber: antes a aba terminava
+ * num aviso ("confira seu e-mail") e o LINK fazia o resto do caminho. Sem link,
+ * parar naquele aviso vira beco — a pessoa fica com um código na mão e nenhuma
+ * tela onde digitá-lo.
+ */
+test.describe("A aba Recuperar entrega a pessoa na tela do código", () => {
+  test("pedir o código leva direto para onde ele se digita", async ({ page }) => {
+    const email = `recuperar-${Date.now()}@zelo.test`;
+
+    await page.goto("/");
+    await page.getByRole("tab", { name: "Recuperar" }).click();
+    await page.getByLabel(/^Seu e-mail cadastrado/).fill(email);
+    await page.getByRole("button", { name: "Enviar código de recuperação" }).click();
+
+    await expect(page).toHaveURL(/\/redefinir-senha$/);
+    await expect(page.locator('input[autocomplete="one-time-code"]')).toBeAttached();
+  });
+
+  test("e leva o e-mail junto, para não pedir duas vezes a mesma coisa", async ({ page }) => {
+    const email = `recuperar-${Date.now()}@zelo.test`;
+
+    await page.goto("/");
+    await page.getByRole("tab", { name: "Recuperar" }).click();
+    await page.getByLabel(/^Seu e-mail cadastrado/).fill(email);
+    await page.getByRole("button", { name: "Enviar código de recuperação" }).click();
+
+    // Redigitar o endereço na tela seguinte é um passo sem função — e é onde a
+    // pessoa erra, ficando sem entender por que o código "não funciona".
+    await expect(page.getByLabel(/^E-mail do cadastro/)).toHaveValue(email);
   });
 });
