@@ -39,11 +39,14 @@ Das 10 fases do backlog original só sobraram três buracos, todos deixados de p
   — schema completo já gerado e testado, trigger de imutabilidade, secrets faltando, URL do OAuth.
 - **Verificação visual só acontece no Replit.** O roteamento de `/api` para o backend é da
   infraestrutura dele (`router = "application"`), não reproduzido localmente.
-- **A suíte não roda mais nesta máquina**, desde 31/08/2026: o Smart App Control do Windows bloqueia
-  `argon2.glibc.node` e `biome.exe`, e sem o argon2 a API nem sobe — vão junto a integração e o
-  Playwright. **O CI em Linux é a única verificação real**, e todo número novo sai do log dele, com
-  o id da execução ([../CONTEXT.md](../CONTEXT.md)). O runbook do banco de teste local segue válido
-  para quando destravar: [runbooks/banco-de-teste-local.md](runbooks/banco-de-teste-local.md).
+- **A suíte de integração não roda nesta máquina — e a causa mudou em 04/09/2026.** O diagnóstico
+  antigo culpava o Smart App Control por bloquear `argon2` e `biome`; medido de novo, **os dois
+  funcionam**. O que falta é só o banco: o cluster da porta 5433 não sobe (`postgres.exe` recebe
+  `Permission denied` no bind), e o serviço que roda na 5432 não tem o papel `zelo_dev`. Detalhe e
+  as três saídas em [../CONTEXT.md](../CONTEXT.md) — a mais barata é abrir o Docker, que já está
+  instalado. **Enquanto isso o CI em Linux é a única verificação real** da integração e do
+  Playwright, e todo número novo sai do log dele. Typecheck, lint, build e os testes de `lib/`
+  rodam aqui e devem ser rodados antes de todo push.
 - **Portões de CI** (`.github/workflows/validate.yml`, no `main` desde 26/08/2026): typecheck, lint
   de relógio, suíte do servidor, build, **Biome** e **Playwright**; o **Knip** é relatório e não
   falha o build. **Nada de código entra no `main` sem Issue e PR** — [CLAUDE.md](../CLAUDE.md) e

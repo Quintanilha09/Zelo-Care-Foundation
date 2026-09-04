@@ -15,6 +15,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useLocation } from 'wouter';
 import { CHAVE_DO_EMAIL } from './VerifyEmailPage';
+import { CHAVE_DO_EMAIL_DA_SENHA } from './ResetPasswordPage';
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
 
@@ -310,8 +311,8 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
 // ── Recuperar senha ────────────────────────────────────────────────────────
 
 function ForgotPasswordForm() {
+  const [, setLocation] = useLocation();
   const [email, setEmail] = useState('');
-  const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -322,19 +323,24 @@ function ForgotPasswordForm() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email }),
     });
-    setSent(true);
-    setLoading(false);
-  };
 
-  if (sent) {
-    return (
-      <Alert>
-        <AlertDescription>
-          Se esse e-mail estiver cadastrado, você receberá um link de recuperação em breve.
-        </AlertDescription>
-      </Alert>
-    );
-  }
+    // Issue #102: o e-mail traz um CÓDIGO, não um link — então a pessoa
+    // continua aqui, e a tela tem que levá-la ao lugar de digitar. Antes ela
+    // parava num aviso de "confira seu e-mail" e o link fazia o resto; agora
+    // parar aqui seria um beco.
+    //
+    // O endereço vai junto pelo sessionStorage, e não pela URL: e-mail em
+    // barra de endereço vira histórico do navegador e log de servidor. Mesmo
+    // padrão do CHAVE_DO_EMAIL da confirmação de conta.
+    try {
+      sessionStorage.setItem(CHAVE_DO_EMAIL_DA_SENHA, email);
+    } catch {
+      // Navegador com armazenamento bloqueado: a tela seguinte só pede o
+      // e-mail de novo, e não quebra.
+    }
+    setLoading(false);
+    setLocation('/redefinir-senha');
+  };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -344,7 +350,7 @@ function ForgotPasswordForm() {
           onChange={(e) => setEmail(e.target.value)} required />
       </div>
       <Button type="submit" className="w-full" disabled={loading}>
-        {loading ? 'Enviando…' : 'Enviar link de recuperação'}
+        {loading ? 'Enviando…' : 'Enviar código de recuperação'}
       </Button>
     </form>
   );

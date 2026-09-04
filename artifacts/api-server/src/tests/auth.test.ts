@@ -22,7 +22,7 @@ import {
   caregiversTable,
   familiesTable,
   refreshTokensTable,
-  emailVerificationsTable,
+  passwordResetsTable,
   consentRecordsTable,
 } from "@workspace/db";
 import { hashToken, generateAccessToken, } from "../lib/tokens.ts";
@@ -470,18 +470,32 @@ describe("Autenticação — ZELO", () => {
         assert.equal(res.status, 200, "deve retornar 200 mesmo sem e-mail existente");
       });
 
-      it("solicitação para e-mail existente cria token no banco", async () => {
+      it("solicitação para e-mail existente cria código no banco", async () => {
+        // Este caso terminava em `assert.ok(true)` — ele lia a tabela errada
+        // (`email_verifications`, preenchida no cadastro) e depois afirmava
+        // uma tautologia. Passava com a rota quebrada.
+        //
+        // A tabela certa é `password_resets`, e desde a Issue #102 ela guarda
+        // o hash de um código de 6 dígitos.
+        const antes = await db
+          .select({ id: passwordResetsTable.id })
+          .from(passwordResetsTable)
+          .where(eq(passwordResetsTable.userId, userId));
+
         await api("POST", "/auth/password-reset/request", {
           email: "auth-test2@zelo.test",
         });
-        // Verifica que o token foi criado (sem ver o valor — só a existência)
-        const _tokens = await db
-          .select({ id: emailVerificationsTable.id })
-          .from(emailVerificationsTable)
-          .where(eq(emailVerificationsTable.userId, userId));
-        // email_verifications foi criado no cadastro — aqui verificamos password_resets
-        // (já que não temos acesso direto ao token enviado, verificamos indiretamente)
-        assert.ok(true, "solicitação processada sem erro");
+
+        const depois = await db
+          .select({ id: passwordResetsTable.id })
+          .from(passwordResetsTable)
+          .where(eq(passwordResetsTable.userId, userId));
+
+        assert.equal(
+          depois.length,
+          antes.length + 1,
+          "o pedido precisa gravar um código de redefinição",
+        );
       });
     });
   });

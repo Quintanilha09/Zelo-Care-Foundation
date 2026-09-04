@@ -89,6 +89,23 @@ function baseUrl(): string {
 let jaAvisouDaBaseUrl = false;
 
 /**
+ * `APP_URL` é um endereço http(s) absoluto?
+ *
+ * `new URL()` sozinho não basta: ele aceita `mailto:`, `javascript:` e
+ * qualquer outro esquema. O que serve para montar link de e-mail é http ou
+ * https, e mais nada.
+ */
+function ehEnderecoAbsoluto(valor: string | undefined): boolean {
+  if (typeof valor !== "string" || valor.length === 0) return false;
+  try {
+    const url = new URL(valor);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Existe provedor de e-mail configurado?
  *
  * Mesmo padrão do `isConfigured()` do Google (ver routes/google-auth.ts): uma
@@ -109,6 +126,17 @@ let jaAvisouDaBaseUrl = false;
  * construiu. Em desenvolvimento e em teste a exigência não vale: ali o
  * `localhost` é o endereço certo.
  *
+ * **E precisa ser uma URL, não qualquer string.** Em 03/09/2026 a variável foi
+ * configurada como `206f61db-....replit.dev`, sem `https://`. Ela existia, a
+ * checagem passava, e todo link saía relativo e quebrado. Uma variável que
+ * "existe" e não é endereço é o mesmo problema de não existir, com a checagem
+ * dando o aval.
+ *
+ * O que isto NÃO pega é `APP_URL` bem formada apontando para um app que não
+ * está no ar — foi o caso do dia seguinte. Não há como conferir isso na carga
+ * do processo, e é justamente por isso que a redefinição de senha deixou de
+ * usar link (Issue #102).
+ *
  * O provedor escolhido é o Resend (ver planning/decisoes/PLATFORM_DECISIONS.md
  * §11). Enquanto `RESEND_API_KEY` não existir, não há provedor.
  */
@@ -116,13 +144,13 @@ export function hasEmailProvider(): boolean {
   const chave = process.env.RESEND_API_KEY;
   if (typeof chave !== "string" || chave.length === 0) return false;
 
-  if (isProduction && process.env.APP_URL === undefined) {
+  if (isProduction && !ehEnderecoAbsoluto(process.env.APP_URL)) {
     // Uma vez por processo: é erro de configuração, não evento de tráfego.
     if (!jaAvisouDaBaseUrl) {
       jaAvisouDaBaseUrl = true;
       safeLog.error(
         { action: "email_sem_app_url" },
-        "RESEND_API_KEY existe mas APP_URL nao: todo link sairia apontando para localhost, entao o envio fica desligado. Defina APP_URL nos Secrets.",
+        "RESEND_API_KEY existe mas APP_URL nao e uma URL http(s) absoluta: todo link sairia quebrado, entao o envio fica desligado. Defina APP_URL nos Secrets, com https:// na frente.",
       );
     }
     return false;
@@ -432,19 +460,45 @@ export async function sendEmailChangeWarning(
   );
 }
 
-/** Envia e-mail de recuperação de senha. */
-export async function sendPasswordResetEmail(email: string, token: string): Promise<boolean> {
-  const link = `${baseUrl()}/redefinir-senha?token=${token}`;
-  devLog("Recuperação de senha", link);
+/**
+ * Envia o código de redefinição de senha — Issue #102.
+ *
+ * ── Era um link, e o link quebrou ─────────────────────────────────────────
+ *
+ * Em 03/09/2026 o fundador ficou sem conseguir trocar a senha. O e-mail chegou
+ * perfeito e o botão levava a uma página de erro do Replit: `APP_URL` apontava
+ * para um app que nunca foi publicado.
+ *
+ * Terceiro tropeço na mesma variável em dois dias — antes ela esteve ausente,
+ * e depois sem `https://`. **O problema não era a variável, era depender de
+ * link.** A verificação de conta já tinha feito esta troca na Issue #77, pela
+ * mesma razão, e não deu mais problema.
+ *
+ * ── Nenhum link, de propósito ─────────────────────────────────────────────
+ *
+ * Quem lê este e-mail acabou de pedir a redefinição, e a tela que pede o
+ * código já está aberta do outro lado. Um link só acrescentaria uma forma de
+ * falhar — e, como se viu, ela falha.
+ *
+ * O código vai **no assunto também**, como no e-mail de confirmação: dá para
+ * ler na notificação do celular sem abrir o e-mail.
+ */
+export async function sendPasswordResetEmail(email: string, codigo: string): Promise<boolean> {
+  // O código NÃO passa pelo devLog — mesma regra do código de confirmação.
+  // Imprimir credencial no log de desenvolvimento não ganha nada: em
+  // desenvolvimento o e-mail sai no console inteiro de qualquer forma.
+  devLog("Redefinição de senha pedida", `${baseUrl()}/redefinir-senha`);
 
   return enviar(
     {
       para: email,
-      assunto: "Redefinir sua senha — ZELO",
+      assunto: `${codigo} é o seu código para redefinir a senha — ZELO`,
       titulo: "Vamos redefinir sua senha",
-      paragrafos: ["Alguém pediu uma nova senha para a sua conta no ZELO."],
-      acao: { rotulo: "Criar uma senha nova", url: link },
-      aviso: "O link vale 1 hora e só funciona uma vez. Se não foi você, ignore este e-mail: sua senha continua a mesma.",
+      paragrafos: [
+        "Alguém pediu uma nova senha para a sua conta no ZELO. Digite este código na tela do aplicativo:",
+      ],
+      codigo,
+      aviso: "O código vale 10 minutos e só serve uma vez. Se não foi você, ignore este e-mail: sua senha continua a mesma.",
     },
     "reset_de_senha",
   );
