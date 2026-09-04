@@ -353,6 +353,21 @@ describe("Antienumeração", () => {
     // Issue #84: sem piso de resposta, conta inexistente respondia mais rápido
     // que conta existente. A consulta ao banco e o hash do código custam
     // tempo, e esse tempo é informação.
+    //
+    // ── Margem para baixo, e por quê ───────────────────────────────────────
+    //
+    // A primeira versão comparava com o piso exato e **falhou no CI em
+    // 249,9ms** — a mensagem chegou a imprimir "250ms, abaixo do piso de
+    // 250ms", que é o arredondamento escondendo a fração.
+    //
+    // A causa é o próprio piso: `esperarAtePiso` usa `setTimeout`, que aceita
+    // milissegundo fracionário, trunca, e pode acordar alguns décimos antes.
+    // O que este caso mede é "não responde rápido demais", não o valor exato.
+    //
+    // `reenvio-de-codigo.test.ts` já tinha chegado a essa conclusão na Issue
+    // #84 e usa a mesma margem. Eu escrevi a comparação estrita mesmo assim.
+    const MINIMO_ACEITAVEL = PISO_DE_RESPOSTA_MS * 0.9;
+
     const { email } = await contaComCodigo("482915");
 
     const existente = await api("/auth/password-reset/confirm", {
@@ -368,10 +383,21 @@ describe("Antienumeração", () => {
 
     for (const [nome, r] of [["existente", existente], ["inexistente", inexistente]] as const) {
       assert.ok(
-        r.ms >= PISO_DE_RESPOSTA_MS,
-        `resposta de conta ${nome} saiu em ${Math.round(r.ms)}ms, abaixo do piso de ${PISO_DE_RESPOSTA_MS}ms`,
+        r.ms >= MINIMO_ACEITAVEL,
+        // Uma casa decimal, e não `Math.round`: foi o arredondamento que fez a
+        // falha anterior parecer impossível ("250ms, abaixo de 250ms").
+        `resposta de conta ${nome} saiu em ${r.ms.toFixed(1)}ms, abaixo do mínimo de ${MINIMO_ACEITAVEL}ms`,
       );
     }
+
+    // E o que a Issue #84 realmente protege: as duas respostas não podem ser
+    // distinguíveis pelo relógio. O piso serve a isto — sozinho, ele poderia
+    // estar valendo e ainda assim uma resposta demorar muito mais que a outra.
+    const diferenca = Math.abs(existente.ms - inexistente.ms);
+    assert.ok(
+      diferenca < PISO_DE_RESPOSTA_MS / 2,
+      `as duas respostas diferiram ${diferenca.toFixed(1)}ms — perto do piso de ${PISO_DE_RESPOSTA_MS}ms isso vira sinal de que a conta existe`,
+    );
   });
 });
 

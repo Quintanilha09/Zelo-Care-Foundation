@@ -576,3 +576,74 @@ export async function sendCaregiverInviteEmail(email: string, token: string): Pr
     "convite",
   );
 }
+
+/**
+ * Código para confirmar o endereço de RECUPERAÇÃO — Issue #87.
+ *
+ * Vai para o endereço reserva, e é a prova de que alguém o controla. Sem essa
+ * prova, o reserva é pior que nenhum: ele dá a sensação de rede de proteção, e
+ * a pessoa só descobre que não havia rede no dia em que cai.
+ *
+ * Não confundir com `sendEmailChangeCode`: aquele troca a identidade de login,
+ * este cadastra um segundo endereço de poder menor. Os dois mandam código para
+ * um endereço novo, e é só o que têm em comum.
+ */
+export async function sendRecoveryEmailCode(emailReserva: string, codigo: string): Promise<boolean> {
+  devLog("Código de e-mail de recuperação emitido", `${baseUrl()}/ajustes/conta`);
+
+  return enviar(
+    {
+      para: emailReserva,
+      assunto: `${codigo} é o seu código de recuperação — ZELO`,
+      titulo: "Confirme este endereço de recuperação",
+      paragrafos: [
+        "Alguém indicou este endereço como e-mail de recuperação de uma conta no ZELO. Digite este código na tela do aplicativo para confirmar:",
+      ],
+      codigo,
+      aviso:
+        "O código vale 10 minutos. Este endereço serve só para recuperar o acesso — ele não entra na conta, não troca a senha e não recebe dados de saúde. Se você não esperava este e-mail, ignore: sem o código, nada acontece.",
+    },
+    "codigo_de_recuperacao",
+  );
+}
+
+/**
+ * Aviso ao endereço PRINCIPAL de que um reserva foi cadastrado — Issue #87.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * É O MESMO PAPEL DO AVISO DA ISSUE #46, E PELA MESMA RAZÃO: SE QUEM PEDIU NÃO
+ * FOI A DONA DA CONTA, ESTE E-MAIL É A ÚNICA COISA QUE A AVISA.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Um atacante com sessão aberta que cadastre o próprio endereço como reserva
+ * ganha, no futuro (#79), um caminho para receber o código de aparelho novo.
+ * Ele ainda precisa da senha — o limite de poder do reserva garante isso — mas
+ * o aviso é o que dá à vítima a chance de reagir antes disso importar.
+ *
+ * Vai quando o reserva é **pedido**, e não quando é confirmado: avisar só no
+ * fim é avisar tarde.
+ */
+export async function sendRecoveryEmailWarning(
+  emailPrincipal: string,
+  emailReserva: string,
+): Promise<boolean> {
+  const link = `${baseUrl()}/ajustes/conta`;
+  devLog("Aviso de e-mail de recuperação ao endereço principal", link);
+
+  return enviar(
+    {
+      para: emailPrincipal,
+      assunto: "Cadastraram um e-mail de recuperação na sua conta — ZELO",
+      titulo: "Um e-mail de recuperação foi cadastrado",
+      paragrafos: [
+        `Foi indicado o endereço ${emailReserva} como e-mail de recuperação da sua conta no ZELO.`,
+        "Se foi você, não precisa fazer nada: basta confirmar o código que enviamos para esse endereço.",
+        "Se NÃO foi você, alguém tem acesso à sua conta. Troque sua senha agora — isso encerra todas as sessões abertas.",
+      ],
+      acao: { rotulo: "Trocar minha senha agora", url: link },
+      aviso:
+        "O endereço de recuperação não entra na sua conta e não troca sua senha. Ele só serve para você voltar caso perca o acesso a este e-mail.",
+    },
+    "aviso_de_email_de_recuperacao",
+  );
+}
