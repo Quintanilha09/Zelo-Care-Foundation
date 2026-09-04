@@ -126,19 +126,17 @@ test.describe("Guardar completo, mostrar curto", () => {
     await expect(page.getByTitle(NOME_REAL_LONGO)).toBeVisible();
   });
 
-  test("a ficha mostra o nome COMPLETO — é onde ele é necessário", async ({ page }) => {
+  test("a ficha mostra o nome curto, e não perde o completo", async ({ page }) => {
     await entrar(page, conta);
     await page.goto(`/pacientes/${pacienteId}`);
 
-    // Farmácia, consulta e receita pedem o nome como está no documento. Se
-    // ele não estivesse em lugar nenhum da tela, encurtar teria virado
-    // esconder.
-    await expect(page.getByText(NOME_REAL_LONGO, { exact: true }).first()).toBeVisible();
+    const titulo = page.getByRole("heading", { level: 2, name: NOME_REAL_CURTO });
+    await expect(titulo).toBeVisible();
 
-    // E o título continua sendo o nome curto, que é o que cabe.
-    await expect(
-      page.getByRole("heading", { level: 2, name: NOME_REAL_CURTO }),
-    ).toBeVisible();
+    // O nome completo NÃO é escrito na tela — o fundador pediu que não fosse,
+    // e a Issue #28 mede que este cabeçalho não pode engordar. Ele fica no
+    // `title` (mouse e leitor de tela) e inteiro no formulário de edição.
+    await expect(titulo).toHaveAttribute("title", NOME_REAL_LONGO);
   });
 
   test("encurtar não é truncar — não aparecem reticências", async ({ page }) => {

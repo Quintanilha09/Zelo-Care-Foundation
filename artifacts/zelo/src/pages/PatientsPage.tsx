@@ -152,7 +152,7 @@ export default function PatientsPage() {
                     mostrar curto. O nome inteiro fica no `title`, e continua
                     inteiro na ficha e na exportacao. */}
                 <div className="flex-1 min-w-0">
-                  <p className="text-[18px] font-medium break-words" title={patient.name}>
+                  <p className="text-[18px] font-medium" title={patient.name}>
                     {nomeCurto(patient.name)}
                   </p>
                   <p className="text-sm text-muted-foreground">{patient.timezone}</p>

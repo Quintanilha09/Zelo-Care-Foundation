@@ -76,6 +76,37 @@ const SUFIXOS_DE_GERACAO = new Set([
 ]);
 
 /**
+ * Tratamento antes do nome. Descoberto pelo CI, e a lição é do produto.
+ *
+ * O paciente canônico da suíte se chama **"Dona Maria Teste"**, e a primeira
+ * versão desta função o mostrava como "Dona Teste" — que não é ninguém. Três
+ * arquivos de teste caíram por isso, e estavam certos em cair.
+ *
+ * Num app cujo público é cuidador de pessoa idosa brasileira, `Dona`, `Seu` e
+ * `Vó` **fazem parte de como a pessoa é chamada**. Quem digita "Dona Maria"
+ * não está pondo um título: está escrevendo o nome pelo qual a família chama
+ * aquela senhora.
+ *
+ * Então o tratamento gruda no primeiro nome, e o resto da regra segue igual:
+ * "Dona Maria Aparecida da Silva" → "Dona Maria Silva".
+ */
+const TRATAMENTOS = new Set([
+  "dona",
+  "dom",
+  "seu",
+  "sr",
+  "sra",
+  "senhor",
+  "senhora",
+  "dr",
+  "dra",
+  "doutor",
+  "doutora",
+  "vo",
+  "vovo",
+]);
+
+/**
  * Tira acento e caixa, para comparar com as listas acima.
  *
  * "Júnior" e "Junior" são a mesma palavra para quem lê, e precisam ser a mesma
@@ -106,8 +137,12 @@ export function nomeCurto(nomeCompleto: string): string {
   // de estragar um nome que estava certo.
   if (palavras.length <= 2) return palavras.join(" ");
 
-  const primeiro = palavras[0]!;
-  const resto = palavras.slice(1);
+  // 0) Tratamento (`Dona`, `Seu`, `Vó`) gruda no primeiro nome. Sem isto,
+  //    "Dona Maria Teste" viraria "Dona Teste".
+  const temTratamento = palavras.length >= 3 && TRATAMENTOS.has(comparavel(palavras[0]!));
+  const quantasNoPrimeiro = temTratamento ? 2 : 1;
+  const primeiro = palavras.slice(0, quantasNoPrimeiro).join(" ");
+  const resto = palavras.slice(quantasNoPrimeiro);
 
   // 1) Tira do fim os sufixos de geração, para levá-los junto no resultado.
   //    `resto.length > 1` protege o caso "Maria Filho": ali "Filho" é a única

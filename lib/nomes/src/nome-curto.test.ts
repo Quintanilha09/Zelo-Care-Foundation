@@ -89,6 +89,42 @@ describe("sufixo de geração vai junto — é o caso que quebra a regra ingênu
   });
 });
 
+
+describe("tratamento antes do nome — Dona, Seu, Vó", () => {
+  it("Dona Maria Teste não vira \"Dona Teste\"", () => {
+    // O paciente canônico da suíte. A primeira versão desta função o
+    // encurtava para "Dona Teste", e três arquivos de e2e caíram por isso —
+    // estavam certos em cair.
+    assert.equal(nomeCurto("Dona Maria Teste"), "Dona Maria Teste");
+  });
+
+  it("o tratamento gruda no primeiro nome, e o resto da regra segue igual", () => {
+    assert.equal(nomeCurto("Dona Maria Aparecida da Silva"), "Dona Maria Silva");
+    assert.equal(nomeCurto("Seu Jose de Souza Filho"), "Seu Jose Souza Filho");
+  });
+
+  it("vale para a lista toda, com e sem acento", () => {
+    for (const t of ["Dona", "Seu", "Sr", "Sra", "Dr", "Dra", "Vó", "Vô"]) {
+      assert.equal(
+        nomeCurto(`${t} Maria Aparecida Silva`),
+        `${t} Maria Silva`,
+        `tratamento "${t}" não foi reconhecido`,
+      );
+    }
+  });
+
+  it("com só duas palavras nada muda — \"Dona Maria\" já é a forma curta", () => {
+    assert.equal(nomeCurto("Dona Maria"), "Dona Maria");
+  });
+
+  it("tratamento no meio do nome não conta", () => {
+    // Só a primeira palavra é tratamento. No meio, é sobrenome de alguém —
+    // "Dona" existe como sobrenome, e comer o de uma família seria pior que
+    // mostrar uma palavra a mais.
+    assert.equal(nomeCurto("Maria Dona Silva"), "Maria Silva");
+  });
+});
+
 describe("nomes que não devem mudar", () => {
   it("nome já curto passa inteiro", () => {
     assert.equal(nomeCurto("Ana Silva"), "Ana Silva");

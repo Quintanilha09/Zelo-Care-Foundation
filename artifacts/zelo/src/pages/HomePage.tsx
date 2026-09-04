@@ -340,7 +340,7 @@ export default function HomePage() {
                   seletor de paciente para fora da tela. */}
               <div className="min-w-0">
                 <p className="text-sm text-muted-foreground">Cuidando de</p>
-                <h2 className="text-2xl font-semibold break-words" title={currentPatient?.name}>
+                <h2 className="text-2xl font-semibold" title={currentPatient?.name}>
                   {currentPatient ? nomeCurto(currentPatient.name) : "…"}
                 </h2>
               </div>
@@ -516,7 +516,7 @@ export default function HomePage() {
                       {/* Issue #88: nome de medicamento tambem e texto do
                           usuario, e uma palavra comprida aqui empurra a
                           pagina igual a um nome de paciente. */}
-                      <span className="flex-1 min-w-0 break-words">
+                      <span className="flex-1 min-w-0">
                         Estoque baixo: {item.medicationName} ({item.quantityRemaining} {item.unit})
                         {item.effectiveDaysRemaining !== null && ` — cerca de ${Math.round(item.effectiveDaysRemaining)} dia(s)`}
                       </span>

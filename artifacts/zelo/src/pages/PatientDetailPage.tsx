@@ -28,7 +28,7 @@ import {
 import { AreaCarregando, Esqueleto } from "@/components/esqueleto";
 import { ArrowLeft, Plus, Pill, Package, Trash2, Smartphone, Tablet, Pause, Play, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { nomeCurto, foiEncurtado } from "@workspace/nomes";
+import { nomeCurto } from "@workspace/nomes";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -462,18 +462,21 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
           <div className="min-w-0">
             {/* Issue #88: aqui era `truncate` no nome completo, e truncar
                 produzia "Maria Aparecida da Concei…" - que nao e o nome de
-                ninguem. Agora o titulo e o nome curto, e o completo aparece
-                logo abaixo quando os dois diferem.
+                ninguem. Agora o titulo e o NOME CURTO.
 
-                Esta e a tela onde o nome completo TEM que estar visivel: e
-                a que o cuidador abre quando precisa do nome como esta no
-                documento - farmacia, consulta, receita. */}
-            <h2 className="text-2xl font-semibold break-words" title={patient?.name}>
+                O nome completo NAO aparece aqui, e a decisao tem duas
+                razoes que apontam para o mesmo lado: o fundador pediu que
+                ele nao fosse mostrado na tela, e a Issue #28 mede que este
+                cabecalho nao pode engordar — uma linha a mais empurraria a
+                dose de hoje para fora da primeira tela, que foi o defeito
+                que a #28 consertou.
+
+                Ele continua alcancavel no `title` (mouse e leitor de tela)
+                e inteiro no formulario de edicao, que e onde o cuidador vai
+                quando precisa do nome como esta no documento. */}
+            <h2 className="text-2xl font-semibold" title={patient?.name}>
               {patient ? nomeCurto(patient.name) : "…"}
             </h2>
-            {patient && foiEncurtado(patient.name) && (
-              <p className="text-sm text-muted-foreground break-words">{patient.name}</p>
-            )}
             <p className="text-muted-foreground text-[17px] truncate">{patient?.timezone}</p>
           </div>
 
@@ -960,7 +963,7 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
                           texto que a pessoa vai digitar para confirmar uma
                           exclusao permanente. `break-words` porque um nome
                           de 60 caracteres nao pode estourar o dialogo. */}
-                      Digite <span className="font-semibold break-words">{patient.name}</span> pra confirmar
+                      Digite <span className="font-semibold">{patient.name}</span> pra confirmar
                     </Label>
                     <Input
                       id="del-confirm"

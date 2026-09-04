@@ -383,7 +383,7 @@ export default function AppointmentsPage({ params }: { params: { id: string } })
                     {/* Issue #88: texto livre - `min-w-0` para o item poder
                         encolher, `break-words` para a palavra comprida
                         quebrar em vez de empurrar a pagina. */}
-                    <span className="flex-1 min-w-0 break-words">{q}</span>
+                    <span className="flex-1 min-w-0">{q}</span>
                     <button onClick={() => void handleRemoveQuestion(q)} aria-label="Remover pergunta"><X className="w-3.5 h-3.5 text-muted-foreground" /></button>
                   </div>
                 ))}

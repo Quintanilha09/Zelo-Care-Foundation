@@ -634,3 +634,52 @@ describe("O lote da tela cabe no limitador do servidor", () => {
     );
   });
 });
+
+/**
+ * A quebra de palavra comprida é global — Issue #88.
+ *
+ * ── Por que um guardrail, e num arquivo do servidor ───────────────────────
+ *
+ * O conserto da #88 tem duas metades, e a primeira tentativa só teve uma. Pôr
+ * `break-words` em cada lugar onde eu lembrei falhou no CI: o título da ficha
+ * quebrava certo e a frase logo abaixo vazava, porque ninguém pensa em nome
+ * comprido ao escrever uma frase com o nome do paciente no meio.
+ *
+ * A regra passou a ser global, no `body` do `index.css`. Regra global é
+ * exatamente o tipo de coisa que alguém remove num refactor de CSS sem saber o
+ * que ela segurava — e o defeito volta calado, em telas que ninguém está
+ * olhando naquele dia.
+ *
+ * Fica aqui pelo mesmo motivo dos outros deste arquivo: é a suíte que roda em
+ * todo PR e não precisa de navegador. O front não tem suíte unitária.
+ */
+describe("Quebra de palavra comprida — Issue #88", () => {
+  const css = `${raiz}../../zelo/src/index.css`;
+
+  it("o `overflow-wrap` global continua no index.css", () => {
+    const conteudo = readFileSync(css, "utf8");
+
+    assert.match(
+      conteudo,
+      /overflow-wrap:\s*break-word/,
+      "sumiu o `overflow-wrap: break-word` global do index.css. Sem ele, " +
+        "qualquer frase com nome de paciente no meio volta a vazar para fora " +
+        "da tela no celular — que foi o defeito relatado na Issue #88.",
+    );
+  });
+
+  it("não virou `anywhere`, que mexeria na largura de botão e de tabela", () => {
+    const conteudo = readFileSync(css, "utf8");
+
+    // `anywhere` também encolhe a largura mínima intrínseca dos elementos.
+    // Resolveria o mesmo problema e mudaria o tamanho de botão e de célula no
+    // app inteiro — troca que não foi feita, e que não deve entrar sem
+    // alguém decidir por ela.
+    assert.doesNotMatch(
+      conteudo,
+      /overflow-wrap:\s*anywhere/,
+      "`overflow-wrap: anywhere` global muda a largura mínima de todo " +
+        "elemento. Se for mesmo desejado, decida e apague este teste.",
+    );
+  });
+});

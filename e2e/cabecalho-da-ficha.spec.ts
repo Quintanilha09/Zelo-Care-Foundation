@@ -17,11 +17,20 @@ import { criarConta, entrar, sair, criarPaciente, naoRolaNaHorizontal, type Cont
  * ── O que cada teste prova ────────────────────────────────────────────────
  *
  *   1. com 60 caracteres, a página continua sem rolar de lado
- *   2. o nome TRUNCA em vez de empurrar o resto — e o nome inteiro continua
+ *   2. o nome ENCURTA em vez de empurrar o resto — e o nome inteiro continua
  *      disponível para o mouse e para o leitor de tela
  *   3. o cabeçalho não engorda: mesma altura com nome curto e com nome longo
  *   4. "+ Tratamento" continua inteiro na tela e continua abrindo a janela
  *   5. as três seções continuam alcançáveis pela faixa que rola
+ *
+ * ── O que mudou em 03/09/2026 (Issue #88) ────────────────────────────────
+ *
+ * O item 2 dizia **truncar**, e o teste media `text-overflow: ellipsis`.
+ * O fundador decidiu outra coisa: **guardar completo, mostrar curto**.
+ * "Maria Aparecida da Concei…" não é o nome de ninguém; "Maria Testes" é.
+ *
+ * O que este arquivo protege continua igual — o nome não pode empurrar o
+ * cabeçalho, e não pode se perder. Só a forma de conseguir isso mudou.
  */
 
 /**
@@ -35,6 +44,13 @@ import { criarConta, entrar, sair, criarPaciente, naoRolaNaHorizontal, type Cont
  */
 const NOME_LONGO = "Maria Aparecida do Nascimento Albuquerque Fictícia de Testes";
 
+/**
+ * Como o nome acima aparece na tela desde a Issue #88: primeiro nome +
+ * último sobrenome. É o que `nomeCurto` devolve, e é por ele que os
+ * seletores deste arquivo procuram.
+ */
+const NOME_NA_TELA = "Maria Testes";
+
 let conta: ContaDeTeste;
 let patientId: number;
 
@@ -47,7 +63,7 @@ test.describe("Ficha de paciente com nome longo", () => {
   test.beforeEach(async ({ page }) => {
     await entrar(page, conta);
     await page.goto(`/pacientes/${patientId}`);
-    await expect(page.getByRole("heading", { name: NOME_LONGO })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("heading", { name: NOME_NA_TELA })).toBeVisible({ timeout: 15_000 });
   });
 
   test("a página não rola de lado", async ({ page }) => {
@@ -56,20 +72,23 @@ test.describe("Ficha de paciente com nome longo", () => {
     await naoRolaNaHorizontal(page);
   });
 
-  test("o nome trunca, e o nome inteiro não se perde", async ({ page }) => {
-    const titulo = page.getByRole("heading", { name: NOME_LONGO });
+  test("o nome encurta, e o nome inteiro não se perde", async ({ page }) => {
+    const titulo = page.getByRole("heading", { name: NOME_NA_TELA });
 
-    // ── A primeira versão deste teste media a coisa errada ────────────────
+    // ── Duas versões anteriores deste teste, e o que cada uma ensinou ─────
     //
-    // Ela pedia `scrollWidth <= clientWidth`, achando que isso significava
-    // "cabe". Significa o oposto: com `overflow: hidden`, `scrollWidth` é
-    // justamente o tamanho do texto INTEIRO, e `clientWidth` o pedaço que
-    // aparece. Num nome truncado o primeiro é **sempre** maior — o teste
-    // reprovava exatamente quando a correção estava funcionando.
+    // A primeira pedia `scrollWidth <= clientWidth`, achando que isso
+    // significava "cabe". Significa o oposto: com `overflow: hidden`,
+    // `scrollWidth` é o tamanho do texto INTEIRO. O teste reprovava
+    // exatamente quando a correção estava funcionando.
     //
-    // O que importa de verdade é outra coisa: a caixa do título não pode
-    // ficar mais larga que a do pai. É isso que impede o nome de empurrar o
-    // resto do cabeçalho.
+    // A segunda exigia `text-overflow: ellipsis` — e essa parte deixou de
+    // valer na Issue #88, quando o nome passou a ser ENCURTADO em vez de
+    // truncado. Reticências não são o nome de ninguém.
+    //
+    // O que sobrevive às três versões é o que sempre importou: a caixa do
+    // título não pode ficar mais larga que a do pai. É isso que impede o
+    // nome de empurrar o resto do cabeçalho.
     const dentroDoPai = await titulo.evaluate((el) => {
       const pai = el.parentElement;
       if (!pai) return false;
@@ -77,24 +96,20 @@ test.describe("Ficha de paciente com nome longo", () => {
     });
     expect(dentroDoPai, "o título não pode ser mais largo que a caixa que o contém").toBeTruthy();
 
-    // E o corte precisa ser um corte com reticências, não um texto espremido
-    // em três linhas: é o `truncate` que faz as três coisas juntas.
-    const estilo = await titulo.evaluate((el) => {
-      const s = getComputedStyle(el);
-      return { overflow: s.overflow, quebra: s.whiteSpace, corte: s.textOverflow };
-    });
-    expect(estilo, "o título precisa truncar com reticências, numa linha só").toEqual({
-      overflow: "hidden",
-      quebra: "nowrap",
-      corte: "ellipsis",
-    });
-
-    // E truncar não pode custar a informação. O nome completo fica no
-    // `title` — para quem passa o mouse e para quem usa leitor de tela.
+    // Encurtar não pode custar a informação. O nome completo fica no `title`
+    // — para quem passa o mouse e para quem usa leitor de tela.
     await expect(
       titulo,
-      "o nome completo precisa continuar acessível mesmo truncado"
+      "o nome completo precisa continuar acessível mesmo encurtado"
     ).toHaveAttribute("title", NOME_LONGO);
+
+    // E o nome mostrado precisa ser um NOME, não um pedaço de um. O texto
+    // exato prova as duas coisas de uma vez: é o nome curto, e não tem
+    // reticências — que foi a alternativa que o fundador recusou.
+    //
+    // Medido no título, e não na página: "Carregando…" e "Excluindo…" também
+    // têm reticências, e são legítimas.
+    await expect(titulo).toHaveText(NOME_NA_TELA);
   });
 
   test('"+ Tratamento" fica inteiro na tela e abre a janela', async ({ page }) => {
@@ -156,8 +171,8 @@ test("o cabeçalho não engorda com o nome longo", async ({ page, request }) => 
   await sair(page);
   await entrar(page, conta);
   await page.goto(`/pacientes/${patientId}`);
-  await expect(page.getByRole("heading", { name: NOME_LONGO })).toBeVisible({ timeout: 15_000 });
-  const comNomeLongo = await alturaDoCabecalho(NOME_LONGO);
+  await expect(page.getByRole("heading", { name: NOME_NA_TELA })).toBeVisible({ timeout: 15_000 });
+  const comNomeLongo = await alturaDoCabecalho(NOME_NA_TELA);
 
   // Esta é a medida do defeito. O nome quebrava em duas ou três linhas e a
   // faixa de botões virava uma escadinha: o cabeçalho dobrava de altura e

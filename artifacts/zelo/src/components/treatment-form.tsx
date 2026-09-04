@@ -436,7 +436,7 @@ export function TreatmentForm({ patientId, onCreated, onCancel, tratamento }: Tr
             <div className="flex-1 min-w-0 space-y-2">
               {photoExtracting && <p className="text-sm text-muted-foreground">Lendo a foto…</p>}
               {!photoExtracting && posologyHint && (
-                <p className="text-sm text-muted-foreground break-words">Texto da receita: <span className="italic">"{posologyHint}"</span></p>
+                <p className="text-sm text-muted-foreground">Texto da receita: <span className="italic">"{posologyHint}"</span></p>
               )}
               <Button type="button" variant="ghost" size="sm" className="gap-1 h-auto p-0 text-muted-foreground" onClick={handleRemovePhoto}>
                 <X className="w-3.5 h-3.5" /> Remover foto / prefiro digitar
