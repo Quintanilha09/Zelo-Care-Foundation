@@ -26,6 +26,7 @@ import {
   familiesTable,
   refreshTokensTable,
   emailChangesTable,
+  recoveryEmailsTable,
 } from "@workspace/db";
 import { requireAuth, requirePrimaryCaregiver } from "../middleware/require-auth";
 import {
@@ -33,6 +34,8 @@ import {
   sendEmailChangeCode,
   sendEmailChangeWarning,
   hasEmailProvider,
+  sendRecoveryEmailCode,
+  sendRecoveryEmailWarning,
 } from "../lib/email";
 import { audit } from "../lib/audit";
 import { safeLog } from "../lib/safe-logger";
@@ -956,6 +959,293 @@ router.post("/account/email/confirm", requireAuth, publicTokenLimiter, async (re
     refreshToken: refreshRaw,
     expiresIn: 900,
   });
+});
+
+// ── E-MAIL DE RECUPERAÇÃO — Issue #87 ────────────────────────────────────
+//
+// ═══════════════════════════════════════════════════════════════════════════
+// O PODER DESTE ENDEREÇO É MENOR QUE O DO E-MAIL PRINCIPAL, E É ISSO QUE
+// SUSTENTA A IDEIA. ELE RECEBE O CÓDIGO DE APARELHO NOVO (#79) E NADA MAIS:
+// NÃO REDEFINE SENHA, NÃO TROCA O E-MAIL PRINCIPAL, NÃO ENTRA SOZINHO.
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Esse limite não está escrito como regra em lugar nenhum — é consequência de
+// `login`, `password-reset/request` e `account/email/change` procurarem por
+// `users.email` e nunca por `users.recoveryEmail`. Uma consulta trocada por
+// engano devolveria o poder inteiro sem nenhum sintoma visível, e por isso
+// `recuperacao-de-conta.test.ts` prova as três negativas.
+//
+// Sem o limite, cadastrar um reserva DOBRARIA a superfície de ataque com o
+// mesmo poder: quem comprometesse o reserva tomaria a conta, e a rede de
+// proteção viraria a porta mais fácil.
+
+const RecoveryEmailBody = z.object({
+  email: z.string().email().max(254),
+});
+
+const RecoveryConfirmBody = z.object({
+  codigo: z.string().min(1).max(32),
+});
+
+/** O que a tela precisa saber: se há reserva, e se há um pendente. */
+router.get("/account/recovery-email", requireAuth, async (req, res): Promise<void> => {
+  const [user] = await db
+    .select({
+      recoveryEmail: usersTable.recoveryEmail,
+      recoveryEmailAt: usersTable.recoveryEmailAt,
+    })
+    .from(usersTable)
+    .where(eq(usersTable.id, getAuth(req).userId))
+    .limit(1);
+
+  const [pendente] = await db
+    .select({ email: recoveryEmailsTable.email, expiraEm: recoveryEmailsTable.expiresAt })
+    .from(recoveryEmailsTable)
+    .where(
+      and(
+        eq(recoveryEmailsTable.userId, getAuth(req).userId),
+        eq(recoveryEmailsTable.used, false),
+        gt(recoveryEmailsTable.expiresAt, Clock.now()),
+      ),
+    )
+    .orderBy(desc(recoveryEmailsTable.id))
+    .limit(1);
+
+  res.json({
+    atual: user?.recoveryEmail ?? null,
+    desde: user?.recoveryEmailAt ?? null,
+    pendente: pendente ?? null,
+  });
+});
+
+/**
+ * Pedir o cadastro de um endereço reserva.
+ *
+ * Não exige a senha atual, ao contrário da troca de e-mail (#46), e a razão é
+ * a diferença de poder: cadastrar um reserva não tira nada de ninguém e não
+ * concede acesso nenhum sozinho. O que protege aqui é o **aviso ao endereço
+ * principal**, disparado no pedido e não na confirmação — se quem pediu não
+ * foi a dona da conta, é esse e-mail que a avisa enquanto ainda dá tempo.
+ */
+router.post("/account/recovery-email", requireAuth, verifyPasswordLimiter, async (req, res): Promise<void> => {
+  if (!allowsDevelopmentShortcuts() && !hasEmailProvider()) {
+    res.status(503).json({
+      error: "Não é possível cadastrar o e-mail de recuperação agora, porque não conseguimos enviar a confirmação. Tente mais tarde.",
+      code: "EMAIL_PROVIDER_UNAVAILABLE",
+    });
+    return;
+  }
+
+  const body = RecoveryEmailBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: "Informe um e-mail válido." });
+    return;
+  }
+
+  const email = body.data.email.toLowerCase().trim();
+
+  const [user] = await db
+    .select({ email: usersTable.email })
+    .from(usersTable)
+    .where(eq(usersTable.id, getAuth(req).userId))
+    .limit(1);
+
+  if (!user) {
+    res.status(404).json({ error: "Conta não encontrada." });
+    return;
+  }
+
+  // O erro de digitação mais comum é escrever o mesmo endereço duas vezes — e
+  // um reserva igual ao principal é exatamente zero rede de proteção, com a
+  // aparência de uma.
+  if (email === user.email.toLowerCase()) {
+    res.status(400).json({
+      error: "O e-mail de recuperação precisa ser diferente do e-mail da sua conta. Se fosse o mesmo, ele não ajudaria em nada no dia em que você perdesse o acesso a ele.",
+      code: "RECOVERY_IGUAL_AO_PRINCIPAL",
+    });
+    return;
+  }
+
+  // Nada impede que o reserva seja o e-mail de outra conta do ZELO: é o caso
+  // do filho que cuida dos dois pais, cada um com a própria conta. O reserva
+  // não entra em conta nenhuma, então não há poder cruzado a proteger.
+
+  const codigo = gerarCodigo();
+  await db.transaction(async (tx) => {
+    // Aposenta pedidos anteriores: dois códigos vivos seriam dez tentativas em
+    // vez de cinco, e dois endereços concorrendo pela mesma conta.
+    await tx
+      .update(recoveryEmailsTable)
+      .set({ used: true, usedAt: Clock.now() })
+      .where(
+        and(
+          eq(recoveryEmailsTable.userId, getAuth(req).userId),
+          eq(recoveryEmailsTable.used, false),
+        ),
+      );
+
+    await tx.insert(recoveryEmailsTable).values({
+      userId: getAuth(req).userId,
+      email,
+      codigoHash: hashDoCodigo(getAuth(req).userId, codigo),
+      expiresAt: expiraEm(Clock.now()),
+      requestIp: req.ip ?? null,
+    });
+  });
+
+  await sendRecoveryEmailCode(email, codigo);
+  // O aviso vai no PEDIDO, e não na confirmação. Avisar só no fim é avisar
+  // tarde: a essa altura o atacante já teria o endereço confirmado.
+  await sendRecoveryEmailWarning(user.email, email);
+
+  safeLog.info({ action: "recovery_email_pedido" }, "E-mail de recuperacao pedido");
+
+  res.json({
+    message: "Enviamos um código para o endereço de recuperação. Ele vale 10 minutos.",
+  });
+});
+
+/** Confirmar o endereço reserva com o código que chegou nele. */
+router.post("/account/recovery-email/confirm", requireAuth, publicTokenLimiter, async (req, res): Promise<void> => {
+  const inicio = inicioDaMedicao();
+  const recusar = async (): Promise<void> => {
+    await esperarAtePiso(inicio);
+    res.status(400).json({ error: "Código inválido ou expirado. Peça um novo." });
+  };
+
+  const body = RecoveryConfirmBody.safeParse(req.body);
+  if (!body.success) {
+    await recusar();
+    return;
+  }
+
+  const codigo = normalizarCodigo(body.data.codigo);
+  if (!codigo) {
+    await recusar();
+    return;
+  }
+
+  const [pendente] = await db
+    .select()
+    .from(recoveryEmailsTable)
+    .where(
+      and(
+        eq(recoveryEmailsTable.userId, getAuth(req).userId),
+        eq(recoveryEmailsTable.used, false),
+        gt(recoveryEmailsTable.expiresAt, Clock.now()),
+      ),
+    )
+    .orderBy(desc(recoveryEmailsTable.id))
+    .limit(1);
+
+  if (!pendente || pendente.attempts >= MAX_TENTATIVAS) {
+    await recusar();
+    return;
+  }
+
+  if (!conferirHash(pendente.codigoHash, hashDoCodigo(getAuth(req).userId, codigo))) {
+    // Gravar o erro é o que torna a força bruta inviável. Sem este UPDATE, o
+    // resto desta rota é decoração.
+    await db
+      .update(recoveryEmailsTable)
+      .set({ attempts: pendente.attempts + 1 })
+      .where(eq(recoveryEmailsTable.id, pendente.id));
+
+    safeLog.warn(
+      { action: "recovery_email_codigo_errado", outcome: String(pendente.attempts + 1) },
+      "Codigo de e-mail de recuperacao incorreto",
+    );
+    await recusar();
+    return;
+  }
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(recoveryEmailsTable)
+      .set({ used: true, usedAt: Clock.now() })
+      .where(eq(recoveryEmailsTable.id, pendente.id));
+
+    await tx
+      .update(usersTable)
+      .set({ recoveryEmail: pendente.email, recoveryEmailAt: Clock.now() })
+      .where(eq(usersTable.id, getAuth(req).userId));
+  });
+
+  await audit({
+    familyId: getAuth(req).familyId,
+    entityType: "user",
+    entityId: String(getAuth(req).userId),
+    action: "updated",
+    actorId: String(getAuth(req).caregiverId),
+    actorType: "caregiver",
+    ipAddress: req.ip ?? undefined,
+  });
+
+  safeLog.info({ action: "recovery_email_confirmado" }, "E-mail de recuperacao confirmado");
+  await esperarAtePiso(inicio);
+  res.json({ message: "Endereço de recuperação confirmado." });
+});
+
+/**
+ * Remover o endereço reserva.
+ *
+ * Exige a senha atual — ao contrário de cadastrar. A assimetria é de
+ * propósito: cadastrar não tira proteção de ninguém, remover tira. Um atacante
+ * com sessão aberta que apagasse o reserva em silêncio deixaria a vítima sem
+ * caminho de volta justamente antes de tomar a conta.
+ */
+router.delete("/account/recovery-email", requireAuth, verifyPasswordLimiter, async (req, res): Promise<void> => {
+  const senha = String((req.body as { senhaAtual?: unknown } | undefined)?.senhaAtual ?? "");
+
+  const [user] = await db
+    .select({ passwordHash: usersTable.passwordHash })
+    .from(usersTable)
+    .where(eq(usersTable.id, getAuth(req).userId))
+    .limit(1);
+
+  if (!user) {
+    res.status(404).json({ error: "Conta não encontrada." });
+    return;
+  }
+
+  // Conta só do Google não tem senha para conferir. Ela também não perde o
+  // acesso quando o e-mail some — quem recupera é o Google — então remover
+  // aqui não desprotege nada.
+  const contaComSenha = !!user.passwordHash && user.passwordHash !== "!";
+  if (contaComSenha && !(await verifyPassword(user.passwordHash!, senha))) {
+    res.status(401).json({ error: "Senha atual incorreta.", code: "INVALID_PASSWORD" });
+    return;
+  }
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(usersTable)
+      .set({ recoveryEmail: null, recoveryEmailAt: null })
+      .where(eq(usersTable.id, getAuth(req).userId));
+
+    await tx
+      .update(recoveryEmailsTable)
+      .set({ used: true, usedAt: Clock.now() })
+      .where(
+        and(
+          eq(recoveryEmailsTable.userId, getAuth(req).userId),
+          eq(recoveryEmailsTable.used, false),
+        ),
+      );
+  });
+
+  await audit({
+    familyId: getAuth(req).familyId,
+    entityType: "user",
+    entityId: String(getAuth(req).userId),
+    action: "updated",
+    actorId: String(getAuth(req).caregiverId),
+    actorType: "caregiver",
+    ipAddress: req.ip ?? undefined,
+  });
+
+  safeLog.info({ action: "recovery_email_removido" }, "E-mail de recuperacao removido");
+  res.json({ message: "Endereço de recuperação removido." });
 });
 
 export default router;
