@@ -6,7 +6,7 @@ import { getAuth } from "../lib/auth-types.ts";
 import { Router } from "express";
 import { eq, and } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { caregiversTable, pushSubscriptionsTable } from "@workspace/db";
+import { caregiversTable, pushSubscriptionsTable, usersTable, familiesTable } from "@workspace/db";
 import { z } from "zod";
 import { requireAuth, requirePrimaryCaregiver } from "../middleware/require-auth";
 import { audit } from "../lib/audit";
@@ -15,6 +15,7 @@ import { countPrimaryCaregivers } from "../lib/capabilities";
 import { revokeAllAccessTokensForUser } from "../lib/tokens";
 import { safeLog } from "../lib/safe-logger";
 import { closeConnectionsForUser } from "../lib/realtime.ts";
+import { sendRescueNotice } from "../lib/email.ts";
 
 const router = Router();
 
@@ -170,6 +171,133 @@ router.delete("/caregivers/:caregiverId", requirePrimaryCaregiver, async (req, r
   });
 
   res.status(204).send();
+});
+
+// ── RESGATE PELA FAMÍLIA — Issue #87 ─────────────────────────────────────
+//
+// ═══════════════════════════════════════════════════════════════════════════
+// ISTO NÃO CONCEDE PODER NOVO AO CUIDADOR PRINCIPAL — ELE JÁ VÊ E FAZ TUDO
+// NESTA FAMÍLIA. O QUE ABRE É UM CAMINHO PARA PULAR O SEGUNDO FATOR DE OUTRA
+// PESSOA, E ISSO SÓ IMPORTA PARA QUEM JÁ TEM A SENHA DELA.
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// O produto já modela vários cuidadores por família, com papéis. Deixar o
+// principal restaurar o acesso de outro sai quase de graça desse modelo, e é o
+// caminho mais limpo que existe aqui.
+//
+// **O que ele custa.** Um atacante que já tenha a senha de alguém e a
+// cumplicidade — ou a conta comprometida — de um cuidador principal ganha um
+// caminho para pular o segundo fator. Não dá para eliminar sem tirar o resgate,
+// que é justamente o que impede a conta de se perder. Três coisas limitam, e
+// nenhuma é opcional:
+//
+//   1. janela curta — quem pediu ajuda entra logo
+//   2. a pessoa resgatada é AVISADA por e-mail, no ato
+//   3. fica no registro de auditoria: quem resgatou quem, e quando
+//
+// **Família com um cuidador só não tem isto**, e é o caso mais comum no
+// começo. Para ela o caminho é o e-mail de recuperação, que entrou no mesmo
+// PR anterior desta Issue.
+
+/**
+ * Quanto tempo o resgate fica armado.
+ *
+ * Vinte e quatro horas: quem pediu ajuda vai entrar no mesmo dia, e um resgate
+ * esquecido não pode ficar valendo para sempre. É o mesmo raciocínio do link de
+ * convite, e o oposto do prazo de sete dias da exclusão — lá a espera protege,
+ * aqui ela é exposição.
+ */
+const RESGATE_HORAS = 24;
+
+router.post("/caregivers/:caregiverId/resgate", requirePrimaryCaregiver, async (req, res): Promise<void> => {
+  const caregiverId = Number(req.params.caregiverId);
+  if (isNaN(caregiverId)) { res.status(400).json({ error: "ID inválido" }); return; }
+
+  // Resgatar a si mesmo não faz sentido: quem chama esta rota está logado.
+  if (caregiverId === getAuth(req).caregiverId) {
+    res.status(400).json({
+      error: "Você já está com acesso — o resgate é para devolver o acesso de outra pessoa da família.",
+    });
+    return;
+  }
+
+  // Invariante 2 do produto: cuidador de outra família responde 404, nunca 403.
+  // O `familyId` vem do token, jamais da URL.
+  const [alvo] = await db
+    .select({ userId: caregiversTable.userId, nome: caregiversTable.name })
+    .from(caregiversTable)
+    .where(and(eq(caregiversTable.id, caregiverId), eq(caregiversTable.familyId, getAuth(req).familyId)))
+    .limit(1);
+
+  if (!alvo) { res.status(404).json({ error: "Cuidador não encontrado" }); return; }
+
+  // Convite aceito ainda não vinculado a uma conta não tem o que resgatar.
+  if (alvo.userId === null) {
+    res.status(400).json({
+      error: "Essa pessoa ainda não criou a conta dela — não há acesso a restaurar.",
+      code: "SEM_CONTA",
+    });
+    return;
+  }
+
+  const validoAte = new Date(Clock.now().getTime() + RESGATE_HORAS * 60 * 60 * 1000);
+
+  await db
+    .update(usersTable)
+    .set({ resgateLiberadoAte: validoAte })
+    .where(eq(usersTable.id, alvo.userId));
+
+  // ── O aviso, e por que ele vem antes da resposta ────────────────────────
+  //
+  // Se a pessoa resgatada não pediu isto, este e-mail é a única coisa que a
+  // avisa. Ele não impede o abuso; tira dele o silêncio, que é o que o torna
+  // perigoso.
+  const [resgatado] = await db
+    .select({ email: usersTable.email })
+    .from(usersTable)
+    .where(eq(usersTable.id, alvo.userId))
+    .limit(1);
+
+  const [familia] = await db
+    .select({ nome: familiesTable.name })
+    .from(familiesTable)
+    .where(eq(familiesTable.id, getAuth(req).familyId))
+    .limit(1);
+
+  const [quemResgatou] = await db
+    .select({ nome: caregiversTable.name })
+    .from(caregiversTable)
+    .where(eq(caregiversTable.id, getAuth(req).caregiverId))
+    .limit(1);
+
+  if (resgatado) {
+    await sendRescueNotice(
+      resgatado.email,
+      quemResgatou?.nome ?? "O cuidador principal",
+      familia?.nome ?? "sua família",
+      validoAte,
+    );
+  }
+
+  safeLog.info(
+    { action: "updated", entityType: "caregiver", familyId: getAuth(req).familyId },
+    "Acesso restaurado pelo cuidador principal",
+  );
+
+  await audit({
+    familyId: getAuth(req).familyId,
+    entityType: "caregiver",
+    entityId: String(caregiverId),
+    action: "updated",
+    actorId: String(getAuth(req).caregiverId),
+    actorType: "caregiver",
+    ipAddress: req.ip ?? undefined,
+  });
+
+  res.json({
+    message: `Acesso de ${alvo.nome} restaurado. A próxima entrada dela, nas próximas ${RESGATE_HORAS} horas, não vai pedir o código de aparelho novo.`,
+    validoAte,
+  });
 });
 
 export default router;
