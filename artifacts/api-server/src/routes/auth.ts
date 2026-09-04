@@ -35,7 +35,6 @@ import { hashPassword, verifyPassword, validatePasswordStrength } from "../lib/p
 import {
   generateAccessToken,
   generateRefreshToken,
-  generateOneTimeToken,
   hashToken,
   decodeRefreshTokenUserId,
   revokeAccessToken,
@@ -57,6 +56,7 @@ import {
 import { Clock } from "../lib/clock";
 import { resolveActiveCaregiver } from "../lib/active-family.ts";
 import { allowsDevelopmentShortcuts } from "../lib/environment.ts";
+import { mensagemDeValidacao } from "../lib/erro-de-validacao.ts";
 import {
   gerarCodigo,
   hashDoCodigo,
@@ -760,6 +760,17 @@ router.post("/auth/logout-all", requireAuth, async (req, res): Promise<void> => 
 
 // ── RECUPERAÇÃO DE SENHA — SOLICITAÇÃO ──────────────────────────────────
 
+/**
+ * A resposta do pedido de redefinição, para TODOS os caminhos.
+ *
+ * Sai igual quando a conta existe, quando não existe e quando o teto de
+ * emissão por hora foi atingido. Qualquer diferença entre os três — texto,
+ * status, ou a falta de um deles — diria a quem perguntou se aquele e-mail tem
+ * conta no ZELO.
+ */
+const MENSAGEM_DE_PEDIDO_DE_SENHA =
+  "Se esse e-mail estiver cadastrado, você receberá um código de 6 dígitos.";
+
 router.post("/auth/password-reset/request", passwordResetLimiter, async (req, res): Promise<void> => {
   // Mesmo motivo do cadastro: sem provedor, o link nunca chega, e a resposta
   // genérica de sempre ("se existir conta, enviamos") viraria mentira.
@@ -781,47 +792,130 @@ router.post("/auth/password-reset/request", passwordResetLimiter, async (req, re
     .limit(1);
 
   if (user) {
-    const { raw, hash } = generateOneTimeToken();
-    await db.insert(passwordResetsTable).values({
-      userId: user.id,
-      tokenHash: hash,
-      expiresAt: new Date(Clock.now().getTime() + 60 * 60 * 1000), // 1 hora
-      requestIp: req.ip ?? null,
+    // ── Teto de emissão POR CONTA — Issue #102 ────────────────────────────
+    //
+    // `passwordResetLimiter` limita por `ip:email`. Isso bastava quando o
+    // e-mail levava um token de 2^256: pedir muitos não aproximava ninguém de
+    // adivinhar um. Com código de 6 dígitos a conta muda, e muda feio —
+    // **cada emissão devolve cinco palpites**, e uma botnet troca de IP à
+    // vontade. Sem teto por conta, ~100.000 pedidos chegam a 50% de chance.
+    //
+    // O teto é o mesmo do reenvio de confirmação (Issue #75), pela mesma razão.
+    //
+    // Recusar em silêncio é obrigatório: a resposta desta rota é idêntica
+    // exista ou não a conta, e um 429 aqui contaria que existe.
+    const umaHoraAtras = new Date(Clock.now().getTime() - 60 * 60 * 1000);
+    const [emitidos] = await db
+      .select({ total: count() })
+      .from(passwordResetsTable)
+      .where(
+        and(
+          eq(passwordResetsTable.userId, user.id),
+          gte(passwordResetsTable.createdAt, umaHoraAtras),
+        ),
+      );
+
+    if ((emitidos?.total ?? 0) >= MAX_CODIGOS_POR_HORA) {
+      safeLog.warn(
+        { action: "reset_acima_do_teto", outcome: String(emitidos?.total ?? 0) },
+        "Teto de emissao de codigo de senha atingido para uma conta",
+      );
+      res.json({ message: MENSAGEM_DE_PEDIDO_DE_SENHA });
+      return;
+    }
+
+    // Um código vivo por vez. Cada código ativo é mais cinco tentativas
+    // oferecidas a quem estiver adivinhando — a mesma regra da Issue #77.
+    await db.transaction(async (tx) => {
+      await tx
+        .update(passwordResetsTable)
+        .set({ used: true, usedAt: Clock.now() })
+        .where(
+          and(
+            eq(passwordResetsTable.userId, user.id),
+            eq(passwordResetsTable.used, false),
+          ),
+        );
+
+      const codigo = gerarCodigo();
+      await tx.insert(passwordResetsTable).values({
+        userId: user.id,
+        tokenHash: hashDoCodigo(user.id, codigo),
+        expiresAt: expiraEm(Clock.now()),
+        requestIp: req.ip ?? null,
+      });
+
+      // Dentro da transação de propósito: se o envio falhar, o código não
+      // fica gravado prometendo um e-mail que não saiu. `sendPasswordResetEmail`
+      // devolve boolean e nunca lança (ver lib/email.ts) — a exceção aqui
+      // seria um oráculo de enumeração, porque só existe quando a conta
+      // existe.
+      await sendPasswordResetEmail(email, codigo);
     });
-    await sendPasswordResetEmail(email, raw);
   }
 
-  res.json({ message: "Se esse e-mail estiver cadastrado, você receberá um link de recuperação." });
+  res.json({ message: MENSAGEM_DE_PEDIDO_DE_SENHA });
 });
 
 // ── RECUPERAÇÃO DE SENHA — CONFIRMAÇÃO ───────────────────────────────────
 
+/**
+ * Confirmar a redefinição — Issue #102.
+ *
+ * ── Dois caminhos, e o segundo é uma ponte ────────────────────────────────
+ *
+ * `{ email, codigo }` é o caminho de hoje. `{ token }` é o dos **links que já
+ * estão na caixa de entrada de alguém** quando isto subir: eles valem uma hora
+ * e recusá-los transformaria a melhoria em quebra para quem pediu a senha
+ * cinco minutos antes do deploy.
+ *
+ * A ponte se apaga sozinha — nenhum token novo é emitido, e o último expira
+ * uma hora depois do deploy.
+ *
+ * ── Resposta única para tudo que dá errado ────────────────────────────────
+ *
+ * Conta que não existe, código errado, código expirado, tentativas esgotadas:
+ * todas saem pela mesma porta e depois do mesmo tempo mínimo. Diferenciar
+ * qualquer uma delas diria a um atacante se aquele e-mail tem conta.
+ */
+const RECUSA_DE_SENHA = "Código inválido ou expirado. Peça um novo.";
+
 const ResetConfirmBody = z.object({
-  token: z.string().min(1),
+  /** Caminho novo: e-mail + código de 6 dígitos. */
+  email: z.string().optional(),
+  codigo: z.string().optional(),
+  /** Caminho antigo: token de link ainda válido. Ver o comentário acima. */
+  token: z.string().optional(),
   newPassword: z.string().min(8).max(128),
 });
 
 router.post("/auth/password-reset/confirm", publicTokenLimiter, async (req, res): Promise<void> => {
-  const body = ResetConfirmBody.safeParse(req.body);
-  if (!body.success) { res.status(400).json({ error: "Token e nova senha são obrigatórios" }); return; }
+  const inicio = inicioDaMedicao();
+  const recusar = async (): Promise<void> => {
+    await esperarAtePiso(inicio);
+    res.status(400).json({ error: RECUSA_DE_SENHA });
+  };
 
+  const body = ResetConfirmBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: mensagemDeValidacao(body.error) });
+    return;
+  }
+
+  // A força da senha é conferida ANTES de qualquer consulta, e responde
+  // diferente de propósito: não é segredo nenhum que a senha é curta demais, e
+  // descobrir isso só depois de gastar o código seria cruel.
   const strengthCheck = validatePasswordStrength(body.data.newPassword);
   if (!strengthCheck.ok) { res.status(400).json({ error: strengthCheck.error }); return; }
 
-  const tokenHash = hashToken(body.data.token);
-  const [record] = await db
-    .select()
-    .from(passwordResetsTable)
-    .where(
-      and(
-        eq(passwordResetsTable.tokenHash, tokenHash),
-        eq(passwordResetsTable.used, false),
-        gt(passwordResetsTable.expiresAt, Clock.now())
-      )
-    )
-    .limit(1);
+  const record = body.data.token
+    ? await registroPorToken(body.data.token)
+    : await registroPorCodigo(body.data.email, body.data.codigo);
 
-  if (!record) { res.status(400).json({ error: "Link inválido ou expirado" }); return; }
+  if (!record) {
+    await recusar();
+    return;
+  }
 
   const newHash = await hashPassword(body.data.newPassword);
 
@@ -837,7 +931,91 @@ router.post("/auth/password-reset/confirm", publicTokenLimiter, async (req, res)
   });
   revokeAllAccessTokensForUser(record.userId);
 
-  res.json({ message: "Senha alterada. Faça login novamente em todos os dispositivos." });
+  safeLog.info({ action: "password_reset_ok" }, "Senha redefinida por codigo");
+  await esperarAtePiso(inicio);
+  res.json({ message: "Senha alterada. Entre de novo, com a senha nova, em todos os aparelhos." });
 });
+
+/**
+ * O registro de redefinição a partir do e-mail e do código.
+ *
+ * Devolve `null` para tudo que não dá certo, e **grava a tentativa errada
+ * antes de devolver**. Esse `UPDATE` é o que torna a força bruta inviável:
+ * sem ele, um milhão de combinações é questão de minutos, e o resto desta
+ * rota é decoração.
+ */
+async function registroPorCodigo(
+  emailBruto: string | undefined,
+  codigoBruto: string | undefined,
+): Promise<{ id: number; userId: number } | null> {
+  const email = String(emailBruto ?? "").toLowerCase().trim();
+  const codigo = normalizarCodigo(codigoBruto);
+  if (!email || !codigo) return null;
+
+  const [user] = await db
+    .select({ id: usersTable.id })
+    .from(usersTable)
+    .where(eq(usersTable.email, email))
+    .limit(1);
+
+  // Conta inexistente sai pela mesma porta que código errado.
+  if (!user) return null;
+
+  const [record] = await db
+    .select()
+    .from(passwordResetsTable)
+    .where(
+      and(
+        eq(passwordResetsTable.userId, user.id),
+        eq(passwordResetsTable.used, false),
+        gt(passwordResetsTable.expiresAt, Clock.now()),
+      ),
+    )
+    .orderBy(desc(passwordResetsTable.id))
+    .limit(1);
+
+  if (!record || record.attempts >= MAX_TENTATIVAS) return null;
+
+  if (!conferirHash(record.tokenHash, hashDoCodigo(user.id, codigo))) {
+    await db
+      .update(passwordResetsTable)
+      .set({ attempts: record.attempts + 1 })
+      .where(eq(passwordResetsTable.id, record.id));
+
+    safeLog.warn(
+      { action: "password_reset_codigo_errado", outcome: String(record.attempts + 1) },
+      "Codigo de redefinicao incorreto",
+    );
+    return null;
+  }
+
+  return { id: record.id, userId: record.userId };
+}
+
+/**
+ * O registro a partir de um token de link — a ponte da Issue #102.
+ *
+ * Só encontra o que foi emitido ANTES do deploy: nenhum token novo é criado, e
+ * o último expira uma hora depois. Quando esta função parar de achar qualquer
+ * coisa, ela pode ser apagada junto com `hashToken` e `generateOneTimeToken`
+ * se mais ninguém os usar.
+ */
+async function registroPorToken(
+  token: string,
+): Promise<{ id: number; userId: number } | null> {
+  const [record] = await db
+    .select()
+    .from(passwordResetsTable)
+    .where(
+      and(
+        eq(passwordResetsTable.tokenHash, hashToken(token)),
+        eq(passwordResetsTable.used, false),
+        gt(passwordResetsTable.expiresAt, Clock.now()),
+      ),
+    )
+    .limit(1);
+
+  return record ? { id: record.id, userId: record.userId } : null;
+}
 
 export default router;
