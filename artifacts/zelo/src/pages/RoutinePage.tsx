@@ -209,7 +209,7 @@ export default function RoutinePage({ params }: { params: { id: string } }) {
         {patient?.emergencyContactName ? (
           <div className="flex items-center gap-2 text-sm bg-muted rounded-lg px-3 py-2">
             <Phone className="w-4 h-4 shrink-0 text-muted-foreground" />
-            <a href={`tel:${patient.emergencyContactPhone ?? ""}`} className="flex-1 hover:underline">
+            <a href={`tel:${patient.emergencyContactPhone ?? ""}`} className="flex-1 min-w-0 hover:underline">
               Algo parecendo preocupante? Contato de emergência: <strong>{patient.emergencyContactName}</strong>
               {patient.emergencyContactPhone ? ` — ${patient.emergencyContactPhone}` : ""}
             </a>

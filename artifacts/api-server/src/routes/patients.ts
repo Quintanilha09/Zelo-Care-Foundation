@@ -17,6 +17,7 @@ import { Clock } from "../lib/clock";
 import { clearFuturePendingDoses, generateDosesForTreatment } from "../lib/dose-generation.ts";
 import { checkPatientLimit } from "../lib/plan-limits.ts";
 import { nomeDePaciente } from "../lib/nome-de-paciente.ts";
+import { mensagemDeValidacao } from "../lib/erro-de-validacao.ts";
 
 const router = Router();
 
@@ -69,7 +70,7 @@ router.get("/patients", requireAuth, async (req, res): Promise<void> => {
 router.post("/patients", requireAuth, async (req, res): Promise<void> => {
   const body = CreatePatientBody.safeParse(req.body);
   if (!body.success) {
-    res.status(400).json({ error: body.error.message });
+    res.status(400).json({ error: mensagemDeValidacao(body.error) });
     return;
   }
 
@@ -131,7 +132,7 @@ router.post("/patients/:patientId/archive", requireAuth, async (req, res): Promi
   if (isNaN(patientId)) { res.status(400).json({ error: "ID inválido" }); return; }
 
   const body = ArchivePatientBody.safeParse(req.body);
-  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  if (!body.success) { res.status(400).json({ error: mensagemDeValidacao(body.error) }); return; }
 
   // ZELO-38: reativar (archived: false) conta pro limite igual cadastrar
   // um paciente novo — senão seria um contorno óbvio do limite.
@@ -178,7 +179,7 @@ router.patch("/patients/:patientId/elder-mode", requirePrimaryCaregiver, async (
   if (isNaN(patientId)) { res.status(400).json({ error: "ID inválido" }); return; }
 
   const body = ElderModeBody.safeParse(req.body);
-  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  if (!body.success) { res.status(400).json({ error: mensagemDeValidacao(body.error) }); return; }
 
   const [updated] = await db
     .update(patientsTable)
@@ -238,7 +239,7 @@ router.patch("/patients/:patientId", requireAuth, async (req, res): Promise<void
   if (isNaN(patientId)) { res.status(400).json({ error: "ID inválido" }); return; }
 
   const body = UpdatePatientBody.safeParse(req.body);
-  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  if (!body.success) { res.status(400).json({ error: mensagemDeValidacao(body.error) }); return; }
 
   const [before] = await db
     .select({ timezone: patientsTable.timezone })
@@ -309,7 +310,7 @@ router.delete("/patients/:patientId", requirePrimaryCaregiver, async (req, res):
   if (isNaN(patientId)) { res.status(400).json({ error: "ID inválido" }); return; }
 
   const body = DeletePatientBody.safeParse(req.body);
-  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  if (!body.success) { res.status(400).json({ error: mensagemDeValidacao(body.error) }); return; }
 
   const [patient] = await db
     .select({ id: patientsTable.id, name: patientsTable.name })

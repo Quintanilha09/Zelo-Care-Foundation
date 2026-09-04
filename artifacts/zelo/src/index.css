@@ -157,6 +157,54 @@
     font-size: 18px;
     line-height: 1.6;
   }
+
+  /*
+   * Palavra comprida quebra em vez de vazar — Issue #88.
+   *
+   * ── Por que isto é global, e não classe por classe ────────────────────
+   *
+   * Quase todo texto deste app é escrito por alguém: nome de paciente, de
+   * cuidador, de medicamento, legenda de foto, pergunta ao médico, contato
+   * de emergência. O padrão do CSS é não quebrar dentro da palavra, então
+   * uma palavra que não cabe VAZA para fora da caixa — e a largura de
+   * rolagem do documento cresce junto, que é a rolagem horizontal que o
+   * fundador relatou.
+   *
+   * A primeira tentativa foi pôr `break-words` em cada lugar onde eu
+   * lembrei. O CI reprovou: sobrou a frase do "Modo idoso", porque ninguém
+   * pensa em nome comprido ao escrever uma frase com o nome do paciente no
+   * meio. O padrão seguro é o contrário — quebrar por default.
+   *
+   * ── `anywhere`, e não `break-word`: a diferença é de LAYOUT ───────────
+   *
+   * As duas renderizam igual. Elas diferem em uma coisa só, e é justamente
+   * a que importa aqui: **`anywhere` conta na largura mínima intrínseca do
+   * elemento, `break-word` não.**
+   *
+   * Isso decide o caso do flexbox. Um filho de flex nasce com
+   * `min-width: auto` = "não encolha abaixo do seu min-content". Com
+   * `break-word`, o min-content continua sendo a palavra inteira: o filho
+   * se recusa a encolher e empurra a linha, o cartão e a página. Com
+   * `anywhere`, o min-content vira uma letra, e ele encolhe.
+   *
+   * Medido em 03/09/2026, mesma estrutura da ficha, tela de 380px:
+   *
+   *   sem nada .................... 73px de estouro
+   *   overflow-wrap: break-word ... 73px de estouro  (não muda NADA)
+   *   overflow-wrap: anywhere ..... cabe, com 2px de folga
+   *
+   * O risco que me fez escolher `break-word` primeiro era botão e célula
+   * de tabela encolhendo. Não se aplica: `Button`, `Badge` e
+   * `SelectTrigger` já trazem `whitespace-nowrap`, e sem quebra possível o
+   * `overflow-wrap` não tem efeito nenhum sobre eles. Confirmado na mesma
+   * medição — o botão manteve os 90px.
+   *
+   * `min-w-0` continua útil onde a intenção é explícita (uma faixa que
+   * rola, um texto que trunca), mas deixou de ser a única defesa.
+   */
+  body {
+    overflow-wrap: anywhere;
+  }
 }
 /**
  * Campo de busca de endereço do Google (PlaceAutocompleteElement).

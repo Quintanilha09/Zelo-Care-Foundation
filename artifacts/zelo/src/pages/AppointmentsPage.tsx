@@ -380,7 +380,10 @@ export default function AppointmentsPage({ params }: { params: { id: string } })
                 <Label>O que perguntar ao médico</Label>
                 {detail.questionsForDoctor.map((q) => (
                   <div key={q} className="flex items-center gap-2 text-sm bg-muted rounded-md px-3 py-1.5">
-                    <span className="flex-1">{q}</span>
+                    {/* Issue #88: texto livre - `min-w-0` para o item poder
+                        encolher, `break-words` para a palavra comprida
+                        quebrar em vez de empurrar a pagina. */}
+                    <span className="flex-1 min-w-0">{q}</span>
                     <button onClick={() => void handleRemoveQuestion(q)} aria-label="Remover pergunta"><X className="w-3.5 h-3.5 text-muted-foreground" /></button>
                   </div>
                 ))}

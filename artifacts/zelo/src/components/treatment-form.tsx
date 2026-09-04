@@ -431,7 +431,9 @@ export function TreatmentForm({ patientId, onCreated, onCancel, tratamento }: Tr
         {photoPreviewUrl && (
           <div className="flex items-start gap-3">
             <img src={photoPreviewUrl} alt="Foto do medicamento" className="w-24 h-24 object-cover rounded-lg border shrink-0" />
-            <div className="flex-1 space-y-2">
+            {/* Issue #88: o texto lido da receita vem da foto e nao tem
+                forma garantida - sem `min-w-0` ele empurra a miniatura. */}
+            <div className="flex-1 min-w-0 space-y-2">
               {photoExtracting && <p className="text-sm text-muted-foreground">Lendo a foto…</p>}
               {!photoExtracting && posologyHint && (
                 <p className="text-sm text-muted-foreground">Texto da receita: <span className="italic">"{posologyHint}"</span></p>

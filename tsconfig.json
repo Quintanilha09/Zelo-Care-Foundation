@@ -16,6 +16,9 @@
       "path": "./lib/scheduling"
     },
     {
+      "path": "./lib/nomes"
+    },
+    {
       "path": "./e2e"
     }
   ]

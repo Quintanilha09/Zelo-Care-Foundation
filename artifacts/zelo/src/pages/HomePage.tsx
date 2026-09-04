@@ -16,6 +16,7 @@ import { subscribeToPatientEvents } from "@/lib/realtime-client";
 import { useAuth } from "@/context/AuthContext";
 import { AppHeader } from "@/components/app-header";
 import { AreaCarregando, Esqueleto } from "@/components/esqueleto";
+import { nomeCurto } from "@workspace/nomes";
 import { CampoNumero } from "@/components/campo-numero";
 import { DoseCard } from "@/components/dose-card";
 import { Button } from "@/components/ui/button";
@@ -333,16 +334,22 @@ export default function HomePage() {
         {activePatients.length > 0 && (
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-3">
-              <div>
+              {/* Issue #88: este `div` era filho de flex sem `min-w-0`, e o
+                  `h2` trazia o nome completo. Um nome de 49 caracteres - que
+                  a validacao aceita porque e nome de gente - empurrava o
+                  seletor de paciente para fora da tela. */}
+              <div className="min-w-0">
                 <p className="text-sm text-muted-foreground">Cuidando de</p>
-                <h2 className="text-2xl font-semibold">{currentPatient?.name ?? "…"}</h2>
+                <h2 className="text-2xl font-semibold" title={currentPatient?.name}>
+                  {currentPatient ? nomeCurto(currentPatient.name) : "…"}
+                </h2>
               </div>
               {activePatients.length > 1 && (
                 <Select value={selectedPatientId ? String(selectedPatientId) : undefined} onValueChange={handleSwitchPatient}>
                   <SelectTrigger className="w-40"><SelectValue placeholder="Trocar paciente" /></SelectTrigger>
                   <SelectContent>
                     {activePatients.map((p) => (
-                      <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+                      <SelectItem key={p.id} value={String(p.id)}>{nomeCurto(p.name)}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -415,7 +422,7 @@ export default function HomePage() {
               <div className="text-center py-16 border rounded-xl border-dashed">
                 <Pill className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
                 <p className="text-foreground font-medium">Nenhum tratamento ativo</p>
-                <p className="text-muted-foreground text-sm mt-1 mb-4">Cadastre o primeiro tratamento de {currentPatient?.name}.</p>
+                <p className="text-muted-foreground text-sm mt-1 mb-4">Cadastre o primeiro tratamento de {currentPatient ? nomeCurto(currentPatient.name) : "quem você cuida"}.</p>
                 <Link href={`/pacientes/${selectedPatientId}`}><Button className="gap-2"><Plus className="w-4 h-4" /> Cadastrar tratamento</Button></Link>
               </div>
             )}
@@ -506,7 +513,10 @@ export default function HomePage() {
                   <div key={item.medicationId} className="text-sm text-zelo-amber-fg bg-zelo-amber-bg rounded-lg px-3 py-2 space-y-2">
                     <div className="flex items-center gap-2">
                       <Package className="w-4 h-4 shrink-0" />
-                      <span className="flex-1">
+                      {/* Issue #88: nome de medicamento tambem e texto do
+                          usuario, e uma palavra comprida aqui empurra a
+                          pagina igual a um nome de paciente. */}
+                      <span className="flex-1 min-w-0">
                         Estoque baixo: {item.medicationName} ({item.quantityRemaining} {item.unit})
                         {item.effectiveDaysRemaining !== null && ` — cerca de ${Math.round(item.effectiveDaysRemaining)} dia(s)`}
                       </span>

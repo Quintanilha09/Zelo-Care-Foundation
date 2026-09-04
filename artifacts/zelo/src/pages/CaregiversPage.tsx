@@ -298,7 +298,10 @@ export default function CaregiversPage() {
                   <User className="w-6 h-6 text-muted-foreground" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-[18px] font-medium truncate">{c.name}{isSelf && " (você)"}</p>
+                  {/* Issue #88: o `truncate` ja segurava o layout; faltava
+                      o nome inteiro ficar alcancavel para quem so ve o
+                      corte. */}
+                  <p className="text-[18px] font-medium truncate" title={c.name}>{c.name}{isSelf && " (você)"}</p>
                   {isPrimary && !isSelf ? (
                     <Select value={c.role} onValueChange={(v) => void handleRoleChange(c.id, v as Role)}>
                       <SelectTrigger className="h-8 w-[220px] text-sm mt-1"><SelectValue /></SelectTrigger>
