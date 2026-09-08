@@ -104,11 +104,27 @@ arquivo, e monitor de janela de contexto.
   - `allow_auto_merge` e `delete_branch_on_merge` estão **ligados**. Com isso o
     "Mesclar automaticamente quando pronto" do app fica disponível: o PR entra sozinho quando o
     CI fecha verde, e a branch é apagada.
-  - **O agente não faz merge sozinho.** A tentativa de me autorizar foi barrada pelo
-    classificador do modo automático — e a barreira está certa: quem executa a ação não deve
-    poder desligar a checagem que o limita. O caminho é o botão do app, não uma exceção escrita
-    por mim. Se um agente precisar de merge, **peça**; não contorne por `gh api` nem por outra
-    porta que faça a mesma coisa.
+  - **O agente ARMA o auto-merge, e não faz o merge.** A distinção é a regra inteira:
+    - **Armar** (`gh pr merge <N> --auto --squash`) agenda o GitHub para mesclar quando os três
+      checks fecharem verde. O agente faz isto, e deve fazer **logo depois do push** — ver a
+      janela abaixo. Pedido do fundador em 08/09/2026, para o merge não depender de ele estar
+      presente.
+    - **Mesclar** direto continua fora. A tentativa de me autorizar a isso foi barrada pelo
+      classificador do modo automático, e a barreira está certa: quem executa a ação não deve
+      poder desligar a checagem que o limita. Se um PR chegar verde sem estar armado, **peça**;
+      não contorne por `gh api` nem por outra porta que faça a mesma coisa.
+  - **A janela para armar é curta, e é por isso que a opção às vezes some.** O GitHub só oferece
+    auto-merge enquanto o PR **ainda não pode ser mesclado** — medido em 08/09/2026 no PR #111:
+
+    | `mergeStateStatus` | O que é | Dá para armar? |
+    |---|---|---|
+    | `BLOCKED` | checks rodando ou vermelhos | **sim** |
+    | `DIRTY` | conflito com a base | sim, mas só dispara depois de resolver |
+    | `CLEAN` | verde e sem conflito | **não** — o GitHub troca pelo botão de mesclar direto |
+
+    Ou seja: a opção fica indisponível exatamente nos PRs que **já estão prontos**. Quem abre a
+    tela depois de o CI terminar não acha mais o botão, e isso não é falta de configuração.
+    Armar imediatamente após o `git push` é o único momento garantidamente `BLOCKED`.
   - Para desfazer tudo isto: `gh api -X DELETE repos/<owner>/<repo>/branches/main/protection` e
     `gh api -X PATCH repos/<owner>/<repo> -F allow_auto_merge=false`.
 - **Ordem numérica estrita das histórias:** terminar a de menor número por completo antes da próxima.
