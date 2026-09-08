@@ -56,16 +56,24 @@ Das 10 fases do backlog original só sobraram três buracos, todos deixados de p
 
 ## Onde o desenvolvimento parou
 
-**Cinco Issues abertas, nenhum PR** — medido em 03/09/2026 com `gh`. Este bloco envelhece rápido:
+**Duas Issues abertas — #97 e #99 — medido em 08/09/2026 com `gh`.** Este bloco envelhece rápido:
 se a sessão for depois disso, meça de novo.
 
 | Issue | O quê |
 |---|---|
-| [#53](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/53) | foto some ao publicar no celular — espera duas respostas do fundador |
-| [#46](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/46) | trocar o e-mail da conta — **destravada** desde 02/09, é trabalho disponível |
-| [#76](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/76) | Termos, Privacidade e política de dados de saúde **não abrem** — os três links do cadastro estão mortos. Espera **texto do fundador**, não código |
-| [#78](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/78) | não dá para saber em que conta se está: duas contas da mesma pessoa ficam idênticas na tela |
-| [#79](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/79) | código ao entrar de aparelho novo — **implementada em 08/09/2026**, esperando merge dos PRs [#109](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/109) (servidor) e [#110](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/110) (tela). As duas decisões saíram: **obrigatório** (do fundador, registrado na Issue) e **30 dias** de aparelho confiável renovando a cada uso — 90 foi aprovado antes da pesquisa, e a pesquisa mostrou que o padrão da indústria é 30. Trocar é uma constante (`DIAS_DE_CONFIANCA`) |
+| [#97](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/97) | selecionar vários momentos para apagar de uma vez — **implementada em 08/09/2026**, PR [#112](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/112). Só frontend: sem endpoint em lote, N chamadas em sequência ao `DELETE /api/media/:id` que já existe. O número de selecionadas só aparece durante a seleção e na confirmação, nunca no mural em repouso (CON-012) |
+| [#99](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/99) | trocar a senha sem lembrar a atual, sem deslogar antes — rota nova `POST /api/account/password/reset-link` (autenticada, e-mail vindo da sessão, nunca do corpo), limite 3/hora. **Próxima da fila.** Estava atrás de #110/#111 por tocarem `account.ts` e Ajustes; as duas já entraram |
+
+**Fechadas entre 04 e 08/09/2026:** #87 (recuperação de conta — e-mail e resgate pela família,
+PRs #104/#105), #103 (redefinir senha por código), #101 (nome longo de paciente), #98 (as três
+telas dos documentos legais — resolve o **#76**), #94/#96 (CI mais rápido), #92 (teto do lote),
+#89 (trocar o e-mail da conta — resolve o **#46**), #86/#91 (aba do celular caindo — resolve o
+**#53**), #106/#108 (mensagem de validação e limitador de login), #109/#110 (segundo fator ao
+entrar de aparelho novo — resolve o **#79**), #111 (conta visível no cabeçalho — resolve o **#78**).
+
+> **As três seções abaixo** ("O que sobrou aberto", a leva #45–#56, "Comece pela onda 1") são de
+> 02–03/09 e falam de Issues que **já fecharam** — #46, #53, #76, #78, #79. Ficam como registro do
+> raciocínio da época; o estado real é o das duas linhas acima.
 
 **Fechadas em 02–03/09/2026:** #73 (provedor de e-mail), #77 (código de 6 dígitos),
 #81 (mensagens do cadastro), #75 (reenvio) e #84 (piso de tempo).
