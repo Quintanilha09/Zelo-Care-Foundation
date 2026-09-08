@@ -65,7 +65,7 @@ se a sessão for depois disso, meça de novo.
 | [#46](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/46) | trocar o e-mail da conta — **destravada** desde 02/09, é trabalho disponível |
 | [#76](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/76) | Termos, Privacidade e política de dados de saúde **não abrem** — os três links do cadastro estão mortos. Espera **texto do fundador**, não código |
 | [#78](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/78) | não dá para saber em que conta se está: duas contas da mesma pessoa ficam idênticas na tela |
-| [#79](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/79) | código ao entrar de aparelho novo — **planejada**, espera duas decisões do fundador: opcional ou obrigatório, e se 90 dias de aparelho confiável serve |
+| [#79](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/79) | código ao entrar de aparelho novo — **implementada em 08/09/2026**, esperando merge dos PRs [#109](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/109) (servidor) e [#110](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/110) (tela). As duas decisões saíram: **obrigatório** (do fundador, registrado na Issue) e **30 dias** de aparelho confiável renovando a cada uso — 90 foi aprovado antes da pesquisa, e a pesquisa mostrou que o padrão da indústria é 30. Trocar é uma constante (`DIAS_DE_CONFIANCA`) |
 
 **Fechadas em 02–03/09/2026:** #73 (provedor de e-mail), #77 (código de 6 dígitos),
 #81 (mensagens do cadastro), #75 (reenvio) e #84 (piso de tempo).
