@@ -27,6 +27,7 @@ import { useInfiniteQuery, useQueryClient, type InfiniteData } from "@tanstack/r
 import { authFetch, apiUrl } from "@/lib/auth-client";
 import { useAuth } from "@/context/AuthContext";
 import { comprimirFoto } from "@/lib/comprimir-imagem";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -38,7 +39,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
-import { Camera, Trash2, ImagePlus, Bookmark, Heart, Mic, ChevronLeft, ChevronRight, Images, ArrowLeft, X } from "lucide-react";
+import { Camera, Trash2, ImagePlus, Bookmark, Heart, Mic, ChevronLeft, ChevronRight, Images, ArrowLeft, X, Check, ListChecks } from "lucide-react";
 import { AreaCarregando, EsqueletoDeMomento, BarraDeProgresso } from "@/components/esqueleto";
 
 interface Momento {
@@ -129,6 +130,17 @@ const MS_DE_SAIDA = 120;
 const MAX_POR_LOTE = 20;
 
 /**
+ * Toque longo para entrar no modo de seleção — Issue #97.
+ *
+ * 500ms é o padrão de fato do Android e do Google Fotos. Abaixo de ~400ms um
+ * toque comum dispara sem querer; acima de ~600ms parece que a tela não
+ * respondeu. O toque longo é sempre um ATALHO: o caminho principal é o botão
+ * "Selecionar", porque o público aqui é família com idoso e gesto invisível
+ * não se descobre.
+ */
+const MS_TOQUE_LONGO = 500;
+
+/**
  * "Ana mandou um coração", "Ana e Bruno", "Ana, Bruno e mais 2" — QUI-10.
  *
  * ── O "e mais 2" não é um contador ────────────────────────────────────────
@@ -186,6 +198,28 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
   const [aApagar, setAApagar] = useState<Momento | null>(null);
   const [saindo, setSaindo] = useState<number | null>(null);
   const [consentindo, setConsentindo] = useState(false);
+
+  // ── Seleção múltipla para apagar — Issue #97 ────────────────────────────
+  //
+  // O modo de seleção é estado do cartão inteiro, não da galeria: a mesma
+  // grade aparece na prévia da ficha e dentro da galeria (o helper
+  // `miniatura`), e as duas passam a responder ao toque da mesma forma
+  // quando `selecionando` está ligado.
+  const [selecionando, setSelecionando] = useState(false);
+  const [selecionados, setSelecionados] = useState<Set<number>>(() => new Set());
+  const [confirmandoLote, setConfirmandoLote] = useState(false);
+  const [apagandoLote, setApagandoLote] = useState(false);
+  /** Progresso honesto durante o lote: qual está sendo apagada agora. */
+  const [apagandoIndice, setApagandoIndice] = useState(0);
+  /**
+   * Timer do toque longo e a trava do clique que vem logo atrás.
+   *
+   * Refs, e AQUI EM CIMA junto dos outros hooks: `useRef` depois de um
+   * `return` vira hook condicional, e o mesmo comentário de `inicioDoGesto`
+   * já explica o estrago que isso causou uma vez.
+   */
+  const timerToqueLongo = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toqueLongoDisparou = useRef(false);
   /**
    * Quantas fotos a ficha do paciente mostra — Issue #63.
    *
@@ -232,6 +266,15 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
   // render, e usá-lo como dependência reinscreveria o listener sem parar.
   const quantos = momentos.length;
 
+  /**
+   * Quais momentos desta pessoa dá para apagar — Issue #97.
+   *
+   * `podeApagar` vem por item do servidor (papel + autoria). Se ninguém aqui
+   * pode apagar nada, o modo de seleção não tem função nenhuma, e o botão
+   * "Selecionar" nem aparece.
+   */
+  const apagaveis = momentos.filter((m) => m.podeApagar);
+
   /** O momento sendo olhado agora. `null` quando o visualizador está fechado. */
   const momentoAberto = aberto !== null ? momentos[aberto] ?? null : null;
 
@@ -249,6 +292,13 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
   }, [aberto, quantos]);
+
+  // Um toque longo pendente não pode sobreviver ao desmonte do componente.
+  useEffect(() => {
+    return () => {
+      if (timerToqueLongo.current) clearTimeout(timerToqueLongo.current);
+    };
+  }, []);
 
   const recarregar = () => queryClient.invalidateQueries({ queryKey: ["momentos", patientId] });
 
@@ -522,6 +572,120 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
     setSaindo(null);
   };
 
+  // ── Seleção múltipla — Issue #97 ───────────────────────────────────────
+
+  /**
+   * Marca ou desmarca um momento no modo de seleção.
+   *
+   * Só momentos com `podeApagar` entram: deixar marcar o que não dá para
+   * apagar, para só depois avisar que não deu, é frustração construída de
+   * propósito.
+   */
+  const alternarSelecionado = (momento: Momento) => {
+    if (!momento.podeApagar) return;
+    setSelecionados((antes) => {
+      const proximo = new Set(antes);
+      if (proximo.has(momento.id)) proximo.delete(momento.id);
+      else proximo.add(momento.id);
+      return proximo;
+    });
+  };
+
+  /** Entra no modo de seleção. Vindo do toque longo, já marca a foto tocada. */
+  const entrarNaSelecao = (momento?: Momento) => {
+    setSelecionando(true);
+    setErro("");
+    setSelecionados(momento?.podeApagar ? new Set([momento.id]) : new Set());
+  };
+
+  const sairDaSelecao = () => {
+    setSelecionando(false);
+    setSelecionados(new Set());
+    setApagandoIndice(0);
+    setErro("");
+  };
+
+  const iniciarToqueLongo = (momento: Momento) => {
+    // Já dentro da seleção, o toque longo não tem novo papel — o toque comum
+    // já marca e desmarca. E não abre o modo por um item que nem dá para
+    // apagar: o atalho leva a uma tela onde não haveria nada marcado.
+    if (selecionando || !momento.podeApagar) return;
+    toqueLongoDisparou.current = false;
+    timerToqueLongo.current = setTimeout(() => {
+      toqueLongoDisparou.current = true;
+      entrarNaSelecao(momento);
+    }, MS_TOQUE_LONGO);
+  };
+
+  const cancelarToqueLongo = () => {
+    if (timerToqueLongo.current) {
+      clearTimeout(timerToqueLongo.current);
+      timerToqueLongo.current = null;
+    }
+  };
+
+  /**
+   * Apaga os selecionados, um por um — Issue #97.
+   *
+   * ── Sem endpoint em lote, de propósito ─────────────────────────────────
+   *
+   * `DELETE /api/media/:id` já existe e faz a coisa certa: tira o objeto do
+   * armazenamento ANTES da linha, valida papel e autoria, e audita. Um
+   * endpoint de exclusão em lote teria de repetir tudo isso. É a mesma
+   * decisão que o envio tomou, e pelo mesmo motivo — ver `publicar`.
+   *
+   * ── Falha no meio não perde o resto ───────────────────────────────────
+   *
+   * O que foi apagado sai da lista no `recarregar`; o que falhou continua
+   * marcado, e a mensagem diz quantos faltaram. Um 404 conta como sucesso:
+   * se a foto já não existe, o objetivo — que ela suma — está cumprido.
+   */
+  const apagarSelecionados = async () => {
+    setConfirmandoLote(false);
+    const ids = momentos.filter((m) => selecionados.has(m.id) && m.podeApagar).map((m) => m.id);
+    if (ids.length === 0) return;
+
+    setApagandoLote(true);
+    setErro("");
+    // Fecha o visualizador: se estiver aberto num item que vai sumir, o
+    // índice apontaria para a foto seguinte e a tela trocaria de imagem
+    // sozinha na cara de quem apagou.
+    setAberto(null);
+
+    const falharam = new Set<number>();
+    let ultimoErro = "";
+
+    for (let i = 0; i < ids.length; i++) {
+      setApagandoIndice(i);
+      try {
+        const res = await authFetch(`/api/media/${ids[i]}`, { method: "DELETE" });
+        if (!res.ok && res.status !== 404) {
+          const corpo = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(corpo.error ?? "Não conseguimos apagar.");
+        }
+      } catch (e) {
+        falharam.add(ids[i]);
+        ultimoErro = e instanceof Error ? e.message : "Não conseguimos apagar.";
+      }
+    }
+
+    setSelecionados(falharam);
+    setApagandoIndice(0);
+    setApagandoLote(false);
+
+    if (falharam.size === 0) {
+      setSelecionando(false);
+    } else {
+      setErro(
+        falharam.size === ids.length
+          ? ultimoErro
+          : `${falharam.size} de ${ids.length} não foram apagados. ${ultimoErro} Os outros já saíram do mural — toque em Apagar para tentar de novo só o que faltou.`
+      );
+    }
+
+    await recarregar();
+  };
+
   const registrarConsentimento = async () => {
     setConsentindo(true);
     setErro("");
@@ -580,18 +744,56 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
    * paciente e dentro da galeria. Duplicar o markup faria as duas divergirem
    * na primeira mudança.
    */
-  const miniatura = (momento: Momento, indice: number) => (
+  const miniatura = (momento: Momento, indice: number) => {
+    const marcado = selecionados.has(momento.id);
+    // No modo de seleção, um momento sem `podeApagar` não é alvo: não marca
+    // e não responde ao toque. Durante o lote, tudo congela. Fora do modo,
+    // toda miniatura abre o visualizador normalmente.
+    const inerte = selecionando && (!momento.podeApagar || apagandoLote);
+    const rotuloItem = `${momento.kind === "audio" ? "o recado" : "a foto"} de ${momento.autor ?? patientName}`;
+
+    return (
     <li
       key={momento.id}
       className={momento.id === saindo ? "zelo-sai" : "zelo-entra"}
     >
       <button
         type="button"
-        onClick={() => abrirFoto(indice)}
-        className="group relative block w-full aspect-square overflow-hidden rounded-lg border bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        disabled={inerte}
+        onClick={() => {
+          // O clique que chega logo depois de um toque longo é o mesmo
+          // gesto: engoli-lo evita marcar e desmarcar no mesmo toque.
+          if (toqueLongoDisparou.current) {
+            toqueLongoDisparou.current = false;
+            return;
+          }
+          if (selecionando) {
+            alternarSelecionado(momento);
+            return;
+          }
+          abrirFoto(indice);
+        }}
+        onPointerDown={() => iniciarToqueLongo(momento)}
+        onPointerUp={cancelarToqueLongo}
+        onPointerLeave={cancelarToqueLongo}
+        onPointerCancel={cancelarToqueLongo}
+        // Sem o menu de contexto do toque longo no celular: ele abriria por
+        // cima do gesto de entrar na seleção. A miniatura só abre o
+        // visualizador — clique direito não tem função desenhada aqui.
+        onContextMenu={(e) => {
+          if (!selecionando) e.preventDefault();
+        }}
+        aria-pressed={selecionando && momento.podeApagar ? marcado : undefined}
+        className={cn(
+          "group relative block w-full aspect-square overflow-hidden rounded-lg border bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          selecionando && !momento.podeApagar && "opacity-40"
+        )}
         aria-label={
-          `Abrir ${momento.kind === "audio" ? "o recado" : "a foto"} de ` +
-          `${momento.autor ?? patientName}, ${quando(momento.criadoEm, mural.timezone)}`
+          selecionando
+            ? momento.podeApagar
+              ? `${marcado ? "Tirar da seleção" : "Selecionar"} ${rotuloItem}, ${quando(momento.criadoEm, mural.timezone)}`
+              : `Não dá para apagar ${rotuloItem}`
+            : `Abrir ${rotuloItem}, ${quando(momento.criadoEm, mural.timezone)}`
         }
       >
         {momento.kind === "audio" ? (
@@ -613,15 +815,37 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
             // Decodificar fora da thread principal: sem isto, uma foto
             // grande chegando trava a rolagem por alguns quadros.
             decoding="async"
+            // Sem arrasto nativo: ele cancelaria a sequência de ponteiro
+            // do toque longo antes de o timer disparar.
+            draggable={false}
             className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
           />
         )}
 
+        {/* Modo de seleção: um alvo redondo no canto, cheio quando marcado.
+            Vermelho porque o destino de tudo que se marca aqui é sumir, e
+            vermelho neste produto é ação destrutiva (invariante 5). */}
+        {selecionando && momento.podeApagar && (
+          <>
+            <span
+              className={cn(
+                "absolute left-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full border-2 shadow-sm",
+                marcado
+                  ? "border-destructive bg-destructive text-destructive-foreground"
+                  : "border-background bg-background/60"
+              )}
+            >
+              {marcado && <Check className="h-4 w-4" strokeWidth={3} aria-hidden />}
+            </span>
+            {marcado && <span className="absolute inset-0 bg-destructive/25" aria-hidden />}
+          </>
+        )}
+
         {/* Marcas, não contagens. Dizem "alguém reagiu" e "está
             guardado" — nunca quantos, que é o que separa carinho de
-            placar (CON-012). Os nomes de quem reagiu aparecem por
-            extenso no visualizador, onde há espaço para eles. */}
-        {(momento.quemReagiu.length > 0 || momento.guardado) && (
+            placar (CON-012). Escondidas no modo de seleção: ali o canto
+            é do alvo de marcar. */}
+        {!selecionando && (momento.quemReagiu.length > 0 || momento.guardado) && (
           <span className="absolute bottom-1 right-1 flex items-center gap-1 rounded-full bg-background/85 px-1.5 py-0.5">
             {momento.quemReagiu.length > 0 && (
               <Heart className="w-3 h-3 text-zelo-green-fg" fill="currentColor" aria-hidden />
@@ -633,7 +857,8 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
         )}
       </button>
     </li>
-  );
+    );
+  };
 
   /**
    * Passa de um momento para o outro — Issue #51.
@@ -708,6 +933,63 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
     setGaleriaAberta(true);
   };
 
+  /**
+   * A barra do modo de seleção — Issue #97.
+   *
+   * ── Por que o número aqui NÃO fere o CON-012 ─────────────────────────────
+   *
+   * O CON-012 proíbe contar o que a família PRODUZIU — "12 momentos", o
+   * número que se compara com o da semana passada e vira cobrança. "3
+   * selecionadas" não mede isso: é o estado da ação em curso, some quando a
+   * seleção é cancelada, e nunca aparece no mural em repouso. E, para ação
+   * destrutiva, saber quantos itens vão sumir é segurança, não enfeite —
+   * "Apagar 6 momentos?" é a diferença entre confirmação informada e toque
+   * no escuro.
+   *
+   * Se alguém "corrigir" este número para fora daqui, ou concluir que o
+   * CON-012 caiu, é este comentário que marca a distinção.
+   *
+   * Aparece em DOIS lugares — o cabeçalho do cartão e a grade da galeria —
+   * porque a prévia mostra só 8 e limpar um mural precisa do acervo inteiro.
+   */
+  const barraDeSelecao = () => (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/40 p-2">
+      <span className="px-1 text-sm font-medium" aria-live="polite">
+        {selecionados.size === 0
+          ? "Toque nas fotos que quer apagar"
+          : selecionados.size === 1
+            ? "1 selecionada"
+            : `${selecionados.size} selecionadas`}
+      </span>
+
+      {apagandoLote ? (
+        <div className="w-full">
+          <BarraDeProgresso
+            rotulo={
+              selecionados.size > 1
+                ? `Apagando ${apagandoIndice + 1} de ${selecionados.size}…`
+                : "Apagando a foto…"
+            }
+          />
+        </div>
+      ) : (
+        <div className="ml-auto flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={sairDaSelecao}>
+            Cancelar
+          </Button>
+          <Button
+            size="sm"
+            className="gap-2 bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            disabled={selecionados.size === 0}
+            onClick={() => setConfirmandoLote(true)}
+          >
+            <Trash2 className="h-4 w-4" aria-hidden /> Apagar
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+
   // ── Sem consentimento ───────────────────────────────────────────────────
   if (!mural.consentido) {
     // Para quem não decide, a seção simplesmente não existe.
@@ -748,9 +1030,33 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
       <div className="flex items-center gap-2">
         <Camera className="w-4 h-4 text-muted-foreground shrink-0" />
         <p className="font-medium">Momentos</p>
+        {/* "Selecionar" só quando há o que apagar: se a pessoa não pode
+            apagar nenhuma foto deste mural, o modo não teria função (e o
+            servidor recusaria de qualquer jeito). Some também enquanto um
+            lote está sendo montado para publicar. */}
+        {!selecionando && escolhidas.length === 0 && apagaveis.length > 0 && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto gap-2"
+            onClick={() => entrarNaSelecao()}
+          >
+            <ListChecks className="w-4 h-4" aria-hidden /> Selecionar
+          </Button>
+        )}
       </div>
 
-      {/* Publicar */}
+      {selecionando ? (
+        <div className="space-y-3">
+          {barraDeSelecao()}
+          {erro && (
+            <Alert variant="destructive">
+              <AlertDescription>{erro}</AlertDescription>
+            </Alert>
+          )}
+        </div>
+      ) : (
+      /* Publicar */
       <div className="space-y-3">
         <input
           ref={inputArquivo}
@@ -849,6 +1155,7 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
 
         {erro && <Alert variant="destructive"><AlertDescription>{erro}</AlertDescription></Alert>}
       </div>
+      )}
 
       {/* QUI-11 — avisar ANTES é critério de aceite, não gentileza. O tom é
           informativo: nada de contagem regressiva por foto, nada de âmbar,
@@ -961,8 +1268,38 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
             <>
               <DialogHeader>
                 <DialogTitle className="text-base">Momentos de {patientName}</DialogTitle>
-                <DialogDescription>Toque numa foto para ver de perto.</DialogDescription>
+                <DialogDescription>
+                  {selecionando
+                    ? "Toque nas fotos que quer apagar."
+                    : "Toque numa foto para ver de perto."}
+                </DialogDescription>
               </DialogHeader>
+
+              {/* A seleção também vale aqui: a prévia só mostra 8, e é neste
+                  acervo que se limpa o mural depois de um passeio. */}
+              {selecionando ? (
+                <div className="space-y-3">
+                  {barraDeSelecao()}
+                  {erro && (
+                    <Alert variant="destructive">
+                      <AlertDescription>{erro}</AlertDescription>
+                    </Alert>
+                  )}
+                </div>
+              ) : (
+                apagaveis.length > 0 && (
+                  <div className="flex justify-end">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="gap-2"
+                      onClick={() => entrarNaSelecao()}
+                    >
+                      <ListChecks className="w-4 h-4" aria-hidden /> Selecionar
+                    </Button>
+                  </div>
+                )
+              )}
 
               {/* AQUI a rolagem faz sentido: o que rola é a galeria, e não a
                   ficha do paciente por baixo. */}
@@ -1180,6 +1517,38 @@ export function MomentosCard({ patientId, patientName }: { patientId: number; pa
               onClick={() => aApagar && void apagar(aApagar)}
             >
               Apagar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Confirmação do lote — Issue #97. Uma só, e diz QUANTOS vão sumir:
+          para ação sem desfazer, o número é a rede. Vermelho é a exceção
+          deliberada do invariante 5. */}
+      <AlertDialog
+        open={confirmandoLote}
+        onOpenChange={(aberto) => !aberto && setConfirmandoLote(false)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {selecionados.size === 1
+                ? "Apagar 1 momento?"
+                : `Apagar ${selecionados.size} momentos?`}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {selecionados.size === 1
+                ? "A foto some para todo mundo da família, e não dá para recuperar."
+                : "As fotos somem para todo mundo da família, e não dá para recuperar."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Manter</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => void apagarSelecionados()}
+            >
+              {selecionados.size === 1 ? "Apagar" : `Apagar ${selecionados.size}`}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
