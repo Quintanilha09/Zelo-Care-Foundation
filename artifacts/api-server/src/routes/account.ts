@@ -1,4 +1,5 @@
 import { mensagemDeValidacao } from "../lib/erro-de-validacao.ts";
+import { nomeDePessoa } from "../lib/nome-de-pessoa.ts";
 import { getAuth } from "../lib/auth-types.ts";
 import { apagarMidiasDaFamilia } from "../lib/media-cleanup.ts";
 /**
@@ -546,17 +547,18 @@ router.post("/account/deletion/execute", requirePrimaryCaregiver, async (req, re
 // bloqueada. Nome e senha não dependem de nada.
 
 const UpdateMeBody = z.object({
-  name: z.string().min(2).max(100),
+  // O mesmo schema do cadastro — Issue #78. A limpeza que morava aqui à mão
+  // não existia lá, e era só isso que separava as duas rotas.
+  name: nomeDePessoa,
 });
 
 router.patch("/account/me", requireAuth, async (req, res): Promise<void> => {
   const body = UpdateMeBody.safeParse(req.body);
-  if (!body.success) { res.status(400).json({ error: "O nome precisa ter entre 2 e 100 caracteres." }); return; }
+  if (!body.success) { res.status(400).json({ error: mensagemDeValidacao(body.error) }); return; }
 
   // SEMPRE o `userId` do JWT. Nunca um id vindo da URL ou do corpo — é o
   // invariante 2 aplicado a um recurso que não é paciente.
-  const nome = body.data.name.trim().replace(/\s+/g, " ");
-  if (nome.length < 2) { res.status(400).json({ error: "O nome precisa ter entre 2 e 100 caracteres." }); return; }
+  const nome = body.data.name;
 
   const [atualizado] = await db
     .update(usersTable)

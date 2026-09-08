@@ -57,6 +57,7 @@ import { Clock } from "../lib/clock";
 import { resolveActiveCaregiver } from "../lib/active-family.ts";
 import { allowsDevelopmentShortcuts } from "../lib/environment.ts";
 import { mensagemDeValidacao } from "../lib/erro-de-validacao.ts";
+import { nomeDePessoa } from "../lib/nome-de-pessoa.ts";
 import {
   gerarCodigo,
   hashDoCodigo,
@@ -74,7 +75,10 @@ const router = Router();
 // ── CADASTRO ─────────────────────────────────────────────────────────────
 
 const RegisterBody = z.object({
-  name: z.string().min(2).max(100),
+  // Normaliza aqui, e não depois — Issue #78. Como o schema devolve o nome
+  // já limpo, o `Família de ${nome}` lá embaixo herda a limpeza de graça.
+  // Era esse o defeito: a família 425 ficou gravada com um espaço no fim.
+  name: nomeDePessoa,
   email: z.string().email(),
   password: z.string().min(8).max(128),
   consentTerms: z.boolean(),          // aceite dos Termos de Uso

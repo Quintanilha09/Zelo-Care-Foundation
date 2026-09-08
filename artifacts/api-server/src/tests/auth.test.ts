@@ -52,6 +52,7 @@ after(async () => {
   // Limpa dados criados pelos testes (by email pattern)
   await db.delete(usersTable).where(eq(usersTable.email, "auth-test@zelo.test"));
   await db.delete(usersTable).where(eq(usersTable.email, "auth-test2@zelo.test"));
+  await db.delete(usersTable).where(like(usersTable.email, "auth-nome-sujo-%@zelo.test"));
   // Apaga a FAMÍLIA, não só o usuário. `families` é a raiz: patients e
   // caregivers têm cascade a partir dela, mas nada cascateia a partir de
   // `users` — apagar o usuário deixava a família para trás. Em 24/08/2026
@@ -62,6 +63,10 @@ after(async () => {
   // parte das órfãs apareceu. Torna a limpeza idempotente, mesma regra que
   // este projeto já aplica aos hooks `before`.
   await db.delete(familiesTable).where(like(familiesTable.name, "Família Teste %@zelo.test"));
+  // A família da Issue #78 nasce do NOME da pessoa, não de um `familyName`
+  // informado — é justamente isso que aquele caso prova. Então ela não cai no
+  // padrão acima, e precisa da própria linha.
+  await db.delete(familiesTable).where(eq(familiesTable.name, "Família de Teste Espaço Sobrando"));
 });
 
 async function api(method: string, path: string, body?: unknown, token?: string) {
@@ -153,6 +158,57 @@ describe("Autenticação — ZELO", () => {
         consentHealthData: true,
       });
       assert.equal(res.status, 400);
+    });
+
+    it("o nome entra limpo, e a família herda a limpeza — Issue #78", async () => {
+      // ═══════════════════════════════════════════════════════════════════
+      // O DEFEITO NÃO APARECIA EM TELA NENHUMA.
+      // ═══════════════════════════════════════════════════════════════════
+      //
+      // Em 02/09/2026 a família 425 estava gravada como
+      // `'Família de Gabriel Quintanilha '` — com espaço no fim, vindo cru do
+      // formulário. Espaço à direita não muda o desenho de nada: ele vaza
+      // para busca, ordenação e comparação, meses depois, longe daqui.
+      //
+      // O nome da família é montado a partir do nome da pessoa, então os dois
+      // são a mesma asserção — e é por isso que passar a normalizar no schema
+      // conserta os dois de uma vez.
+      // Único por execução: o e-mail fixo colidiria com o resíduo de uma
+      // execução anterior que tivesse morrido antes do `after`, e o cadastro
+      // responderia 409 num teste que não é sobre isso. O NOME continua fixo,
+      // porque é dele que sai o nome da família — que é a asserção.
+      const email = `auth-nome-sujo-${Date.now()}@zelo.test`;
+      const res = await api("POST", "/auth/register", {
+        name: "  Teste   Espaço Sobrando  ",
+        email,
+        password: "SenhaSegura123!",
+        consentTerms: true,
+        consentHealthData: true,
+      });
+      assert.equal(res.status, 201, JSON.stringify(res.body));
+
+      const [user] = await db
+        .select({ id: usersTable.id, name: usersTable.name })
+        .from(usersTable)
+        .where(eq(usersTable.email, email))
+        .limit(1);
+
+      assert.equal(user?.name, "Teste Espaço Sobrando");
+
+      const [cuidador] = await db
+        .select({ familyId: caregiversTable.familyId })
+        .from(caregiversTable)
+        .where(eq(caregiversTable.userId, user!.id))
+        .limit(1);
+
+      const [familia] = await db
+        .select({ name: familiesTable.name })
+        .from(familiesTable)
+        .where(eq(familiesTable.id, cuidador!.familyId))
+        .limit(1);
+
+      assert.equal(familia?.name, "Família de Teste Espaço Sobrando");
+      assert.equal(familia?.name, familia?.name.trim(), "o nome da família ficou com espaço nas pontas");
     });
   });
 

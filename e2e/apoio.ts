@@ -102,14 +102,48 @@ export async function entrar(page: Page, conta: ContaDeTeste): Promise<void> {
  * O access token vive só em memória; o refresh token, no `localStorage` (ver
  * `lib/auth-client.ts`). Limpar o armazenamento é o que de fato encerra a
  * sessão do lado do navegador.
+ *
+ * ── A corrida que isto fechou, em 08/09/2026 ─────────────────────────────
+ *
+ * Limpar o armazenamento logo depois do `goto` não bastava, e o motivo está
+ * no `AuthProvider`: ao montar, ele chama `refreshSession()` se houver token
+ * guardado. A sequência que quebrava era esta:
+ *
+ *   1. `goto("/")` monta o app, que dispara `POST /auth/refresh`
+ *   2. `localStorage.clear()` roda — a requisição ainda está no ar
+ *   3. o refresh responde, e `setTokens` **grava um par novo por cima**
+ *
+ * A sessão voltava do túmulo, e o `entrar` seguinte encontrava o app já
+ * aberto em vez do formulário. Como depende de quem chega primeiro, passava
+ * sozinho e falhava com a suíte inteira rodando, que é quando o refresh
+ * demora mais. Custou uma execução de 13 minutos para aparecer.
+ *
+ * Esperar a tela autenticada antes de limpar remove a corrida: o refresh de
+ * montagem já terminou de gravar, e o que se limpa depois fica limpo.
  */
 export async function sair(page: Page): Promise<void> {
   await page.goto("/");
+
+  // Se já estava deslogado não há o que esperar — daí o `catch`.
+  await page
+    .locator('a[href="/pacientes"]')
+    .first()
+    .waitFor({ state: "visible", timeout: 15_000 })
+    .catch(() => undefined);
+
   await page.evaluate(() => {
     localStorage.clear();
     sessionStorage.clear();
   });
   await page.context().clearCookies();
+
+  // Confirma aqui, e não no `entrar` seguinte. Sem esta linha, quem descobre
+  // que a sessão sobreviveu é um `fill` esperando um campo de e-mail — 30s
+  // depois, com uma mensagem que não fala de sessão nenhuma.
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Entrar", exact: true })).toBeVisible({
+    timeout: 15_000,
+  });
 }
 
 /**
