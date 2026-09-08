@@ -699,3 +699,64 @@ export async function sendRescueNotice(
     "aviso_de_resgate",
   );
 }
+
+/**
+ * Envia o código de entrada de aparelho novo — Issue #79.
+ *
+ * ── Vai para o principal E para o reserva ────────────────────────────────
+ *
+ * A Issue #87 escreveu, em `recovery-emails.ts` e em `users.ts`, que o poder
+ * do endereço reserva é exatamente um: **receber o código de aparelho novo**.
+ * Esta função é o lugar onde aquela promessa acontece — se ela mandasse só
+ * para o principal, a promessa continuaria escrita e deixaria de ser verdade,
+ * e ninguém descobriria até o dia em que alguém precisasse.
+ *
+ * Um envio por endereço, nunca os dois no mesmo `to`: o reserva costuma ser
+ * de outra pessoa (o filho que cuida dos pais), e o endereço principal de
+ * quem cuida não é dela.
+ *
+ * ── Por que o e-mail descreve o aparelho ─────────────────────────────────
+ *
+ * Se a pessoa NÃO está tentando entrar, este e-mail é o aviso de que alguém
+ * tem a senha dela. Um código solto não conta isso; "Chrome no Windows, IP
+ * tal" conta. É a mesma ideia do aviso de troca de e-mail: o segundo fator
+ * barra a entrada, e o texto é o que permite reagir.
+ *
+ * @returns `true` se **algum** envio foi aceito. Diferente do aviso de
+ *   exclusão, que exige todos: aqui um endereço que funcione já entrega o
+ *   código, e recusar por causa do outro trancaria a pessoa do lado de fora.
+ */
+export async function sendDeviceCodeEmail(
+  destinos: string[],
+  codigo: string,
+  rotuloDoAparelho: string,
+  ip: string | null,
+): Promise<boolean> {
+  // O código não passa pelo devLog — mesma regra dos outros códigos.
+  devLog("Entrada de aparelho novo", `${baseUrl()}/entrar`);
+
+  const onde = ip ? `${rotuloDoAparelho}, endereço ${ip}` : rotuloDoAparelho;
+
+  const resultados: boolean[] = [];
+  for (const para of destinos) {
+    resultados.push(
+      await enviar(
+        {
+          para,
+          assunto: `${codigo} é o seu código para entrar — ZELO`,
+          titulo: "Confirme que é você",
+          paragrafos: [
+            `Alguém entrou na sua conta do ZELO de um aparelho novo: ${onde}.`,
+            "Se foi você, digite este código na tela do aplicativo:",
+          ],
+          codigo,
+          aviso:
+            "O código vale 10 minutos. Se NÃO foi você, ninguém entrou — mas alguém sabe a sua senha: troque agora.",
+        },
+        "codigo_de_aparelho",
+      ),
+    );
+  }
+
+  return resultados.some(Boolean);
+}

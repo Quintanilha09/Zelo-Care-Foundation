@@ -27,6 +27,10 @@ export * from "./email-verifications";
 export * from "./email-changes";
 export * from "./password-resets";
 export * from "./recovery-emails";
+// segundo fator: aparelho novo (#79)
+export * from "./trusted-devices";
+export * from "./device-verifications";
+export * from "./recovery-codes";
 export * from "./export-tokens";
 export * from "./oauth-login-codes";
 export * from "./deletion-requests";
