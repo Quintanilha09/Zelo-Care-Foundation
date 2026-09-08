@@ -703,3 +703,72 @@ describe("Quebra de palavra comprida — Issue #88", () => {
     );
   });
 });
+
+/**
+ * A mensagem de validação chega como frase, não como JSON — Issue #100.
+ *
+ * ── O defeito ─────────────────────────────────────────────────────────────
+ *
+ * As rotas respondiam `{ error: body.error.message }`. Em **zod 3**,
+ * `ZodError.message` não é uma frase: é o array de `issues` serializado. O que
+ * a pessoa via no alerta vermelho era isto:
+ *
+ *   [ { "code": "custom", "message": "Escreva o nome e ao menos um sobrenome.",
+ *       "path": [] } ]
+ *
+ * A frase certa estava lá dentro o tempo todo, envelopada em colchete e aspas.
+ *
+ * ── Por que um teste, e não confiança ─────────────────────────────────────
+ *
+ * O padrão errado é o que sai naturalmente da mão de quem escreve a próxima
+ * rota: `body.error.message` **parece** a mensagem, o TypeScript aceita, e o
+ * defeito só aparece na tela de alguém. Foram 23 ocorrências em 16 arquivos
+ * exatamente assim.
+ *
+ * A Issue #56 já tinha um teste afirmando que as mensagens são específicas —
+ * mas ele lia `issues[0].message`, que a rota não mandava. **Media uma
+ * propriedade que o caminho de produção não tinha.** Este aqui varre o código
+ * que roda.
+ */
+describe("Mensagem de validação — Issue #100", () => {
+  const dirRotas = `${raiz}routes`;
+
+  it("nenhuma rota responde com `.error.message` cru", () => {
+    const culpados: string[] = [];
+
+    for (const nome of readdirSync(dirRotas).filter((f) => f.endsWith(".ts"))) {
+      const conteudo = readFileSync(`${dirRotas}/${nome}`, "utf8");
+      // Só declarações reais: o comentário deste arquivo cita a expressão, e
+      // um teste que reprova a própria documentação já aconteceu uma vez
+      // (ver o guardrail do `overflow-wrap` acima).
+      const semComentarios = conteudo
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/^\s*\/\/.*$/gm, "");
+
+      if (/\b[A-Za-z_$][\w$]*\.error\.message\b/.test(semComentarios)) {
+        culpados.push(nome);
+      }
+    }
+
+    assert.deepEqual(
+      culpados,
+      [] as string[],
+      "estas rotas devolvem o JSON das issues em vez da frase — use " +
+        `mensagemDeValidacao(x.error) de lib/erro-de-validacao.ts: ${culpados.join(", ")}`,
+    );
+  });
+
+  it("o helper existe e é usado de verdade", () => {
+    // Sem este caso, o de cima passaria se alguém apagasse o helper e trocasse
+    // tudo por uma string fixa — que resolveria o JSON e criaria o problema
+    // que a Issue #56 tinha consertado: mensagem genérica.
+    const usam = readdirSync(dirRotas)
+      .filter((f) => f.endsWith(".ts"))
+      .filter((f) => readFileSync(`${dirRotas}/${f}`, "utf8").includes("mensagemDeValidacao("));
+
+    assert.ok(
+      usam.length >= 15,
+      `só ${usam.length} arquivos de rota usam mensagemDeValidacao — a Issue #100 converteu 16`,
+    );
+  });
+});

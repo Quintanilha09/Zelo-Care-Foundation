@@ -1,3 +1,4 @@
+import { mensagemDeValidacao } from "../lib/erro-de-validacao.ts";
 import { getAuth } from "../lib/auth-types.ts";
 /**
  * Tratamentos — ZELO.
@@ -157,7 +158,7 @@ router.post("/patients/:patientId/treatments/preview", requireAuth, async (req, 
   if (!patient) { res.status(404).json({ error: "Paciente não encontrado" }); return; }
 
   const body = PreviewBody.safeParse(req.body);
-  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  if (!body.success) { res.status(400).json({ error: mensagemDeValidacao(body.error) }); return; }
 
   const windowStart = Clock.now();
   const windowEnd = new Date(windowStart.getTime() + 90 * 86_400_000); // busca até 90 dias à frente para achar 5 doses mesmo em posologias esparsas
@@ -196,7 +197,7 @@ router.post("/patients/:patientId/treatments", requireAuth, async (req, res): Pr
   }
 
   const body = CreateTreatmentBody.safeParse(req.body);
-  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  if (!body.success) { res.status(400).json({ error: mensagemDeValidacao(body.error) }); return; }
 
   // Medicamento precisa pertencer à mesma família (mesma checagem de isolamento)
   const [medication] = await db
@@ -312,7 +313,7 @@ router.patch("/treatments/:treatmentId", requireAuth, async (req, res): Promise<
   }
 
   const body = UpdateTreatmentBody.safeParse(req.body);
-  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  if (!body.success) { res.status(400).json({ error: mensagemDeValidacao(body.error) }); return; }
 
   const { scheduleConfig, ...rest } = body.data;
   // ZELO-20: reativar (finished/cancelled -> active) ou mudar a data de fim

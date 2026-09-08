@@ -1,3 +1,4 @@
+import { mensagemDeValidacao } from "../lib/erro-de-validacao.ts";
 import { getAuth } from "../lib/auth-types.ts";
 /**
  * Registros de dose — ZELO (ZELO-23, ZELO-24).
@@ -135,7 +136,7 @@ router.post("/patients/:patientId/dose-records", requireAuth, requireCapability(
   if (isNaN(patientId)) { res.status(400).json({ error: "ID inválido" }); return; }
 
   const body = CreateDoseRecordBody.safeParse(req.body);
-  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  if (!body.success) { res.status(400).json({ error: mensagemDeValidacao(body.error) }); return; }
 
   // Verifica isolamento
   const [patient] = await db

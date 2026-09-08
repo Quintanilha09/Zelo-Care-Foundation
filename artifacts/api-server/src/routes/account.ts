@@ -1,3 +1,4 @@
+import { mensagemDeValidacao } from "../lib/erro-de-validacao.ts";
 import { getAuth } from "../lib/auth-types.ts";
 import { apagarMidiasDaFamilia } from "../lib/media-cleanup.ts";
 /**
@@ -168,7 +169,7 @@ const SelectedPatientBody = z.object({ patientId: z.number().int().positive() })
 
 router.patch("/account/selected-patient", requireAuth, async (req, res): Promise<void> => {
   const body = SelectedPatientBody.safeParse(req.body);
-  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  if (!body.success) { res.status(400).json({ error: mensagemDeValidacao(body.error) }); return; }
 
   const [patient] = await db
     .select({ id: patientsTable.id })
@@ -216,7 +217,7 @@ const SwitchFamilyBody = z.object({ familyId: z.number().int().positive() });
 
 router.post("/account/switch-family", requireAuth, async (req, res): Promise<void> => {
   const body = SwitchFamilyBody.safeParse(req.body);
-  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  if (!body.success) { res.status(400).json({ error: mensagemDeValidacao(body.error) }); return; }
 
   const caregiver = await switchActiveFamily(getAuth(req).userId, body.data.familyId);
   if (!caregiver) { res.status(404).json({ error: "Você não é cuidador nesta família" }); return; }
@@ -274,7 +275,7 @@ const FamilySettingsBody = z.object({
 
 router.patch("/families/me/settings", requireAuth, requirePrimaryCaregiver, async (req, res): Promise<void> => {
   const body = FamilySettingsBody.safeParse(req.body);
-  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  if (!body.success) { res.status(400).json({ error: mensagemDeValidacao(body.error) }); return; }
 
   const [updated] = await db
     .update(familiesTable)

@@ -1,3 +1,4 @@
+import { mensagemDeValidacao } from "../lib/erro-de-validacao.ts";
 import { getAuth } from "../lib/auth-types.ts";
 /**
  * Aferições de saúde — ZELO (ZELO-37).
@@ -73,7 +74,7 @@ router.post("/patients/:patientId/health-measurements", requireAuth, async (req,
   if (!patient) { res.status(404).json({ error: "Paciente não encontrado" }); return; }
 
   const body = MeasurementBody.safeParse(req.body);
-  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  if (!body.success) { res.status(400).json({ error: mensagemDeValidacao(body.error) }); return; }
 
   const [measurement] = await db.insert(healthMeasurementsTable).values({
     patientId, type: body.data.type, value: body.data.value, unit: body.data.unit,

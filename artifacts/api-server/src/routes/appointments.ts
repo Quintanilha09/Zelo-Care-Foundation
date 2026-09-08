@@ -1,3 +1,4 @@
+import { mensagemDeValidacao } from "../lib/erro-de-validacao.ts";
 import { getAuth } from "../lib/auth-types.ts";
 /**
  * Consultas e exames — ZELO (ZELO-36).
@@ -128,7 +129,7 @@ router.post("/patients/:patientId/appointments", requireAuth, requireCapability(
   }
 
   const body = AppointmentBody.safeParse(req.body);
-  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  if (!body.success) { res.status(400).json({ error: mensagemDeValidacao(body.error) }); return; }
 
   const scheduledAt = localToUtc(body.data.scheduledDate, body.data.scheduledTime, patient.timezone);
 
@@ -171,7 +172,7 @@ router.patch("/patients/:patientId/appointments/:appointmentId", requireAuth, re
   if (!existing) { res.status(404).json({ error: "Consulta não encontrada" }); return; }
 
   const body = UpdateAppointmentBody.safeParse(req.body);
-  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  if (!body.success) { res.status(400).json({ error: mensagemDeValidacao(body.error) }); return; }
 
   const { scheduledDate, scheduledTime, ...rest } = body.data;
   const rescheduled = scheduledDate !== undefined && scheduledTime !== undefined;

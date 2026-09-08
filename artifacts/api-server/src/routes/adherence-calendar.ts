@@ -1,3 +1,4 @@
+import { mensagemDeValidacao } from "../lib/erro-de-validacao.ts";
 import { getAuth } from "../lib/auth-types.ts";
 /**
  * Calendário de adesão — ZELO (ZELO-33).
@@ -76,7 +77,7 @@ router.get("/patients/:patientId/adherence-calendar", requireAuth, async (req, r
     to: DateISO,
     medicationId: z.coerce.number().int().positive().optional(),
   }).safeParse(req.query);
-  if (!query.success) { res.status(400).json({ error: query.error.message }); return; }
+  if (!query.success) { res.status(400).json({ error: mensagemDeValidacao(query.error) }); return; }
   let { from } = query.data;
   const { to, medicationId } = query.data;
 
@@ -188,7 +189,7 @@ router.get("/patients/:patientId/adherence-calendar/day", requireAuth, async (re
   if (!patient) { res.status(404).json({ error: "Paciente não encontrado" }); return; }
 
   const query = z.object({ date: DateISO, caregiverId: z.coerce.number().int().positive().optional() }).safeParse(req.query);
-  if (!query.success) { res.status(400).json({ error: query.error.message }); return; }
+  if (!query.success) { res.status(400).json({ error: mensagemDeValidacao(query.error) }); return; }
   const { date, caregiverId } = query.data;
 
   const { start, end } = localDayBoundsUtc(date, patient.timezone);

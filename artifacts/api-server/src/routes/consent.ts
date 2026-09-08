@@ -1,3 +1,4 @@
+import { mensagemDeValidacao } from "../lib/erro-de-validacao.ts";
 import { getAuth } from "../lib/auth-types.ts";
 /**
  * Rotas de consentimento LGPD — ZELO.
@@ -36,7 +37,7 @@ const ConsentBody = z.object({
 router.post("/consent", requireAuth, async (req, res): Promise<void> => {
   const body = ConsentBody.safeParse(req.body);
   if (!body.success) {
-    res.status(400).json({ error: body.error.message });
+    res.status(400).json({ error: mensagemDeValidacao(body.error) });
     return;
   }
 
