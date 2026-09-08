@@ -3,18 +3,28 @@
  *
  * Só aparece pra quem é cuidador em mais de uma família (cuidar da própria
  * mãe E ser cuidadora contratada de outra é o caso real). Pra todo mundo
- * mais — a maioria — não renderiza nada, e o cabeçalho fica igual ao que
- * sempre foi.
+ * mais — a maioria — não renderiza nada.
  *
  * Sem isto, quem tinha duas famílias entrava numa delas e não tinha como
  * chegar na outra: o familyId vive dentro do token, não na URL.
+ *
+ * ── Vive dentro do menu da conta — Issue #113 ────────────────────────────
+ *
+ * Era um `Select` solto no cabeçalho. Passou a ser um submenu do menu do
+ * avatar, então **só funciona dentro de um `<DropdownMenuContent>`** — é o
+ * `ContaMenu` quem o monta.
  */
 import { useEffect, useState } from "react";
 import { authFetch } from "@/lib/auth-client";
 import { useAuth } from "@/context/AuthContext";
+import { cn } from "@/lib/utils";
 import {
-  Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
-} from "@/components/ui/select";
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
+import { Users, Check } from "lucide-react";
 
 interface FamilyLink {
   familyId: number;
@@ -36,20 +46,25 @@ export function FamilySwitcher() {
         if (!res.ok) return;
         const data = (await res.json()) as FamilyLink[];
         if (!cancelled) setFamilies(data);
-      } catch { /* silencioso — o cabeçalho funciona sem o seletor */ }
+      } catch {
+        /* silencioso — o menu funciona sem o seletor */
+      }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   if (families.length < 2) return null;
 
   const active = families.find((f) => f.isActive);
 
-  const handleChange = async (value: string) => {
-    const familyId = Number(value);
+  const trocar = async (familyId: number) => {
     if (familyId === active?.familyId) return;
     setSwitching(true);
     try {
+      // Em caso de sucesso, `switchFamily` recarrega a página inteira — o
+      // menu fecha junto e não há mais o que atualizar aqui.
       await switchFamily(familyId);
     } catch {
       setSwitching(false);
@@ -57,15 +72,25 @@ export function FamilySwitcher() {
   };
 
   return (
-    <Select value={String(active?.familyId ?? "")} onValueChange={(v) => void handleChange(v)} disabled={switching}>
-      <SelectTrigger className="h-8 w-auto max-w-44 text-sm" aria-label="Trocar de família">
-        <SelectValue placeholder="Família" />
-      </SelectTrigger>
-      <SelectContent>
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger aria-label="Trocar de família">
+        <Users className="mr-2 h-4 w-4" aria-hidden /> Trocar de família
+      </DropdownMenuSubTrigger>
+      <DropdownMenuSubContent>
         {families.map((f) => (
-          <SelectItem key={f.familyId} value={String(f.familyId)}>{f.name}</SelectItem>
+          <DropdownMenuItem
+            key={f.familyId}
+            disabled={switching}
+            onSelect={() => void trocar(f.familyId)}
+          >
+            <Check
+              className={cn("mr-2 h-4 w-4", f.isActive ? "opacity-100" : "opacity-0")}
+              aria-hidden
+            />
+            <span className="truncate">{f.name}</span>
+          </DropdownMenuItem>
         ))}
-      </SelectContent>
-    </Select>
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
   );
 }
