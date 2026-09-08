@@ -11,8 +11,10 @@
  */
 
 import rateLimit from "express-rate-limit";
+import type { Request } from "express";
 
 import { allowsDevelopmentShortcuts } from "./environment.ts";
+import { Clock } from "./clock.ts";
 const isDev = allowsDevelopmentShortcuts();
 
 /**
@@ -48,20 +50,94 @@ export function multiplicadorDeLimite(
 
 const M = multiplicadorDeLimite(isDev, process.env.RATE_LIMIT_MULTIPLIER);
 
-/** Login: 5 tentativas por 15 min por IP. */
+/**
+ * Quantas tentativas de login um MESMO IP tem em 15 minutos — Issue #107.
+ *
+ * ── Era 5, e 5 trancava a casa inteira ────────────────────────────────────
+ *
+ * O público do ZELO é uma família cuidando de um idoso: vários cuidadores,
+ * quase sempre atrás do mesmo roteador. Com 5, quatro pessoas na casa errando
+ * a senha uma vez cada deixavam **ninguém entrar por 15 minutos** — inclusive
+ * quem precisava registrar uma dose naquele momento. Encosta no invariante 6
+ * do produto.
+ *
+ * Aconteceu com o fundador em 08/09/2026, testando em modo produção.
+ *
+ * ── Por que afrouxar aqui não afrouxa a segurança ─────────────────────────
+ *
+ * O ataque real é força bruta contra **uma conta**, e quem faz isso a sério
+ * troca de IP — o limite por IP nunca foi a defesa contra ele.
+ * `LOGIN_POR_EMAIL` é, e continua igual.
+ *
+ * Vinte ainda barra varredura automatizada de um IP só, e cabe numa casa com
+ * quatro cuidadores.
+ */
+export const LOGIN_POR_IP = 20;
+
+/**
+ * Quantas tentativas uma MESMA conta tem por hora.
+ *
+ * **Esta é a defesa que importa**, e não muda. Ela protege a conta alvo
+ * independentemente de quantos IPs o atacante tenha.
+ */
+export const LOGIN_POR_EMAIL = 10;
+
+/**
+ * A mensagem de "muitas tentativas", com o tempo que falta.
+ *
+ * ── Por que o tempo precisa estar escrito ─────────────────────────────────
+ *
+ * Antes os dois limitadores de login devolviam o texto **idêntico**: "Aguarde
+ * antes de tentar novamente". Um deles libera em 15 minutos, o outro em uma
+ * hora, e a pessoa não tinha como saber qual. Nem quem escreveu o código soube,
+ * quando o fundador travou — só depois de ele dizer que acontecia em qualquer
+ * conta.
+ *
+ * ── E por que os dois textos são diferentes ───────────────────────────────
+ *
+ * "deste aparelho" e "nesta conta" dizem, de graça, se trocar de conta
+ * adiantaria. Não vaza nada: o limitador por e-mail conta tentativa exista ou
+ * não a conta, então a mensagem não confirma cadastro nenhum.
+ */
+/**
+ * De quando o limitador libera de novo.
+ *
+ * `req.rateLimit` e injetado pelo express-rate-limit em tempo de execucao e
+ * nao existe no tipo base do Express. O molde estreito aqui declara so o que
+ * este arquivo le — e um `any` solto esconderia a proxima mudanca de forma da
+ * biblioteca.
+ */
+function quandoLibera(req: Request): Date | undefined {
+  return (req as Request & { rateLimit?: { resetTime?: Date } }).rateLimit?.resetTime;
+}
+export function mensagemDeEspera(alvo: "aparelho" | "conta", resetTime: Date | undefined): string {
+  const onde = alvo === "aparelho" ? "deste aparelho" : "nesta conta";
+  if (!resetTime) return `Muitas tentativas ${onde}. Aguarde alguns minutos e tente de novo.`;
+
+  const faltamMs = resetTime.getTime() - Clock.now().getTime();
+  // Arredonda para cima, e nunca promete "0 minutos": quem lê precisa de um
+  // número em que possa confiar para voltar.
+  const minutos = Math.max(1, Math.ceil(faltamMs / 60000));
+  const plural = minutos === 1 ? "minuto" : "minutos";
+  return `Muitas tentativas ${onde}. Tente de novo em ${minutos} ${plural}.`;
+}
+
+/** Login: `LOGIN_POR_IP` tentativas por 15 min por IP. */
 export const loginByIpLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 5 * M,
+  limit: LOGIN_POR_IP * M,
   standardHeaders: "draft-7",
   legacyHeaders: false,
   keyGenerator: (req) => `login:ip:${(req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ?? req.socket.remoteAddress ?? "unknown"}`,
-  message: { error: "Muitas tentativas. Aguarde antes de tentar novamente." },
+  handler: (req, res) => {
+    res.status(429).json({ error: mensagemDeEspera("aparelho", quandoLibera(req)) });
+  },
 });
 
-/** Login: 10 tentativas por hora por e-mail (protege contas específicas). */
+/** Login: `LOGIN_POR_EMAIL` tentativas por hora por e-mail (protege contas específicas). */
 export const loginByEmailLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
-  limit: 10 * M,
+  limit: LOGIN_POR_EMAIL * M,
   standardHeaders: "draft-7",
   legacyHeaders: false,
   keyGenerator: (req) => {
@@ -69,7 +145,9 @@ export const loginByEmailLimiter = rateLimit({
     const email = typeof body?.email === "string" ? body.email.toLowerCase() : "unknown";
     return `login:email:${email}`;
   },
-  message: { error: "Muitas tentativas. Aguarde antes de tentar novamente." },
+  handler: (req, res) => {
+    res.status(429).json({ error: mensagemDeEspera("conta", quandoLibera(req)) });
+  },
 });
 
 /** Cadastro: 3 por hora por IP. */
