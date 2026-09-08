@@ -56,13 +56,25 @@ Das 10 fases do backlog original só sobraram três buracos, todos deixados de p
 
 ## Onde o desenvolvimento parou
 
-**Duas Issues abertas — #97 e #99 — medido em 08/09/2026 com `gh`.** Este bloco envelhece rápido:
-se a sessão for depois disso, meça de novo.
+**Quatro Issues abertas — #113 a #116 — medido em 08/09/2026 com `gh`.** Este bloco envelhece
+rápido: se a sessão for depois disso, meça de novo.
+
+A leva saiu de quatro pedidos do fundador em 08/09/2026: navegação e Ajustes no padrão do GitHub,
+perfil do cuidador com foto, e a troca de senha por revelação. Refinamento inteiro em
+[`refinamentos/ajustes-e-perfil.md`](refinamentos/ajustes-e-perfil.md) — inclui as seis decisões
+já tomadas. **Ordem estrita: #113 → #114 → #115 → #116.**
 
 | Issue | O quê |
 |---|---|
-| [#97](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/97) | selecionar vários momentos para apagar de uma vez — **implementada em 08/09/2026**, PR [#112](https://github.com/Quintanilha09/Zelo-Care-Foundation/pull/112). Só frontend: sem endpoint em lote, N chamadas em sequência ao `DELETE /api/media/:id` que já existe. O número de selecionadas só aparece durante a seleção e na confirmação, nunca no mural em repouso (CON-012) |
-| [#99](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/99) | trocar a senha sem lembrar a atual, sem deslogar antes — rota nova `POST /api/account/password/reset-link` (autenticada, e-mail vindo da sessão, nunca do corpo), limite 3/hora. **Próxima da fila.** Estava atrás de #110/#111 por tocarem `account.ts` e Ajustes; as duas já entraram |
+| [#113](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/113) | menu na foto de perfil, sai a engrenagem. Só `app-header.tsx`. Não depende de nada |
+| [#114](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/114) | Ajustes com a lista de seções à esquerda, padrão GitHub. Reescreve `SettingsPage.tsx` + casca nova; as telas de conteúdo entram como estão |
+| [#115](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/115) | trocar senha e e-mail por revelação, com a senha atual sempre vazia. **Absorve a #99** (o link "não lembro a senha" nasce no painel revelado); o PR fecha as duas. O servidor de senha **já exige a atual** (`account.ts:633`) — o buraco é de tela |
+| [#116](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/116) | perfil do cuidador: foto (em `users`), telefone e parentesco (em `caregivers`), e a ficha de cada um em `/cuidadores`. Ciclo completo: banco, `POST /api/account/avatar`, LGPD. Depende da #114 |
+
+**#99** continua aberta como rastro até o PR da #115 fechá-la.
+
+**Fechadas em 08/09/2026:** #97 (selecionar vários momentos para apagar — PR #112, só frontend, sem
+endpoint em lote; o número de selecionadas nunca aparece no mural em repouso, CON-012).
 
 **Fechadas entre 04 e 08/09/2026:** #87 (recuperação de conta — e-mail e resgate pela família,
 PRs #104/#105), #103 (redefinir senha por código), #101 (nome longo de paciente), #98 (as três
