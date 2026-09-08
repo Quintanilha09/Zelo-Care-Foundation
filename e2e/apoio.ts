@@ -28,6 +28,13 @@ export interface ContaDeTeste {
   senha: string;
   nome: string;
   familia: string;
+  /**
+   * O token de aparelho confiável desta conta — Issue #79.
+   *
+   * Nulo só em conta criada com `{ comSegundoFator: false }`, para os testes
+   * que precisam ver a tela de ativação.
+   */
+  tokenDeAparelho: string | null;
 }
 
 /**
@@ -38,13 +45,17 @@ export interface ContaDeTeste {
  * provedor de e-mail configurado e responderia 503, que é o comportamento
  * correto lá.
  */
-export async function criarConta(request: APIRequestContext): Promise<ContaDeTeste> {
+export async function criarConta(
+  request: APIRequestContext,
+  opcoes: { comSegundoFator?: boolean } = {},
+): Promise<ContaDeTeste> {
   const m = marca();
   const conta: ContaDeTeste = {
     email: `e2e-${m}@zelo.test`,
     senha: "senha-de-teste-123",
     nome: "Ana Fictícia E2E",
     familia: "Família Fictícia E2E",
+    tokenDeAparelho: null,
   };
 
   const res = await request.post("/api/auth/register", {
@@ -66,12 +77,71 @@ export async function criarConta(request: APIRequestContext): Promise<ContaDeTes
     `cadastro pela API falhou (${res.status()}): ${await res.text()}`
   ).toBeTruthy();
 
+  if (opcoes.comSegundoFator !== false) {
+    conta.tokenDeAparelho = await ligarSegundoFator(request, conta);
+  }
+
   return conta;
+}
+
+/**
+ * Liga o segundo fator pela API e devolve o token deste aparelho — Issue #79.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ISTO EXISTE PORQUE UMA SUÍTE DE TELA NÃO TEM CAIXA DE E-MAIL.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * ── A primeira tentativa, e por que ela quebrou ──────────────────────────
+ *
+ * A versão anterior deixava `entrar` clicar na tela de ativação. Funcionou
+ * no primeiro teste de cada arquivo e travou em todos os seguintes: as specs
+ * compartilham UMA conta (`beforeAll`) e cada teste roda num contexto de
+ * navegador limpo. Depois que o primeiro ativava, todos os outros passavam a
+ * ser **aparelho novo** para aquela conta — e ficavam esperando um código por
+ * e-mail que, em desenvolvimento, nunca sai.
+ *
+ * O sintoma era enganoso: metade dos testes de um arquivo falhando por
+ * timeout, sem nada em comum entre eles.
+ *
+ * ── O que este caminho representa ────────────────────────────────────────
+ *
+ * Uma conta já ativada, num aparelho que ela já reconhece — que é a situação
+ * de **quase toda entrada real**. A tela de ativação e o pedido de código
+ * continuam sendo exercitados de ponta a ponta, em `aparelho-novo.spec.ts`,
+ * por contas criadas com `{ comSegundoFator: false }`.
+ */
+async function ligarSegundoFator(
+  request: APIRequestContext,
+  conta: ContaDeTeste,
+): Promise<string> {
+  const token = await tokenDaConta(request, conta);
+  const headers = { Authorization: `Bearer ${token}` };
+
+  const gerados = await request.post("/api/account/segundo-fator/codigos", { headers, data: {} });
+  expect(gerados.ok(), `gerar códigos falhou: ${await gerados.text()}`).toBeTruthy();
+
+  const ativou = await request.post("/api/account/segundo-fator/ativar", { headers, data: {} });
+  expect(ativou.ok(), `ativar segundo fator falhou: ${await ativou.text()}`).toBeTruthy();
+
+  return ((await ativou.json()) as { deviceToken: string }).deviceToken;
 }
 
 /** Entra pela TELA e espera a tela inicial aparecer. */
 export async function entrar(page: Page, conta: ContaDeTeste): Promise<void> {
   await page.goto("/");
+
+  // Este navegador passa a ser um aparelho que a conta já conhece (#79). Sem
+  // isto o login responderia `device_verification_required` e o teste ficaria
+  // esperando um código por e-mail que não existe em desenvolvimento.
+  //
+  // Depois do `goto`, e não antes: `localStorage` precisa de uma origem. E
+  // não precisa recarregar — o app lê a chave na hora de enviar o formulário.
+  if (conta.tokenDeAparelho) {
+    await page.evaluate(
+      (valor) => localStorage.setItem("zelo_device_token", valor),
+      conta.tokenDeAparelho,
+    );
+  }
   await page.getByLabel(/E-mail/i).first().fill(conta.email);
   await page.getByLabel(/^Senha/i).first().fill(conta.senha);
 
@@ -123,8 +193,18 @@ export async function tokenDaConta(
   request: APIRequestContext,
   conta: ContaDeTeste
 ): Promise<string> {
+  // O token do aparelho vai junto (#79). Sem ele, uma conta com segundo fator
+  // ativo responde `device_verification_required` em vez de devolver a sessão —
+  // e o teste que só queria criar um paciente falharia num ponto que não tem
+  // nada a ver com o que ele testa.
+  //
+  // Nulo na primeira chamada, feita pelo próprio `criarConta` ANTES de ativar.
   const login = await request.post("/api/auth/login", {
-    data: { email: conta.email, password: conta.senha },
+    data: {
+      email: conta.email,
+      password: conta.senha,
+      ...(conta.tokenDeAparelho ? { deviceToken: conta.tokenDeAparelho } : {}),
+    },
   });
   expect(login.ok(), `login pela API falhou: ${await login.text()}`).toBeTruthy();
   return ((await login.json()) as { accessToken: string }).accessToken;

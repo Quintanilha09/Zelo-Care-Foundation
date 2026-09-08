@@ -26,6 +26,7 @@
 import { useState, useEffect } from "react";
 import { CampoLabel } from "@/components/campo-label";
 import { EmailDeRecuperacao } from "@/components/email-de-recuperacao";
+import { AparelhosConfiaveis } from "@/components/aparelhos-confiaveis";
 import { Link } from "wouter";
 import { authFetch, setTokens } from "@/lib/auth-client";
 import { useAuth } from "@/context/AuthContext";
@@ -432,6 +433,8 @@ export default function SettingsAccountPage() {
         </section>
 
         <EmailDeRecuperacao />
+
+        <AparelhosConfiaveis />
       </main>
     </div>
   );

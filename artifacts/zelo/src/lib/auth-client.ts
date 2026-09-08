@@ -14,6 +14,29 @@
 const REFRESH_TOKEN_KEY = "zelo_refresh_token";
 const USER_ID_KEY = "zelo_user_id";
 
+/**
+ * O token que diz que ESTE aparelho já foi verificado — Issue #79.
+ *
+ * ── Por que ele sobrevive ao logout ──────────────────────────────────────
+ *
+ * `clearTokens()` de propósito NÃO apaga esta chave. Sair da conta é dizer
+ * "terminei por agora", não "este computador não é mais meu" — e apagar aqui
+ * faria toda entrada seguinte, no mesmo aparelho de sempre, pedir um código
+ * por e-mail. Num público que sai da conta por hábito, isso viraria um código
+ * por dia, e o segundo fator passaria a ser aquilo que atrapalha.
+ *
+ * Quem quer o outro significado tem o botão "desligar todos os aparelhos", em
+ * Ajustes, que revoga no servidor e chama `esquecerTokenDeAparelho()`.
+ *
+ * ── Por que localStorage, e por que isso é aceitável ─────────────────────
+ *
+ * O token de acesso mora em memória justamente para não ficar ao alcance de
+ * XSS. Este fica no disco porque precisa sobreviver a fechar o navegador —
+ * é a sua função inteira. O que limita o estrago é ele **não abrir nada**:
+ * sem a senha, quem o roubar não entra. Ele só dispensa o código.
+ */
+const DEVICE_TOKEN_KEY = "zelo_device_token";
+
 let _accessToken: string | null = null;
 let _accessTokenExp: number = 0; // Unix seconds
 
@@ -36,6 +59,26 @@ export function clearTokens(): void {
   _accessTokenExp = 0;
   localStorage.removeItem(REFRESH_TOKEN_KEY);
   localStorage.removeItem(USER_ID_KEY);
+  // DEVICE_TOKEN_KEY fica. Ver o comentário na declaração dela.
+}
+
+/** O token deste aparelho, se ele já foi verificado alguma vez. */
+export function lerTokenDeAparelho(): string | null {
+  return localStorage.getItem(DEVICE_TOKEN_KEY);
+}
+
+/** Guarda o token que o servidor acabou de emitir para este aparelho. */
+export function guardarTokenDeAparelho(raw: string): void {
+  localStorage.setItem(DEVICE_TOKEN_KEY, raw);
+}
+
+/**
+ * Esquece este aparelho. Só o "desligar todos" chama isto: guardar um token
+ * que o servidor já revogou faria a tela prometer uma entrada sem código que
+ * o servidor não vai honrar.
+ */
+export function esquecerTokenDeAparelho(): void {
+  localStorage.removeItem(DEVICE_TOKEN_KEY);
 }
 
 export function getStoredRefreshToken(): string | null {
