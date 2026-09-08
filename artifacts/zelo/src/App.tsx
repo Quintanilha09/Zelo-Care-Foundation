@@ -6,6 +6,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
 import DesignReference from '@/pages/design-reference';
 import AuthPage from '@/pages/AuthPage';
+import { AtivacaoDoSegundoFator } from '@/components/ativacao-do-segundo-fator';
 import ConsentPage from '@/pages/ConsentPage';
 import HomePage from '@/pages/HomePage';
 import PatientsPage from '@/pages/PatientsPage';
@@ -195,29 +196,40 @@ function Router() {
     );
   }
 
+  // ── Segundo fator obrigatório (#79) ──────────────────────────────────
+  //
+  // DEPOIS do gate do modo idoso logo acima, e nunca antes. Antes, a tela
+  // do paciente idoso seria tomada por um pedido de segurança que não é
+  // dele, num aparelho que é dele, e que ele não teria como cumprir.
+  //
+  // Bloqueia, porque o fundador decidiu que o segundo fator é obrigatório.
+  // Bloquear só é aceitável porque a ativação não depende de nada de fora:
+  // nenhum e-mail precisa chegar, e o aparelho de agora já sai confiável.
   return (
-    <RoutedErrorBoundary>
-      <Switch>
-        <Route path="/" component={HomePage} />
-        <Route path="/hoje" component={TodaySummaryPage} />
-        <Route path="/pacientes" component={PatientsPage} />
-        <Route path="/pacientes/:id/historico" component={AdherenceCalendarPage} />
-        <Route path="/pacientes/:id/consultas" component={AppointmentsPage} />
-        <Route path="/pacientes/:id/rotina" component={RoutinePage} />
-        <Route path="/pacientes/:id" component={PatientDetailPage} />
-        <Route path="/cuidadores" component={CaregiversPage} />
-        <Route path="/ajustes" component={SettingsPage} />
-        <Route path="/ajustes/notificacoes" component={SettingsNotificationsPage} />
-        <Route path="/ajustes/registro-retroativo" component={SettingsRetroactivePage} />
-        <Route path="/ajustes/conta" component={SettingsAccountPage} />
-        <Route path="/ajustes/seus-dados" component={SettingsDataPage} />
-        <Route path="/planos" component={PlansPage} />
-        <Route path="/notificacoes/ios" component={IOSInstallGuidePage} />
-        <Route path="/design" component={DesignReference} />
-        <Route path="/consentimento" component={() => <ConsentPage onComplete={() => window.location.href = '/'} />} />
-        <Route component={NotFound} />
-      </Switch>
-    </RoutedErrorBoundary>
+    <AtivacaoDoSegundoFator>
+      <RoutedErrorBoundary>
+        <Switch>
+          <Route path="/" component={HomePage} />
+          <Route path="/hoje" component={TodaySummaryPage} />
+          <Route path="/pacientes" component={PatientsPage} />
+          <Route path="/pacientes/:id/historico" component={AdherenceCalendarPage} />
+          <Route path="/pacientes/:id/consultas" component={AppointmentsPage} />
+          <Route path="/pacientes/:id/rotina" component={RoutinePage} />
+          <Route path="/pacientes/:id" component={PatientDetailPage} />
+          <Route path="/cuidadores" component={CaregiversPage} />
+          <Route path="/ajustes" component={SettingsPage} />
+          <Route path="/ajustes/notificacoes" component={SettingsNotificationsPage} />
+          <Route path="/ajustes/registro-retroativo" component={SettingsRetroactivePage} />
+          <Route path="/ajustes/conta" component={SettingsAccountPage} />
+          <Route path="/ajustes/seus-dados" component={SettingsDataPage} />
+          <Route path="/planos" component={PlansPage} />
+          <Route path="/notificacoes/ios" component={IOSInstallGuidePage} />
+          <Route path="/design" component={DesignReference} />
+          <Route path="/consentimento" component={() => <ConsentPage onComplete={() => window.location.href = '/'} />} />
+          <Route component={NotFound} />
+        </Switch>
+      </RoutedErrorBoundary>
+    </AtivacaoDoSegundoFator>
   );
 }
 

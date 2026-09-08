@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import { useLocation } from 'wouter';
 import { CHAVE_DO_EMAIL } from './VerifyEmailPage';
 import { CHAVE_DO_EMAIL_DA_SENHA } from './ResetPasswordPage';
@@ -72,25 +73,202 @@ function GoogleButton() {
 
 // ── Login ──────────────────────────────────────────────────────────────────
 
+// ── Código de aparelho novo (#79) ──────────────────────────────────────────
+//
+// ═══════════════════════════════════════════════════════════════════════════
+// ESTA TELA APARECE PARA QUEM ACERTOU A SENHA. ELA NÃO É UM ERRO, E NÃO PODE
+// PARECER UM.
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Quem chega aqui trocou de celular, limpou o navegador, ou está entrando do
+// computador do trabalho pela primeira vez. Um alerta vermelho diria a essa
+// pessoa que ela errou alguma coisa — e o mais provável é que ela tentasse a
+// senha de novo, e de novo, até bater no limitador de login.
+
+/** Espelha `DIGITOS` de `lib/codigo-de-verificacao.ts`. */
+const DIGITOS_DO_CODIGO = 6;
+
+function CodigoDeAparelho({
+  desafio,
+  codigoEnviado,
+  mensagem,
+  aoVoltar,
+}: {
+  desafio: string;
+  codigoEnviado: boolean;
+  mensagem: string;
+  aoVoltar: () => void;
+}) {
+  const { confirmarAparelho, reenviarCodigoDeAparelho } = useAuth();
+  const [codigo, setCodigo] = useState('');
+  const [codigoDeRecuperacao, setCodigoDeRecuperacao] = useState('');
+  const [usandoRecuperacao, setUsandoRecuperacao] = useState(!codigoEnviado);
+  const [erro, setErro] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const [reenviado, setReenviado] = useState(false);
+
+  async function confirmar(chave: { codigo?: string; codigoDeRecuperacao?: string }) {
+    setErro('');
+    setEnviando(true);
+    try {
+      await confirmarAparelho(desafio, chave);
+      // Não há navegação aqui: `confirmarAparelho` abre a sessão, e o
+      // `isAuthenticated` do App troca a tela sozinho.
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Código inválido ou expirado.');
+      setCodigo('');
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  async function reenviar() {
+    setErro('');
+    await reenviarCodigoDeAparelho(desafio);
+    setReenviado(true);
+  }
+
+  return (
+    <div className="space-y-4">
+      <Alert>
+        <AlertDescription>
+          {mensagem || 'Enviamos um código para o seu e-mail. Digite-o para entrar.'}
+        </AlertDescription>
+      </Alert>
+
+      {erro && (
+        <Alert variant="destructive">
+          <AlertDescription>{erro}</AlertDescription>
+        </Alert>
+      )}
+
+      {!usandoRecuperacao ? (
+        <div className="space-y-2">
+          <CampoLabel htmlFor="codigo-de-aparelho" obrigatorio>
+            Código
+          </CampoLabel>
+          <InputOTP
+            id="codigo-de-aparelho"
+            maxLength={DIGITOS_DO_CODIGO}
+            value={codigo}
+            onChange={(valor: string) => {
+              setCodigo(valor);
+              setErro('');
+              // Confirma sozinho no sexto dígito — mesmo comportamento da
+              // confirmação de conta e do e-mail de recuperação.
+              if (valor.length === DIGITOS_DO_CODIGO) void confirmar({ codigo: valor });
+            }}
+            autoComplete="one-time-code"
+            disabled={enviando}
+          >
+            <InputOTPGroup className="gap-2">
+              {Array.from({ length: DIGITOS_DO_CODIGO }, (_, i) => (
+                <InputOTPSlot key={i} index={i} className="h-14 w-11 rounded-md border text-xl" />
+              ))}
+            </InputOTPGroup>
+          </InputOTP>
+          <p className="text-xs text-muted-foreground">
+            Pode colar o código inteiro. Ele vale 10 minutos.
+          </p>
+        </div>
+      ) : (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void confirmar({ codigoDeRecuperacao });
+          }}
+          className="space-y-2"
+        >
+          <CampoLabel htmlFor="codigo-de-recuperacao-login" obrigatorio>
+            Código de recuperação
+          </CampoLabel>
+          <Input
+            id="codigo-de-recuperacao-login"
+            value={codigoDeRecuperacao}
+            onChange={(e) => setCodigoDeRecuperacao(e.target.value)}
+            placeholder="ABCDE-FGHJK"
+            autoCapitalize="characters"
+            autoComplete="off"
+            required
+          />
+          <p className="text-xs text-muted-foreground">
+            Um dos dez que você guardou ao ativar. Cada um serve uma vez só.
+          </p>
+          <Button type="submit" className="w-full" disabled={enviando}>
+            {enviando ? 'Conferindo…' : 'Entrar com este código'}
+          </Button>
+        </form>
+      )}
+
+      <div className="flex flex-col gap-2 text-sm">
+        {!usandoRecuperacao && (
+          <button
+            type="button"
+            className="text-left underline underline-offset-4"
+            onClick={() => void reenviar()}
+            disabled={enviando}
+          >
+            {reenviado ? 'Código reenviado' : 'Não recebi o código'}
+          </button>
+        )}
+        <button
+          type="button"
+          className="text-left underline underline-offset-4"
+          onClick={() => {
+            setUsandoRecuperacao(!usandoRecuperacao);
+            setErro('');
+          }}
+        >
+          {usandoRecuperacao ? 'Voltar ao código do e-mail' : 'Usar um código de recuperação'}
+        </button>
+        <button type="button" className="text-left underline underline-offset-4" onClick={aoVoltar}>
+          Entrar com outra conta
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function LoginForm() {
   const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  /** Preenchido quando a senha passou mas o aparelho é novo (#79). */
+  const [desafio, setDesafio] = useState<{ desafio: string; codigoEnviado: boolean; mensagem: string } | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
     try {
-      await login(email, password);
+      const r = await login(email, password);
+      // Pedir código não é erro, e não passa por `setError`: quem chega
+      // aqui acertou a senha. Ver o comentário em CodigoDeAparelho.
+      if (r.precisaDeCodigo) {
+        setDesafio({ desafio: r.desafio, codigoEnviado: r.codigoEnviado, mensagem: r.mensagem });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao fazer login');
     } finally {
       setLoading(false);
     }
   };
+
+  if (desafio) {
+    return (
+      <CodigoDeAparelho
+        desafio={desafio.desafio}
+        codigoEnviado={desafio.codigoEnviado}
+        mensagem={desafio.mensagem}
+        aoVoltar={() => {
+          setDesafio(null);
+          setPassword('');
+        }}
+      />
+    );
+  }
 
 
   return (
