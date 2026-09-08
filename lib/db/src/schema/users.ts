@@ -49,6 +49,41 @@ export const usersTable = pgTable("users", {
   recoveryEmail: text("recovery_email"),
   /** Quando o reserva foi confirmado. A tela mostra, e a auditoria usa. */
   recoveryEmailAt: timestamp("recovery_email_at", { withTimezone: true }),
+  /**
+   * Resgate pela família — Issue #87.
+   *
+   * Quando o cuidador principal restaura o acesso de alguém da própria
+   * família, esta coluna guarda **até quando** a próxima entrada dessa pessoa
+   * dispensa o segundo fator (#79). Nulo = nenhum resgate ativo.
+   *
+   * ── Por que isto não concede poder novo ──────────────────────────────────
+   *
+   * O cuidador principal **já vê e faz tudo naquela família**. Deixá-lo
+   * restaurar o acesso de outro cuidador não acrescenta nada ao que ele já
+   * podia — e é o caminho mais limpo que existe aqui, porque sai do modelo de
+   * papéis que o produto já tem.
+   *
+   * ── O que ele custa, e como fica limitado ────────────────────────────────
+   *
+   * Um atacante que já tenha a SENHA de alguém e a cumplicidade (ou a conta
+   * comprometida) de um cuidador principal de qualquer família dessa pessoa
+   * ganha um caminho para pular o segundo fator. Não é hipotético, e não dá
+   * para eliminar sem tirar o resgate — que é justamente o que impede a conta
+   * de se perder. Três coisas limitam:
+   *
+   * 1. **Janela curta.** Quem pediu ajuda vai entrar logo; um resgate
+   *    esquecido não pode ficar armado para sempre.
+   * 2. **A pessoa resgatada é avisada por e-mail.** Se ela não pediu, é o que
+   *    lhe dá a chance de reagir — mesmo papel do aviso da troca de e-mail.
+   * 3. **Fica no registro de auditoria**: quem resgatou quem, e quando.
+   *
+   * ── Um resgate só, e some ao ser usado ───────────────────────────────────
+   *
+   * O login da #79 vai limpar esta coluna ao consumir o resgate. Guardar
+   * "até quando" em vez de um booleano dá as duas garantias de uma vez: uso
+   * único (o login apaga) e validade (o tempo apaga sozinho).
+   */
+  resgateLiberadoAte: timestamp("resgate_liberado_ate", { withTimezone: true }),
   status: userStatusEnum("status").notNull().default("pending_verification"),
   // Qual família a sessão abre. O JWT carrega UM familyId, mas o usuário
   // pode ser cuidador em várias (ver comentário acima) — sem isto, o login

@@ -258,6 +258,18 @@ export default function CaregiversPage() {
     void queryClient.invalidateQueries({ queryKey: ["invites"] });
   };
 
+  /** Qual cuidador está sendo resgatado agora — Issue #87. */
+  const [resgatando, setResgatando] = useState<number | null>(null);
+  /**
+   * Erro do resgate, separado do erro do convite.
+   *
+   * O `error` que já existia nesta tela mora dentro do `InviteDialog`, é de
+   * outro escopo e de outro assunto. Reaproveitá-lo faria a falha de um
+   * aparecer no lugar do outro — e foi o que a primeira versão deste patch
+   * tentou fazer, até o typecheck reclamar.
+   */
+  const [erroDoResgate, setErroDoResgate] = useState("");
+
   const handleRoleChange = async (caregiverId: number, role: Role) => {
     const res = await authFetch(`/api/caregivers/${caregiverId}`, { method: "PATCH", body: JSON.stringify({ role }) });
     if (res.ok) invalidate();
@@ -266,6 +278,42 @@ export default function CaregiversPage() {
   const handleRemove = async (caregiverId: number) => {
     const res = await authFetch(`/api/caregivers/${caregiverId}`, { method: "DELETE" });
     if (res.ok) invalidate();
+  };
+
+  /**
+   * Restaurar o acesso de alguém da família — Issue #87.
+   *
+   * A confirmação diz o que a ação FAZ, e não o nome dela: "restaurar acesso"
+   * não deixa claro que a próxima entrada da pessoa pula o segundo fator, e é
+   * exatamente isso que quem clica precisa entender antes de clicar.
+   *
+   * Diz também que a pessoa será avisada. Quem faz um favor não se importa;
+   * quem faria por outro motivo pensa duas vezes — e as duas reações são boas.
+   */
+  const handleResgate = async (caregiverId: number, nome: string) => {
+    const certeza = window.confirm(
+      `Restaurar o acesso de ${nome}?\n\n` +
+        "A próxima entrada dela, nas próximas 24 horas, não vai pedir o código de aparelho novo. " +
+        "A senha dela continua sendo necessária.\n\n" +
+        "Ela será avisada por e-mail de que foi você quem restaurou.",
+    );
+    if (!certeza) return;
+
+    setResgatando(caregiverId);
+    setErroDoResgate("");
+    try {
+      const res = await authFetch(`/api/caregivers/${caregiverId}/resgate`, { method: "POST" });
+      const dados = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+      if (!res.ok) {
+        setErroDoResgate(dados.error ?? "Não foi possível restaurar o acesso agora.");
+        return;
+      }
+      window.alert(dados.message ?? "Acesso restaurado.");
+    } catch {
+      setErroDoResgate("Não foi possível falar com o servidor.");
+    } finally {
+      setResgatando(null);
+    }
   };
 
   const handleRevokeInvite = async (inviteId: number) => {
@@ -288,6 +336,12 @@ export default function CaregiversPage() {
         </div>
 
         {isLoading && <EsqueletoDeCuidadores />}
+
+        {erroDoResgate && (
+          <Alert>
+            <AlertDescription>{erroDoResgate}</AlertDescription>
+          </Alert>
+        )}
 
         <div className={`space-y-3 ${isLoading ? "" : "zelo-entra"}`}>
           {caregivers?.map((c) => {
@@ -316,10 +370,27 @@ export default function CaregiversPage() {
                     <div className="mt-1"><CaregiverBadge role={c.role} /></div>
                   )}
                 </div>
+                {/* Issue #87: restaurar o acesso de quem perdeu o e-mail. Só
+                    para o cuidador principal, e nunca no próprio cartão — quem
+                    está lendo esta tela já entrou.
+
+                    Botão com texto, e não ícone: "resgatar" não tem símbolo
+                    que se entenda sozinho. O de remover ao lado segue ícone
+                    porque X é universal. */}
                 {isPrimary && !isSelf && (
-                  <Button variant="ghost" size="icon" onClick={() => void handleRemove(c.id)} title="Remover acesso">
-                    <X className="w-4 h-4 text-muted-foreground" />
-                  </Button>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void handleResgate(c.id, c.name)}
+                      disabled={resgatando === c.id}
+                    >
+                      {resgatando === c.id ? "Restaurando…" : "Restaurar acesso"}
+                    </Button>
+                    <Button variant="ghost" size="icon" onClick={() => void handleRemove(c.id)} title="Remover acesso">
+                      <X className="w-4 h-4 text-muted-foreground" />
+                    </Button>
+                  </div>
                 )}
               </div>
             );
