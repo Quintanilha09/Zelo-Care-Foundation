@@ -1,3 +1,4 @@
+import { mensagemDeValidacao } from "../lib/erro-de-validacao.ts";
 import { getAuth } from "../lib/auth-types.ts";
 /**
  * Estoque — ZELO (ZELO-34).
@@ -88,7 +89,7 @@ router.patch("/patients/:patientId/stock/:medicationId", requireAuth, requireCap
   if (!patient) { res.status(404).json({ error: "Paciente não encontrado" }); return; }
 
   const body = AdjustStockBody.safeParse(req.body);
-  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  if (!body.success) { res.status(400).json({ error: mensagemDeValidacao(body.error) }); return; }
 
   const [stock] = await db
     .select()

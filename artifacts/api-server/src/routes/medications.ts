@@ -1,3 +1,4 @@
+import { mensagemDeValidacao } from "../lib/erro-de-validacao.ts";
 import { getAuth } from "../lib/auth-types.ts";
 /**
  * Medicamentos — ZELO.
@@ -34,7 +35,7 @@ router.get("/medications", requireAuth, async (req, res): Promise<void> => {
 
 router.post("/medications", requireAuth, async (req, res): Promise<void> => {
   const body = CreateMedicationBody.safeParse(req.body);
-  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  if (!body.success) { res.status(400).json({ error: mensagemDeValidacao(body.error) }); return; }
 
   const medicationLimit = await checkMedicationLimit(getAuth(req).familyId);
   if (!medicationLimit.allowed) {

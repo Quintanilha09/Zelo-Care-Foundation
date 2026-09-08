@@ -1,3 +1,4 @@
+import { mensagemDeValidacao } from "../lib/erro-de-validacao.ts";
 import { getAuth } from "../lib/auth-types.ts";
 /**
  * Audit log — ZELO. Somente leitura. familyId do token JWT.
@@ -20,7 +21,7 @@ const AuditQuery = z.object({
 
 router.get("/audit-log", requireAuth, async (req, res): Promise<void> => {
   const query = AuditQuery.safeParse(req.query);
-  if (!query.success) { res.status(400).json({ error: query.error.message }); return; }
+  if (!query.success) { res.status(400).json({ error: mensagemDeValidacao(query.error) }); return; }
 
   const conditions = [eq(auditLogTable.familyId, getAuth(req).familyId)];
   if (query.data.entityType) conditions.push(eq(auditLogTable.entityType, query.data.entityType));

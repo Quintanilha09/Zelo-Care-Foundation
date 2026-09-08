@@ -1,3 +1,4 @@
+import { mensagemDeValidacao } from "../lib/erro-de-validacao.ts";
 import { getAuth } from "../lib/auth-types.ts";
 /**
  * Rotas de convite de cuidadores — ZELO.
@@ -40,7 +41,7 @@ const CreateInviteBody = z.object({
 router.post("/invites", requirePrimaryCaregiver, async (req, res): Promise<void> => {
   const body = CreateInviteBody.safeParse(req.body);
   if (!body.success) {
-    res.status(400).json({ error: body.error.message });
+    res.status(400).json({ error: mensagemDeValidacao(body.error) });
     return;
   }
 
@@ -101,7 +102,7 @@ const AcceptInviteBody = z.object({
 router.post("/invites/accept", requireAuth, async (req, res): Promise<void> => {
   const body = AcceptInviteBody.safeParse(req.body);
   if (!body.success) {
-    res.status(400).json({ error: body.error.message });
+    res.status(400).json({ error: mensagemDeValidacao(body.error) });
     return;
   }
 

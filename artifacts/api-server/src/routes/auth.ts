@@ -115,7 +115,7 @@ router.post("/auth/register", registerLimiter, async (req, res): Promise<void> =
 
   const body = RegisterBody.safeParse(req.body);
   if (!body.success) {
-    res.status(400).json({ error: body.error.message });
+    res.status(400).json({ error: mensagemDeValidacao(body.error) });
     return;
   }
 

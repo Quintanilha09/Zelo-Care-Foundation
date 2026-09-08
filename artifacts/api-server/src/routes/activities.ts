@@ -1,3 +1,4 @@
+import { mensagemDeValidacao } from "../lib/erro-de-validacao.ts";
 import { getAuth } from "../lib/auth-types.ts";
 /**
  * Atividades de rotina — ZELO (ZELO-37).
@@ -59,7 +60,7 @@ router.post("/patients/:patientId/activities", requireAuth, async (req, res): Pr
   if (!patient) { res.status(404).json({ error: "Paciente não encontrado" }); return; }
 
   const body = ActivityBody.safeParse(req.body);
-  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  if (!body.success) { res.status(400).json({ error: mensagemDeValidacao(body.error) }); return; }
 
   const [activity] = await db.insert(activitiesTable).values({
     patientId, type: body.data.type, occurredAt: new Date(body.data.occurredAt),

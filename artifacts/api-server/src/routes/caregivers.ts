@@ -1,3 +1,4 @@
+import { mensagemDeValidacao } from "../lib/erro-de-validacao.ts";
 import { getAuth } from "../lib/auth-types.ts";
 /**
  * Cuidadores — ZELO.
@@ -68,7 +69,7 @@ router.patch("/caregivers/:caregiverId", requirePrimaryCaregiver, async (req, re
   if (isNaN(caregiverId)) { res.status(400).json({ error: "ID inválido" }); return; }
 
   const body = UpdateCaregiverBody.safeParse(req.body);
-  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  if (!body.success) { res.status(400).json({ error: mensagemDeValidacao(body.error) }); return; }
 
   const [before] = await db
     .select({ role: caregiversTable.role, userId: caregiversTable.userId })

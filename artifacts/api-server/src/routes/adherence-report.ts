@@ -1,3 +1,4 @@
+import { mensagemDeValidacao } from "../lib/erro-de-validacao.ts";
 import { getAuth } from "../lib/auth-types.ts";
 /**
  * Relatório de adesão em PDF — ZELO (ZELO-35).
@@ -53,7 +54,7 @@ router.post("/patients/:patientId/adherence-report", requireAuth, async (req, re
   if (!patient) { res.status(404).json({ error: "Paciente não encontrado" }); return; }
 
   const body = z.object({ from: DateISO, to: DateISO }).safeParse(req.body);
-  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  if (!body.success) { res.status(400).json({ error: mensagemDeValidacao(body.error) }); return; }
   const { from, to } = body.data;
   if (from > to) { res.status(400).json({ error: "'from' precisa ser antes de 'to'" }); return; }
   const rangeDays = Math.round((new Date(`${to}T00:00:00Z`).getTime() - new Date(`${from}T00:00:00Z`).getTime()) / 86_400_000);
