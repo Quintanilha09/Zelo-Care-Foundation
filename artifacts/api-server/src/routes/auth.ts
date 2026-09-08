@@ -19,7 +19,7 @@ import { getAuth } from "../lib/auth-types.ts";
 
 import { Router } from "express";
 import { z } from "zod";
-import { eq, and, gt, gte, desc, count } from "drizzle-orm";
+import { eq, and, gt, gte, desc, count, isNull } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   usersTable,
@@ -30,17 +30,25 @@ import {
   emailVerificationsTable,
   passwordResetsTable,
   consentRecordsTable,
+  deviceVerificationsTable,
+  recoveryCodesTable,
 } from "@workspace/db";
 import { hashPassword, verifyPassword, validatePasswordStrength } from "../lib/password";
 import {
   generateAccessToken,
   generateRefreshToken,
+  generateOneTimeToken,
   hashToken,
   decodeRefreshTokenUserId,
   revokeAccessToken,
   revokeAllAccessTokensForUser,
 } from "../lib/tokens";
-import { sendVerificationEmail, sendPasswordResetEmail, hasEmailProvider } from "../lib/email";
+import {
+  sendVerificationEmail,
+  sendPasswordResetEmail,
+  sendDeviceCodeEmail,
+  hasEmailProvider,
+} from "../lib/email";
 import { safeLog } from "../lib/safe-logger";
 import { audit } from "../lib/audit";
 import { requireAuth } from "../middleware/require-auth";
@@ -69,6 +77,16 @@ import {
   inicioDaMedicao,
   esperarAtePiso,
 } from "../lib/codigo-de-verificacao.ts";
+import {
+  rotuloDoAparelho,
+  aparelhoConhecido,
+  renovarAparelho,
+  registrarAparelho,
+} from "../lib/aparelho-confiavel.ts";
+import {
+  normalizarCodigoDeRecuperacao,
+  hashDoCodigoDeRecuperacao,
+} from "../lib/codigos-de-recuperacao.ts";
 
 const router = Router();
 
@@ -573,6 +591,14 @@ router.post("/auth/verify-email/resend", resendVerificationLimiter, async (req, 
 const LoginBody = z.object({
   email: z.string().email(),
   password: z.string().min(1),
+  /**
+   * O token deste aparelho, se ele já foi verificado antes — Issue #79.
+   *
+   * Opcional porque a maioria das entradas não tem: aparelho novo, navegador
+   * limpo, conta que ainda não ativou o segundo fator. Ausência não é erro; é
+   * o caso comum.
+   */
+  deviceToken: z.string().optional(),
 });
 
 router.post("/auth/login", loginByIpLimiter, loginByEmailLimiter, async (req, res): Promise<void> => {
@@ -615,39 +641,471 @@ router.post("/auth/login", loginByIpLimiter, loginByEmailLimiter, async (req, re
     return;
   }
 
-  // Com qual família a sessão abre — nunca "a primeira que vier", que é
-  // indeterminado pra quem é cuidador em mais de uma (ver lib/active-family.ts).
-  const caregiver = await resolveActiveCaregiver(user.id);
+  // ── O segundo fator entra aqui, e só aqui ───────────────────────────────
+  //
+  // Depois da senha, antes de qualquer token. A ordem é o que garante o
+  // critério de aceite mais importante da Issue #79: **aparelho novo não
+  // recebe token de sessão nenhum antes do código**.
+  const ua = req.headers["user-agent"] ?? null;
+  const ip = req.ip ?? null;
+  let aparelhoParaRegistrar = false;
 
-  if (!caregiver) {
-    res.status(500).json({ error: "Conta sem vínculo familiar. Contate o suporte." });
+  if (user.segundoFatorAtivoEm) {
+    const conhecido = await aparelhoConhecido(user.id, body.data.deviceToken);
+
+    if (conhecido !== null) {
+      // Renova os 30 dias. É esta linha que faz o prazo ser invisível para
+      // quem usa o app com regularidade — ver lib/aparelho-confiavel.ts.
+      await renovarAparelho(conhecido);
+    } else if (await consumirResgate(user.id, ip)) {
+      // A família restaurou o acesso desta pessoa (#87). O resgate vale uma
+      // vez, some ao ser usado, e registra o aparelho — senão a pessoa
+      // resgatada cairia no mesmo pedido de código na entrada seguinte, e o
+      // resgate teria servido para nada.
+      aparelhoParaRegistrar = true;
+    } else {
+      const desafio = await emitirDesafio(user.id, user.email, user.recoveryEmail, ua, ip);
+      safeLog.info({ action: "aparelho_novo", userId: user.id }, "Entrada de aparelho novo: codigo pedido");
+      res.status(401).json({
+        code: "device_verification_required",
+        error: desafio.codigoEnviado
+          ? "Enviamos um código para o seu e-mail. Digite-o para entrar."
+          : "Você já pediu vários códigos na última hora. Use um código de recuperação, ou tente de novo mais tarde.",
+        desafio: desafio.raw,
+        codigoEnviado: desafio.codigoEnviado,
+      });
+      return;
+    }
+  }
+
+  const sessao = await abrirSessao(user.id, ua, ip);
+  if (!sessao.ok) {
+    res.status(sessao.status).json({ error: sessao.error });
     return;
   }
 
-  const accessToken = generateAccessToken(user.id, caregiver.familyId, caregiver.id, caregiver.role);
-  const { raw: refreshRaw, hash: refreshHash } = generateRefreshToken(user.id);
+  safeLog.info({ action: "login", userId: user.id, caregiverId: sessao.caregiverId }, "Login realizado");
 
-  const REFRESH_TTL_DAYS = 30;
+  res.json({
+    accessToken: sessao.accessToken,
+    refreshToken: sessao.refreshToken,
+    expiresIn: sessao.expiresIn,
+    ...(aparelhoParaRegistrar ? { deviceToken: await registrarAparelho(user.id, ua, ip) } : {}),
+  });
+});
+
+// ── SEGUNDO FATOR: ENTRADA DE APARELHO NOVO (#79) ─────────────────────────
+//
+// ═══════════════════════════════════════════════════════════════════════════
+// DUAS COISAS PRECISAM SER VERDADE PARA A SESSÃO SAIR: SABER A SENHA E TER O
+// E-MAIL. NENHUMA DAS DUAS BASTA SOZINHA, E É SÓ ISSO QUE ESTE TRECHO FAZ.
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// O fundador decidiu que o segundo fator é **obrigatório**, contra a minha
+// recomendação e com o risco na mesa: este não é um site de código-fonte, é um
+// app de medicamento de idoso, e um segundo fator mal calibrado tranca o
+// cuidador do lado de fora às 8h da manhã com a dose para registrar.
+//
+// O que impede isso não é uma linha de código — são quatro caminhos de volta,
+// e nenhum é decoração:
+//
+//   1. **códigos de recuperação**, gerados ANTES de a tranca valer (#79)
+//   2. **e-mail de recuperação**, que recebe o mesmo código (#87)
+//   3. **resgate pela família**, que dispensa o código uma vez (#87)
+//   4. **aparelho confiável por 30 dias, renovando a cada uso** — que faz a
+//      maioria das pessoas nunca ver código nenhum
+//
+// Quem remover qualquer um dos quatro precisa ter lido esta lista inteira.
+
+const REFRESH_TTL_DIAS = 30;
+
+/**
+ * O trecho final do login: resolve a família, emite os tokens, audita.
+ *
+ * Existe como função porque a confirmação do código precisa executá-lo
+ * **inteiro** — e "inteiro" é o ponto. Duplicar as trinta linhas seria como o
+ * segundo caminho perderia a resolução de família ativa, ou a auditoria, meses
+ * depois, sem nenhum teste caindo.
+ */
+async function abrirSessao(
+  userId: number,
+  userAgent: string | null,
+  ip: string | null,
+): Promise<
+  | {
+      ok: true;
+      accessToken: string;
+      refreshToken: string;
+      expiresIn: number;
+      familyId: number;
+      caregiverId: number;
+    }
+  | { ok: false; status: number; error: string }
+> {
+  // Com qual família a sessão abre — nunca "a primeira que vier", que é
+  // indeterminado pra quem é cuidador em mais de uma (ver lib/active-family.ts).
+  const caregiver = await resolveActiveCaregiver(userId);
+  if (!caregiver) {
+    return { ok: false, status: 500, error: "Conta sem vínculo familiar. Contate o suporte." };
+  }
+
+  const accessToken = generateAccessToken(userId, caregiver.familyId, caregiver.id, caregiver.role);
+  const { raw: refreshRaw, hash: refreshHash } = generateRefreshToken(userId);
+
   await db.insert(refreshTokensTable).values({
-    userId: user.id,
+    userId,
     tokenHash: refreshHash,
-    userAgent: req.headers["user-agent"] ?? null,
-    ipAddress: req.ip ?? null,
-    expiresAt: new Date(Clock.now().getTime() + REFRESH_TTL_DAYS * 24 * 60 * 60 * 1000),
+    userAgent,
+    ipAddress: ip,
+    expiresAt: new Date(Clock.now().getTime() + REFRESH_TTL_DIAS * 24 * 60 * 60 * 1000),
   });
 
-  safeLog.info({ action: "login", userId: user.id, caregiverId: caregiver.id }, "Login realizado");
   await audit({
     familyId: caregiver.familyId,
     entityType: "session",
-    entityId: String(user.id),
+    entityId: String(userId),
     action: "created",
     actorId: String(caregiver.id),
     actorType: "caregiver",
-    ipAddress: req.ip ?? undefined,
+    ipAddress: ip ?? undefined,
   });
 
-  res.json({ accessToken, refreshToken: refreshRaw, expiresIn: 900 });
+  return {
+    ok: true,
+    accessToken,
+    refreshToken: refreshRaw,
+    expiresIn: 900,
+    familyId: caregiver.familyId,
+    caregiverId: caregiver.id,
+  };
+}
+
+/**
+ * O resgate da família (#87) está armado? Então gasta, e deixa entrar.
+ *
+ * A coluna `resgate_liberado_ate` foi escrita pela Issue #87 e, até agora,
+ * **não era lida por ninguém**. Esta função é o outro lado daquela promessa —
+ * a que o e-mail enviado à pessoa resgatada já afirmava em português.
+ *
+ * Apagar a coluna no ato é o que faz o resgate valer **uma vez**, e não vinte e
+ * quatro horas de porta aberta. A validade continua sendo o tempo; o uso único
+ * é esta linha.
+ */
+async function consumirResgate(userId: number, ip: string | null): Promise<boolean> {
+  const [usuario] = await db
+    .select({ ate: usersTable.resgateLiberadoAte })
+    .from(usersTable)
+    .where(eq(usersTable.id, userId))
+    .limit(1);
+
+  if (!usuario?.ate || usuario.ate <= Clock.now()) return false;
+
+  await db.update(usersTable).set({ resgateLiberadoAte: null }).where(eq(usersTable.id, userId));
+
+  safeLog.warn(
+    { action: "resgate_consumido", userId, ipAddress: ip ?? undefined },
+    "Entrada sem segundo fator: resgate da familia consumido",
+  );
+
+  return true;
+}
+
+/**
+ * Cria o desafio, sorteia o código e manda por e-mail.
+ *
+ * ── Por que o desafio sai sempre, mesmo com o envio bloqueado ─────────────
+ *
+ * Passado o teto de códigos por hora, a tentação é responder "espere" e não
+ * criar nada. Isso trancaria a pessoa de verdade: **sem desafio não há como
+ * usar um código de recuperação**, que é justamente a saída que existe para
+ * quando o e-mail não chega. O desafio sai sempre; o teto corta só o envio.
+ */
+async function emitirDesafio(
+  userId: number,
+  email: string,
+  emailReserva: string | null,
+  userAgent: string | null,
+  ip: string | null,
+): Promise<{ raw: string; codigoEnviado: boolean }> {
+  const agora = Clock.now();
+
+  // Um desafio vivo por vez. Cada um que sobra é mais cinco palpites
+  // oferecidos ao atacante — mesma razão da Issue #77.
+  await db
+    .update(deviceVerificationsTable)
+    .set({ used: true, usedAt: agora })
+    .where(
+      and(eq(deviceVerificationsTable.userId, userId), eq(deviceVerificationsTable.used, false)),
+    );
+
+  const umaHoraAtras = new Date(agora.getTime() - 60 * 60 * 1000);
+  const [contagem] = await db
+    .select({ quantos: count() })
+    .from(deviceVerificationsTable)
+    .where(
+      and(
+        eq(deviceVerificationsTable.userId, userId),
+        gte(deviceVerificationsTable.createdAt, umaHoraAtras),
+      ),
+    );
+
+  const podeEnviar = (contagem?.quantos ?? 0) < MAX_CODIGOS_POR_HORA;
+  const codigo = gerarCodigo();
+  const { raw, hash } = generateOneTimeToken();
+
+  await db.insert(deviceVerificationsTable).values({
+    userId,
+    desafioHash: hash,
+    codigoHash: hashDoCodigo(userId, codigo),
+    expiresAt: expiraEm(agora),
+    requestIp: ip,
+    userAgent,
+  });
+
+  if (podeEnviar) {
+    // O reserva recebe o mesmo código — é o único poder que a Issue #87 lhe
+    // deu, e é aqui que ele acontece de verdade.
+    const destinos = emailReserva ? [email, emailReserva] : [email];
+    await sendDeviceCodeEmail(destinos, codigo, rotuloDoAparelho(userAgent), ip);
+  }
+
+  return { raw, codigoEnviado: podeEnviar };
+}
+
+/**
+ * A confirmação do código de aparelho novo.
+ *
+ * ── A resposta é a mesma para tudo que dá errado ──────────────────────────
+ *
+ * Código errado, código expirado, tentativas esgotadas, desafio inventado:
+ * uma frase só. Distinguir contaria a um atacante se vale a pena continuar
+ * tentando naquele desafio — e o piso de tempo cobre a diferença que a
+ * resposta esconde, porque o caminho do erro faz mais consultas que o do
+ * desafio inexistente (ver PISO_DE_RESPOSTA_MS).
+ */
+const ConfirmarAparelhoBody = z.object({
+  desafio: z.string().min(1, { message: "Refaça a entrada: este pedido expirou." }),
+  codigo: z.string().optional(),
+  codigoDeRecuperacao: z.string().optional(),
+});
+
+const FALHA_NO_CODIGO = "Código inválido ou expirado. Peça um novo e tente de novo.";
+
+router.post("/auth/login/aparelho", publicTokenLimiter, async (req, res): Promise<void> => {
+  const inicio = inicioDaMedicao();
+  const responder = async (status: number, corpo: Record<string, unknown>): Promise<void> => {
+    await esperarAtePiso(inicio);
+    res.status(status).json(corpo);
+  };
+
+  const body = ConfirmarAparelhoBody.safeParse(req.body);
+  if (!body.success) {
+    await responder(400, { error: mensagemDeValidacao(body.error) });
+    return;
+  }
+
+  const [registro] = await db
+    .select()
+    .from(deviceVerificationsTable)
+    .where(
+      and(
+        eq(deviceVerificationsTable.desafioHash, hashToken(body.data.desafio)),
+        eq(deviceVerificationsTable.used, false),
+        gt(deviceVerificationsTable.expiresAt, Clock.now()),
+      ),
+    )
+    .limit(1);
+
+  if (!registro || registro.attempts >= MAX_TENTATIVAS) {
+    await responder(401, { error: FALHA_NO_CODIGO });
+    return;
+  }
+
+  // ── Qual das duas chaves a pessoa apresentou ────────────────────────────
+  //
+  // O código do e-mail é o caminho normal. O de recuperação é o que existe
+  // para o dia em que o e-mail não chega — e nesse dia ele não pode ter
+  // nenhuma condição extra, senão não é caminho de volta nenhum.
+  let aceito = false;
+  let viaRecuperacao = false;
+
+  const codigoDeRecuperacao = normalizarCodigoDeRecuperacao(body.data.codigoDeRecuperacao);
+  if (codigoDeRecuperacao) {
+    const [linha] = await db
+      .select({ id: recoveryCodesTable.id })
+      .from(recoveryCodesTable)
+      .where(
+        and(
+          eq(recoveryCodesTable.userId, registro.userId),
+          eq(
+            recoveryCodesTable.codeHash,
+            hashDoCodigoDeRecuperacao(registro.userId, codigoDeRecuperacao),
+          ),
+          isNull(recoveryCodesTable.usedAt),
+        ),
+      )
+      .limit(1);
+
+    if (linha) {
+      // Queima no ato, antes de qualquer outra coisa poder falhar.
+      await db
+        .update(recoveryCodesTable)
+        .set({ usedAt: Clock.now() })
+        .where(eq(recoveryCodesTable.id, linha.id));
+      aceito = true;
+      viaRecuperacao = true;
+    }
+  } else {
+    const codigo = normalizarCodigo(body.data.codigo);
+    if (codigo && conferirHash(registro.codigoHash, hashDoCodigo(registro.userId, codigo))) {
+      aceito = true;
+    }
+  }
+
+  if (!aceito) {
+    // O contador é a defesa principal: seis dígitos são um milhão de
+    // combinações, e cinco tentativas não chegam a lugar nenhum.
+    await db
+      .update(deviceVerificationsTable)
+      .set({ attempts: registro.attempts + 1 })
+      .where(eq(deviceVerificationsTable.id, registro.id));
+
+    await responder(401, { error: FALHA_NO_CODIGO });
+    return;
+  }
+
+  await db
+    .update(deviceVerificationsTable)
+    .set({ used: true, usedAt: Clock.now() })
+    .where(eq(deviceVerificationsTable.id, registro.id));
+
+  // O estado da conta é conferido de novo, e não herdado do login: entre o
+  // pedido do código e a digitação dele a conta pode ter sido suspensa.
+  const [user] = await db
+    .select()
+    .from(usersTable)
+    .where(eq(usersTable.id, registro.userId))
+    .limit(1);
+
+  if (!user || user.status !== "active" || !user.emailVerified) {
+    await responder(401, { error: FALHA_NO_CODIGO });
+    return;
+  }
+
+  const ua = req.headers["user-agent"] ?? null;
+  const ip = req.ip ?? null;
+
+  const sessao = await abrirSessao(user.id, ua, ip);
+  if (!sessao.ok) {
+    await responder(sessao.status, { error: sessao.error });
+    return;
+  }
+
+  const deviceToken = await registrarAparelho(user.id, ua, ip);
+
+  safeLog.info(
+    {
+      action: viaRecuperacao ? "codigo_de_recuperacao_usado" : "aparelho_verificado",
+      userId: user.id,
+    },
+    "Aparelho novo verificado",
+  );
+
+  await responder(200, {
+    accessToken: sessao.accessToken,
+    refreshToken: sessao.refreshToken,
+    expiresIn: sessao.expiresIn,
+    deviceToken,
+  });
+});
+
+/**
+ * "Não chegou" — manda outro código para o MESMO desafio.
+ *
+ * O contador de tentativas **não zera**. Zerar transformaria o reenvio numa
+ * máquina de palpites: cada clique devolveria mais cinco. O teto por hora do
+ * `emitirDesafio` cuida do volume; este é o outro lado da mesma conta.
+ */
+router.post("/auth/login/aparelho/reenviar", publicTokenLimiter, async (req, res): Promise<void> => {
+  const inicio = inicioDaMedicao();
+  const desafio = String(req.body?.desafio ?? "");
+
+  // Resposta única, sempre — inclusive para desafio inexistente. Quem pergunta
+  // aqui ainda não provou nada.
+  const responder = async (): Promise<void> => {
+    await esperarAtePiso(inicio);
+    res.json({ message: "Se a entrada ainda estiver aberta, enviamos outro código." });
+  };
+
+  if (!desafio) {
+    await responder();
+    return;
+  }
+
+  const [registro] = await db
+    .select()
+    .from(deviceVerificationsTable)
+    .where(
+      and(
+        eq(deviceVerificationsTable.desafioHash, hashToken(desafio)),
+        eq(deviceVerificationsTable.used, false),
+        gt(deviceVerificationsTable.expiresAt, Clock.now()),
+      ),
+    )
+    .limit(1);
+
+  if (!registro || registro.attempts >= MAX_TENTATIVAS) {
+    await responder();
+    return;
+  }
+
+  const agora = Clock.now();
+  const umaHoraAtras = new Date(agora.getTime() - 60 * 60 * 1000);
+  const [contagem] = await db
+    .select({ quantos: count() })
+    .from(deviceVerificationsTable)
+    .where(
+      and(
+        eq(deviceVerificationsTable.userId, registro.userId),
+        gte(deviceVerificationsTable.createdAt, umaHoraAtras),
+      ),
+    );
+
+  if ((contagem?.quantos ?? 0) >= MAX_CODIGOS_POR_HORA) {
+    await responder();
+    return;
+  }
+
+  const [user] = await db
+    .select({ email: usersTable.email, recoveryEmail: usersTable.recoveryEmail })
+    .from(usersTable)
+    .where(eq(usersTable.id, registro.userId))
+    .limit(1);
+
+  if (!user) {
+    await responder();
+    return;
+  }
+
+  const codigo = gerarCodigo();
+  await db
+    .update(deviceVerificationsTable)
+    .set({ codigoHash: hashDoCodigo(registro.userId, codigo), expiresAt: expiraEm(agora) })
+    .where(eq(deviceVerificationsTable.id, registro.id));
+
+  const destinos = user.recoveryEmail ? [user.email, user.recoveryEmail] : [user.email];
+  await sendDeviceCodeEmail(
+    destinos,
+    codigo,
+    rotuloDoAparelho(registro.userAgent),
+    registro.requestIp,
+  );
+
+  safeLog.info(
+    { action: "reenvio_de_codigo_de_aparelho", userId: registro.userId },
+    "Codigo de aparelho reenviado",
+  );
+  await responder();
 });
 
 // ── RENOVAÇÃO DE TOKEN ────────────────────────────────────────────────────

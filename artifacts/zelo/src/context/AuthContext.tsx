@@ -13,6 +13,8 @@ import {
   refreshSession,
   getStoredRefreshToken,
   authFetch,
+  lerTokenDeAparelho,
+  guardarTokenDeAparelho,
 } from '@/lib/auth-client';
 import { consumePendingRedirect } from '@/lib/pending-redirect';
 import type { PlanView } from '@/lib/plan-limits-client';
@@ -43,11 +45,38 @@ interface AuthUser {
   plan?: PlanView | null;
 }
 
+/** O par de tokens que o servidor devolve, mais o do aparelho (#79). */
+type SessaoDoServidor = {
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
+  deviceToken?: string;
+};
+
+/**
+ * O que acontece depois de a senha estar certa — Issue #79.
+ *
+ * O login deixou de ter um só desfecho. Modelar isso como retorno, e não
+ * como exceção, é de propósito: pedir código **não é erro**, e tratá-lo como
+ * erro faria a tela mostrar um alerta vermelho para o caminho normal de quem
+ * acabou de trocar de celular.
+ */
+export type ResultadoDoLogin =
+  | { precisaDeCodigo: false }
+  | { precisaDeCodigo: true; desafio: string; codigoEnviado: boolean; mensagem: string };
+
 interface AuthContextValue {
   user: AuthUser | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<ResultadoDoLogin>;
+  /** Confirma o código de aparelho novo e abre a sessão (#79). */
+  confirmarAparelho: (
+    desafio: string,
+    chave: { codigo?: string; codigoDeRecuperacao?: string },
+  ) => Promise<void>;
+  /** "Não chegou" — pede outro código para o mesmo desafio (#79). */
+  reenviarCodigoDeAparelho: (desafio: string) => Promise<void>;
   logout: () => Promise<void>;
   logoutAll: () => Promise<void>;
   /**
@@ -82,6 +111,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(null);
     }
   }, []);
+
+  /**
+   * O que fazer com um par de tokens recém-emitido — Issue #79.
+   *
+   * Três caminhos passam por aqui: o login direto, a confirmação do código de
+   * aparelho novo e a volta do Google. Antes eram cópias de `setTokens` +
+   * `loadMe`, e o `deviceToken` precisaria entrar em duas delas. Esquecê-lo
+   * num dos caminhos faria a pessoa ver código toda vez, sem nenhum erro na
+   * tela para explicar por quê.
+   */
+  const abrirSessao = useCallback(async (dados: SessaoDoServidor) => {
+    if (dados.deviceToken) guardarTokenDeAparelho(dados.deviceToken);
+    setTokens(dados);
+    await loadMe();
+  }, [loadMe]);
 
   // Ao montar: tenta restaurar sessão — inclui troca de oauth_code do Google
   useEffect(() => {
@@ -140,21 +184,63 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('zelo:session-expired', handler);
   }, []);
 
-  const login = useCallback(async (email: string, password: string) => {
+  const login = useCallback(async (email: string, password: string): Promise<ResultadoDoLogin> => {
     const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
     const res = await fetch(`${BASE}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
+      // O token do aparelho vai junto. Ausente na primeira entrada, e
+      // ausente para sempre em conta que não ativou o segundo fator — o
+      // servidor simplesmente não olha.
+      body: JSON.stringify({ email, password, deviceToken: lerTokenDeAparelho() ?? undefined }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json() as {
+        error?: string; code?: string; desafio?: string; codigoEnviado?: boolean;
+      };
+      if (err.code === 'device_verification_required' && typeof err.desafio === 'string') {
+        return {
+          precisaDeCodigo: true,
+          desafio: err.desafio,
+          codigoEnviado: err.codigoEnviado !== false,
+          mensagem: err.error ?? '',
+        };
+      }
+      throw new Error(err.error ?? 'Erro ao fazer login');
+    }
+
+    await abrirSessao(await res.json() as SessaoDoServidor);
+    return { precisaDeCodigo: false };
+  }, [abrirSessao]);
+
+  const confirmarAparelho = useCallback(async (
+    desafio: string,
+    chave: { codigo?: string; codigoDeRecuperacao?: string },
+  ) => {
+    const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
+    const res = await fetch(`${BASE}/api/auth/login/aparelho`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ desafio, ...chave }),
     });
     if (!res.ok) {
       const err = await res.json() as { error?: string };
-      throw new Error(err.error ?? 'Erro ao fazer login');
+      throw new Error(err.error ?? 'Código inválido ou expirado.');
     }
-    const tokens = await res.json() as { accessToken: string; refreshToken: string; expiresIn: number };
-    setTokens(tokens);
-    await loadMe();
-  }, [loadMe]);
+    await abrirSessao(await res.json() as SessaoDoServidor);
+  }, [abrirSessao]);
+
+  // Sem tratamento de erro de propósito: a resposta é sempre a mesma, e não
+  // diz se havia algo para reenviar. Ver a rota em routes/auth.ts.
+  const reenviarCodigoDeAparelho = useCallback(async (desafio: string) => {
+    const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
+    await fetch(`${BASE}/api/auth/login/aparelho/reenviar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ desafio }),
+    });
+  }, []);
 
   const logout = useCallback(async () => {
     const refreshToken = getStoredRefreshToken();
@@ -194,7 +280,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [loadMe]);
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, isAuthenticated: !!user, login, logout, logoutAll, switchFamily, recarregarUsuario: loadMe }}>
+    <AuthContext.Provider value={{ user, isLoading, isAuthenticated: !!user, login, confirmarAparelho, reenviarCodigoDeAparelho, logout, logoutAll, switchFamily, recarregarUsuario: loadMe }}>
       {children}
     </AuthContext.Provider>
   );

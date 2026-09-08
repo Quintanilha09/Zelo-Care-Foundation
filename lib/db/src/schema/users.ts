@@ -84,6 +84,29 @@ export const usersTable = pgTable("users", {
    * único (o login apaga) e validade (o tempo apaga sozinho).
    */
   resgateLiberadoAte: timestamp("resgate_liberado_ate", { withTimezone: true }),
+  /**
+   * Quando o segundo fator passou a valer para esta conta — Issue #79.
+   *
+   * ── Nulo não é "desligado": é "ainda não ativado" ────────────────────────
+   *
+   * O fundador decidiu que o segundo fator é **obrigatório**, contra a minha
+   * recomendação e com o risco na mesa. Esta coluna não é um interruptor que
+   * a pessoa possa desligar — não existe rota que a devolva para nulo.
+   *
+   * Ela é a **ordem de ativação**, e a ordem é inegociável: o segundo fator só
+   * passa a valer depois de a pessoa ter gerado, visto e confirmado que
+   * guardou os códigos de recuperação. Ligar a tranca antes de entregar a
+   * chave reserva trancaria o cuidador do lado de fora com a dose para
+   * registrar — e é isso que a tabela `recovery_codes` explica por extenso.
+   *
+   * ── Por que isto também é o plano de implantação ─────────────────────────
+   *
+   * Toda conta que já existe nasce com nulo. Enquanto a tela de ativação não
+   * existir, ninguém tem códigos, ninguém está ativado, e o login se comporta
+   * exatamente como antes. O backend pode ir para produção sozinho sem mudar
+   * nada para ninguém — e sem essa propriedade ele não poderia ir sozinho.
+   */
+  segundoFatorAtivoEm: timestamp("segundo_fator_ativo_em", { withTimezone: true }),
   status: userStatusEnum("status").notNull().default("pending_verification"),
   // Qual família a sessão abre. O JWT carrega UM familyId, mas o usuário
   // pode ser cuidador em várias (ver comentário acima) — sem isto, o login
