@@ -95,7 +95,7 @@ barata feita.
    `<Link>` embrulhar um `<a>` próprio.
 
 **Fechadas em 09/09/2026:** #99 e #115 (senha e e-mail por revelação, com o caminho de quem não
-lembra a atual — PR #125), #119 (um link por item de navegação, 13 correções de  — PR
+lembra a atual — PR #125), #119 (um link por item de navegação, 13 correções de `asChild` — PR
 #126), #116 (perfil do cuidador: foto, telefone e parentesco — PR #127), #120 (a junção
 cuidador×paciente — PR #128).
 
