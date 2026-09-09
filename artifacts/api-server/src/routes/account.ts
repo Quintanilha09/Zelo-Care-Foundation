@@ -50,6 +50,7 @@ import { getPlanTier, PLAN_LIMITS, PLAN_LABELS } from "../lib/plan-limits.ts";
 import { verifyPassword, hashPassword, validatePasswordStrength } from "../lib/password";
 import { verifyPasswordLimiter, publicTokenLimiter } from "../lib/rate-limit";
 import { allowsDevelopmentShortcuts } from "../lib/environment.ts";
+import { urlDaFoto } from "./perfil.ts";
 import {
   gerarCodigo,
   hashDoCodigo,
@@ -71,26 +72,39 @@ router.get("/account/me", requireAuth, async (req, res): Promise<void> => {
   // então `user.email` chegava `undefined` no frontend e qualquer código que
   // dependesse dele falhava em silêncio (foi exatamente o que travou a saída
   // do modo idoso). Tipo e resposta agora batem de verdade.
-  const [user] = await db
-    .select({ id: usersTable.id, name: usersTable.name, email: usersTable.email, emailVerified: usersTable.emailVerified, status: usersTable.status, createdAt: usersTable.createdAt })
+  const [linhaDoUsuario] = await db
+    .select({ id: usersTable.id, name: usersTable.name, email: usersTable.email, emailVerified: usersTable.emailVerified, status: usersTable.status, createdAt: usersTable.createdAt, avatarObjectKey: usersTable.avatarObjectKey })
     .from(usersTable)
     .where(eq(usersTable.id, getAuth(req).userId))
     .limit(1);
 
-  if (!user) { res.status(404).json({ error: "Conta não encontrada" }); return; }
+  if (!linhaDoUsuario) { res.status(404).json({ error: "Conta não encontrada" }); return; }
+
+  // A chave do objeto sai do payload aqui — Issue #116. Ela é destruturada
+  // para fora de `user` de propósito: o `res.json` abaixo espalha `user`, e
+  // esquecer isto vazaria a chave do armazenamento para o cliente.
+  const { avatarObjectKey: avatarKey, ...user } = linhaDoUsuario;
 
   // Pelo caregiverId do TOKEN, nunca por userId: quem é cuidador em mais de
   // uma família tem várias linhas, e buscar por userId devolvia uma
   // arbitrária — a tela mostrava o nome de uma família e o token abria
   // outra. O token é a autoridade sobre qual sessão está aberta.
-  const [caregiver] = await db
+  const [caregiverBruto] = await db
     .select({
       id: caregiversTable.id, name: caregiversTable.name, role: caregiversTable.role,
       familyId: caregiversTable.familyId, selectedPatientId: caregiversTable.selectedPatientId,
+      // Issue #116: a tela de "Seu perfil" precisa preencher os campos, e o
+      // avatar do cabeçalho precisa da URL da foto.
+      phone: caregiversTable.phone, relationship: caregiversTable.relationship,
     })
     .from(caregiversTable)
     .where(eq(caregiversTable.id, getAuth(req).caregiverId))
     .limit(1);
+
+  // A chave do objeto nunca sai daqui — só a URL derivada dela.
+  const caregiver = caregiverBruto
+    ? { ...caregiverBruto, fotoUrl: urlDaFoto(caregiverBruto.id, avatarKey ?? null) }
+    : caregiverBruto;
 
   const [family] = caregiver
     ? await db
@@ -548,11 +562,41 @@ router.post("/account/deletion/execute", requirePrimaryCaregiver, async (req, re
 // endereço novo, e isso depende de provedor de e-mail. Está na Issue #46,
 // bloqueada. Nome e senha não dependem de nada.
 
-const UpdateMeBody = z.object({
-  // O mesmo schema do cadastro — Issue #78. A limpeza que morava aqui à mão
-  // não existia lá, e era só isso que separava as duas rotas.
-  name: nomeDePessoa,
-});
+/**
+ * Telefone — Issue #116.
+ *
+ * Permissivo de propósito: dígitos, espaço, parênteses, hífen e `+`. Recusar
+ * formato de telefone é a forma mais rápida de recusar telefone de gente de
+ * verdade — a lição que a #101 já deu com nome de paciente. O que importa aqui
+ * é um teto e uma allowlist de caracteres, não adivinhar o formato certo.
+ *
+ * String vazia limpa o campo. É a única forma que a tela tem de dizer "tirei
+ * o meu telefone" sem inventar um verbo novo.
+ */
+const telefone = z
+  .string()
+  .max(20)
+  .transform((v) => v.trim())
+  .refine((v) => v === "" || /^[0-9()+\-\s]{8,20}$/.test(v), {
+    message: "Telefone: use só números, espaço, parênteses, hífen e +.",
+  });
+
+const UpdateMeBody = z
+  .object({
+    // O mesmo schema do cadastro — Issue #78. A limpeza que morava aqui à mão
+    // não existia lá, e era só isso que separava as duas rotas.
+    //
+    // Opcional desde a #116: dá para salvar só o telefone sem reenviar o nome.
+    name: nomeDePessoa.optional(),
+    phone: telefone.optional(),
+    relationship: z
+      .enum(["filho_filha", "conjuge", "neto_neta", "irmao_irma", "contratado", "amigo", "outro"])
+      .nullable()
+      .optional(),
+  })
+  .refine((c) => Object.keys(c).length > 0, {
+    message: "Informe pelo menos um campo para salvar.",
+  });
 
 router.patch("/account/me", requireAuth, async (req, res): Promise<void> => {
   const body = UpdateMeBody.safeParse(req.body);
@@ -562,20 +606,35 @@ router.patch("/account/me", requireAuth, async (req, res): Promise<void> => {
   // invariante 2 aplicado a um recurso que não é paciente.
   const nome = body.data.name;
 
-  const [atualizado] = await db
-    .update(usersTable)
-    .set({ name: nome, updatedAt: Clock.now() })
-    .where(eq(usersTable.id, getAuth(req).userId))
-    .returning({ id: usersTable.id, name: usersTable.name });
+  // O nome vive na PESSOA; telefone e parentesco vivem no CUIDADOR — Issue
+  // #116, decisão D1. A mesma pessoa é "filha" numa família e "contratada"
+  // noutra, e pode dar telefones diferentes em cada uma.
+  const [atualizado] = nome
+    ? await db
+        .update(usersTable)
+        .set({ name: nome, updatedAt: Clock.now() })
+        .where(eq(usersTable.id, getAuth(req).userId))
+        .returning({ id: usersTable.id, name: usersTable.name })
+    : await db
+        .select({ id: usersTable.id, name: usersTable.name })
+        .from(usersTable)
+        .where(eq(usersTable.id, getAuth(req).userId))
+        .limit(1);
 
   if (!atualizado) { res.status(404).json({ error: "Conta não encontrada" }); return; }
 
   // O nome do cuidador nesta família acompanha: é ele que aparece em
   // "quem registrou a dose", e ver dois nomes diferentes para a mesma pessoa
   // é pior que não poder trocar.
+  const mudancasDoCuidador: Record<string, unknown> = { updatedAt: Clock.now() };
+  if (nome) mudancasDoCuidador.name = nome;
+  // String vazia limpa o telefone — é como a tela diz "tirei o meu".
+  if (body.data.phone !== undefined) mudancasDoCuidador.phone = body.data.phone === "" ? null : body.data.phone;
+  if (body.data.relationship !== undefined) mudancasDoCuidador.relationship = body.data.relationship;
+
   await db
     .update(caregiversTable)
-    .set({ name: nome, updatedAt: Clock.now() })
+    .set(mudancasDoCuidador)
     .where(eq(caregiversTable.id, getAuth(req).caregiverId));
 
   await audit({

@@ -107,7 +107,70 @@ export function lerTokenDeMidia(token: string): number | null {
   return id;
 }
 
-/** Só para teste: força a chave a ser derivada de novo. */
+// ── Foto de perfil do cuidador — Issue #116 ──────────────────────────────
+//
+// Mesmo problema, mesma solução: `<img src>` não manda header, então a foto
+// de perfil precisa de um link assinado igual ao da mídia.
+//
+// ── Por que uma chave PRÓPRIA, e não a de mídia ──────────────────────────
+//
+// São duas autorizações diferentes. Um token de mídia diz "pode ver o asset
+// 7 do mural"; um de foto diz "pode ver o rosto do cuidador 7". Com a mesma
+// chave, os dois teriam o mesmo corpo `7.exp` e a MESMA assinatura — um token
+// de mídia abriria a foto de um cuidador cujo id coincidisse, e vice-versa.
+//
+// A separação de domínio é o rótulo abaixo: a chave derivada é outra, então
+// um token assinado para mídia simplesmente não verifica aqui. É a lição do
+// `ADMIN_PANEL_SECRET` aplicada entre dois usos internos.
+
+const ROTULO_DE_FOTO = "zelo:avatar-link:v1";
+
+let chaveDaFoto: Buffer | null = null;
+
+function chaveParaFoto(): Buffer {
+  if (chaveDaFoto) return chaveDaFoto;
+  const base = process.env.SESSION_SECRET;
+  if (!base) throw new Error("SESSION_SECRET não definido — configure o segredo no vault");
+  chaveDaFoto = crypto.createHmac("sha256", base).update(ROTULO_DE_FOTO).digest();
+  return chaveDaFoto;
+}
+
+function assinarFoto(corpo: string): string {
+  return crypto.createHmac("sha256", chaveParaFoto()).update(corpo).digest("base64url");
+}
+
+/** Gera o link da foto de um cuidador. Só chame depois de autorizar o acesso. */
+export function gerarTokenDeFoto(caregiverId: number): string {
+  const expSec = Math.floor(Clock.now().getTime() / 1000) + VALIDADE_DO_LINK_SEGUNDOS;
+  const corpo = `${caregiverId}.${expSec}`;
+  return `${corpo}.${assinarFoto(corpo)}`;
+}
+
+/**
+ * Devolve o id do cuidador, ou `null` se o token for inválido, adulterado,
+ * vencido — ou assinado para outro uso. Nunca lança.
+ */
+export function lerTokenDeFoto(token: string): number | null {
+  const partes = token.split(".");
+  if (partes.length !== 3) return null;
+
+  const [idBruto, expBruto, assinatura] = partes;
+  const esperada = Buffer.from(assinarFoto(`${idBruto}.${expBruto}`));
+  const recebida = Buffer.from(assinatura);
+  if (esperada.length !== recebida.length) return null;
+  if (!crypto.timingSafeEqual(esperada, recebida)) return null;
+
+  const expSec = Number(expBruto);
+  if (!Number.isSafeInteger(expSec)) return null;
+  if (Math.floor(Clock.now().getTime() / 1000) >= expSec) return null;
+
+  const id = Number(idBruto);
+  if (!Number.isSafeInteger(id) || id <= 0) return null;
+  return id;
+}
+
+/** Só para teste: força as chaves a serem derivadas de novo. */
 export function reiniciarChaveParaTeste(): void {
   chaveDerivada = null;
+  chaveDaFoto = null;
 }

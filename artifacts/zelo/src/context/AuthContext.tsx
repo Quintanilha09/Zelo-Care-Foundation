@@ -30,6 +30,13 @@ interface AuthUser {
     role: string;
     familyId: number;
     selectedPatientId: number | null;
+    // ── Issue #116 ──────────────────────────────────────────────────────
+    // Telefone e parentesco vivem no cuidador porque mudam de família para
+    // família. A foto vive na pessoa, mas chega aqui como URL já pronta —
+    // a chave do objeto nunca sai do servidor.
+    phone?: string | null;
+    relationship?: string | null;
+    fotoUrl?: string | null;
   };
   family?: {
     name: string;

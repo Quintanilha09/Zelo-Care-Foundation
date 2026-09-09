@@ -14,6 +14,9 @@ import {
 } from "@/lib/plan-limits-client";
 import { useAuth } from "@/context/AuthContext";
 import { AppHeader } from "@/components/app-header";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import { apiUrl } from "@/lib/auth-client";
+import { iniciais, rotuloDoParentesco } from "@/lib/perfil";
 import { ActivityFeed } from "@/components/ActivityFeed";
 import { CaregiverBadge } from "@/components/caregiver-badge";
 import { Button } from "@/components/ui/button";
@@ -27,7 +30,7 @@ import {
 } from "@/components/ui/dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AreaCarregando, Esqueleto } from "@/components/esqueleto";
-import { User, UserPlus, X, Copy, Check, MessageCircle } from "lucide-react";
+import { UserPlus, X, Copy, Check, MessageCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 /**
@@ -62,6 +65,16 @@ interface Caregiver {
   name: string;
   email: string | null;
   role: Role;
+  /**
+   * Issue #116 — visíveis para a família toda (decisão D2 do refinamento).
+   *
+   * O que NÃO existe aqui, e é de propósito: em que outras famílias esta
+   * pessoa cuida. Contar isso a esta família expõe relação de terceiro que
+   * ela não tem direito de conhecer (achado 2 do refinamento).
+   */
+  phone: string | null;
+  relationship: string | null;
+  fotoUrl: string | null;
 }
 
 interface Invite {
@@ -347,15 +360,43 @@ export default function CaregiversPage() {
           {caregivers?.map((c) => {
             const isSelf = c.id === user?.caregiver?.id;
             return (
-              <div key={c.id} className="flex items-center gap-4 p-4 rounded-xl border bg-card shadow-sm">
-                <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center shrink-0">
-                  <User className="w-6 h-6 text-muted-foreground" />
-                </div>
+              <div key={c.id} className="flex items-start gap-4 p-4 rounded-xl border bg-card shadow-sm">
+                {/* Issue #116: o rosto de quem cuida. Sem foto, as iniciais —
+                    nunca um ícone genérico, que faz todo mundo parecer a
+                    mesma pessoa. */}
+                <Avatar className="h-12 w-12 shrink-0 border">
+                  {c.fotoUrl && <AvatarImage src={apiUrl(c.fotoUrl)} alt="" />}
+                  <AvatarFallback className="bg-muted text-muted-foreground font-medium">
+                    {iniciais(c.name)}
+                  </AvatarFallback>
+                </Avatar>
                 <div className="flex-1 min-w-0">
                   {/* Issue #88: o `truncate` ja segurava o layout; faltava
                       o nome inteiro ficar alcancavel para quem so ve o
                       corte. */}
                   <p className="text-[18px] font-medium truncate" title={c.name}>{c.name}{isSelf && " (você)"}</p>
+                  {/* Parentesco é rótulo humano, e vem ANTES do papel de
+                      propósito: "filha" é como a família reconhece a pessoa;
+                      "cuidador principal" é o que ela pode fazer no app. */}
+                  {rotuloDoParentesco(c.relationship) && (
+                    <p className="text-sm text-muted-foreground truncate">
+                      {rotuloDoParentesco(c.relationship)}
+                    </p>
+                  )}
+                  {(c.phone || c.email) && (
+                    <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-sm">
+                      {c.phone && (
+                        <a href={`tel:${c.phone.replace(/[^0-9+]/g, "")}`} className="text-primary hover:underline">
+                          {c.phone}
+                        </a>
+                      )}
+                      {c.email && (
+                        <a href={`mailto:${c.email}`} className="text-muted-foreground hover:underline truncate">
+                          {c.email}
+                        </a>
+                      )}
+                    </p>
+                  )}
                   {isPrimary && !isSelf ? (
                     <Select value={c.role} onValueChange={(v) => void handleRoleChange(c.id, v as Role)}>
                       <SelectTrigger className="h-8 w-[220px] text-sm mt-1"><SelectValue /></SelectTrigger>
