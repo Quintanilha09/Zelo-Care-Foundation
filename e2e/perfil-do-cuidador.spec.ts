@@ -57,18 +57,31 @@ test.describe("Seu perfil", () => {
     // O input é `hidden` — o botão é quem o dispara na vida real.
     await page.locator('input[type="file"]').setInputFiles(FOTO);
 
+    // A foto aparece em DOIS lugares, e os dois importam: o perfil, onde a
+    // pessoa acabou de escolhê-la, e o avatar do cabeçalho, que precisa
+    // acompanhar sem recarregar a página.
+    const noPerfil = page.locator('main img[src*="/caregivers/foto/"]');
+    const noCabecalho = page.locator('header img[src*="/caregivers/foto/"]');
+
     // A imagem tem que CARREGAR. O Radix só troca as iniciais pela `<img>`
     // depois do `load`, então vê-la é a prova de que o link assinado abriu
     // sem header de sessão — que é o ponto inteiro do desenho.
-    const foto = page.locator('img[src*="/caregivers/foto/"]');
-    await expect(foto).toBeVisible({ timeout: 15_000 });
+    await expect(noPerfil).toBeVisible({ timeout: 15_000 });
     await expect(
-      foto,
+      noPerfil,
       "src quebrado deixaria a imagem sem largura natural",
     ).not.toHaveJSProperty("naturalWidth", 0);
 
+    await expect(
+      noCabecalho,
+      "o avatar do cabeçalho acompanha sem recarregar a página",
+    ).toBeVisible({ timeout: 15_000 });
+
     await page.getByRole("button", { name: "Remover" }).click();
-    await expect(page.locator('img[src*="/caregivers/foto/"]')).toHaveCount(0, { timeout: 15_000 });
+
+    // Some dos dois lugares, não só de onde foi removida.
+    await expect(noPerfil).toHaveCount(0, { timeout: 15_000 });
+    await expect(noCabecalho).toHaveCount(0);
     await expect(page.getByText("AE").first()).toBeVisible();
   });
 
