@@ -61,7 +61,7 @@ export function AppHeader() {
           </div>
         </Link>
         <div className="flex items-center gap-1 shrink-0">
-          <Link href="/pacientes">
+          <Link href="/pacientes" asChild>
             <a className={cn(
               "flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium",
               location.startsWith("/pacientes") ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"
@@ -70,7 +70,7 @@ export function AppHeader() {
               <span className="hidden sm:inline">Pacientes</span>
             </a>
           </Link>
-          <Link href="/cuidadores">
+          <Link href="/cuidadores" asChild>
             <a className={cn(
               "flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium",
               location === "/cuidadores" ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"

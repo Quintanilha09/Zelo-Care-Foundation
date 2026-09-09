@@ -133,7 +133,7 @@ export default function TodaySummaryPage() {
                 const atencao = p.missedDoses > 0;
                 const agora = !atencao && p.dueNowDoses > 0;
                 return (
-                  <Link key={p.patientId} href={`/?patient=${p.patientId}`}>
+                  <Link key={p.patientId} href={`/?patient=${p.patientId}`} asChild>
                     <a
                       className={`flex items-center gap-4 p-4 rounded-xl border shadow-sm hover:border-primary/40 transition-colors ${
                         atencao

@@ -361,7 +361,7 @@ export default function HomePage() {
                 é ferramenta de não esquecer ninguém, e isso não entra em
                 paywall (mesma regra do registro de dose). */}
             {activePatients.length > 1 && (
-              <Link href="/hoje">
+              <Link href="/hoje" asChild>
                 <a className="flex items-center gap-2 text-sm text-muted-foreground bg-muted rounded-lg px-3 py-2 hover:bg-muted/70">
                   <LayoutList className="w-4 h-4 shrink-0" />
                   Ver o dia de todos os {activePatients.length} pacientes
@@ -546,7 +546,7 @@ export default function HomePage() {
                   </div>
                 ))}
                 {home.nextAppointment && (
-                  <Link href={`/pacientes/${selectedPatientId}/consultas`}>
+                  <Link href={`/pacientes/${selectedPatientId}/consultas`} asChild>
                     <a className="flex items-center gap-2 text-sm text-muted-foreground bg-muted rounded-lg px-3 py-2 hover:bg-muted/70">
                       <CalendarClock className="w-4 h-4 shrink-0" />
                       Próxima consulta: {home.nextAppointment.specialty} em {home.nextAppointment.localDate.split("-").reverse().join("/")}
