@@ -24,6 +24,7 @@
  * nada — por isso vieram primeiro.
  */
 import { useState, useEffect } from "react";
+import { Link } from "wouter";
 import { CampoLabel } from "@/components/campo-label";
 import { EmailDeRecuperacao } from "@/components/email-de-recuperacao";
 import { AparelhosConfiaveis } from "@/components/aparelhos-confiaveis";
@@ -49,6 +50,24 @@ export default function SettingsAccountPage() {
   const [trocandoSenha, setTrocandoSenha] = useState(false);
   const [erroDaSenha, setErroDaSenha] = useState("");
   const [senhaTrocada, setSenhaTrocada] = useState(false);
+
+  // ── Revelação por botão — Issue #115 ────────────────────────────────────
+  //
+  // Os campos de troca ficavam abertos o tempo todo, e o "Senha atual" vinha
+  // PREENCHIDO pelo gerenciador do navegador (`autocomplete="current-password"`).
+  // Com o aparelho destravado na mão de outra pessoa, trocar a senha era
+  // digitar a nova duas vezes.
+  //
+  // O servidor sempre esteve certo — `POST /api/account/password` exige a
+  // senha atual e limita tentativas. O que muda aqui é o cliente parar de
+  // entregar a senha atual de bandeja: o campo só existe no DOM depois do
+  // clique, nasce vazio, e pede `autoComplete="off"`.
+  const [abrindoSenha, setAbrindoSenha] = useState(false);
+  const [abrindoEmail, setAbrindoEmail] = useState(false);
+
+  // ── "Não lembro minha senha atual" — Issue #99 ──────────────────────────
+  const [pedindoCodigo, setPedindoCodigo] = useState(false);
+  const [codigoEnviadoPara, setCodigoEnviadoPara] = useState("");
 
   // ── Troca de e-mail — Issue #46 ────────────────────────────────────────
   const [emailNovo, setEmailNovo] = useState("");
@@ -192,11 +211,50 @@ export default function SettingsAccountPage() {
       setSenhaAtual("");
       setSenhaNova("");
       setSenhaRepetida("");
+      setCodigoEnviadoPara("");
+      // Fecha o painel: deixá-lo aberto e vazio depois do sucesso parece que
+      // a troca não aconteceu, e reabre a porta que a #115 fechou.
+      setAbrindoSenha(false);
       setSenhaTrocada(true);
     } catch (e) {
       setErroDaSenha(e instanceof Error ? e.message : "Não conseguimos trocar a senha.");
     } finally {
       setTrocandoSenha(false);
+    }
+  };
+
+  /** Fecha o painel de senha e limpa tudo que ele tinha dentro. */
+  const fecharSenha = () => {
+    setAbrindoSenha(false);
+    setSenhaAtual("");
+    setSenhaNova("");
+    setSenhaRepetida("");
+    setErroDaSenha("");
+    setCodigoEnviadoPara("");
+  };
+
+  /**
+   * Pede um código de redefinição para o e-mail da própria sessão — #99.
+   *
+   * Não desloga: quem está aqui tem a sessão como única credencial, e o ponto
+   * da Issue é justamente não obrigar ninguém a jogá-la fora. Quem desloga
+   * tudo é o **uso** do código, lá no `/redefinir-senha`.
+   */
+  const pedirCodigoDeSenha = async () => {
+    setPedindoCodigo(true);
+    setErroDaSenha("");
+    try {
+      const res = await authFetch("/api/account/password/reset-code", { method: "POST" });
+      const corpo = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        emailMascarado?: string;
+      };
+      if (!res.ok) throw new Error(corpo.error ?? "Não conseguimos enviar o código agora.");
+      setCodigoEnviadoPara(corpo.emailMascarado ?? "");
+    } catch (e) {
+      setErroDaSenha(e instanceof Error ? e.message : "Não conseguimos enviar o código agora.");
+    } finally {
+      setPedindoCodigo(false);
     }
   };
 
@@ -268,60 +326,113 @@ export default function SettingsAccountPage() {
             </p>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="senha-atual">Senha atual</Label>
-            <Input
-              id="senha-atual"
-              type="password"
-              value={senhaAtual}
-              onChange={(e) => setSenhaAtual(e.target.value)}
-              autoComplete="current-password"
-            />
-          </div>
+          {!abrindoSenha ? (
+            <div className="flex items-center gap-3">
+              <Button variant="outline" size="sm" onClick={() => setAbrindoSenha(true)}>
+                Trocar a senha
+              </Button>
+              {senhaTrocada && (
+                <span className="text-sm text-zelo-green-fg inline-flex items-center gap-1.5">
+                  <Check className="w-4 h-4" aria-hidden /> Senha trocada
+                </span>
+              )}
+            </div>
+          ) : (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="senha-atual">Senha atual</Label>
+                {/* `autoComplete="off"`, e não `current-password` — Issue #115.
+                    Com `current-password` o gerenciador preenchia este campo
+                    sozinho, e trocar a senha virava digitar a nova duas vezes.
+                    O campo só existe no DOM depois do clique justamente para
+                    o gerenciador não ter o que preencher antes da hora. */}
+                <Input
+                  id="senha-atual"
+                  type="password"
+                  value={senhaAtual}
+                  onChange={(e) => setSenhaAtual(e.target.value)}
+                  autoComplete="off"
+                />
+                {!codigoEnviadoPara && (
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground disabled:opacity-60"
+                    disabled={pedindoCodigo}
+                    onClick={() => void pedirCodigoDeSenha()}
+                  >
+                    {pedindoCodigo ? "Enviando…" : "Não lembro minha senha atual"}
+                  </button>
+                )}
+              </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="senha-nova">Nova senha</Label>
-            <Input
-              id="senha-nova"
-              type="password"
-              value={senhaNova}
-              onChange={(e) => setSenhaNova(e.target.value)}
-              autoComplete="new-password"
-            />
-            <p className="text-xs text-muted-foreground">Pelo menos 8 caracteres.</p>
-          </div>
+              {/* Issue #99: o caminho para quem só tem a sessão. Pedir o código
+                  NÃO desloga — quem desloga tudo é usá-lo. */}
+              {codigoEnviadoPara && (
+                <Alert>
+                  <AlertDescription className="space-y-2">
+                    <p>
+                      Enviamos um código para <strong>{codigoEnviadoPara}</strong>. Ele vale
+                      10 minutos.
+                    </p>
+                    <p className="text-sm">
+                      <strong>Você continua conectado neste aparelho</strong> — não precisa
+                      sair para usá-lo. Ao redefinir, todos os aparelhos são desconectados,
+                      inclusive este.
+                    </p>
+                    <Button asChild size="sm" variant="outline">
+                      <Link href="/redefinir-senha">Usar o código</Link>
+                    </Button>
+                  </AlertDescription>
+                </Alert>
+              )}
 
-          <div className="space-y-2">
-            <Label htmlFor="senha-repetida">Repita a nova senha</Label>
-            <Input
-              id="senha-repetida"
-              type="password"
-              value={senhaRepetida}
-              onChange={(e) => setSenhaRepetida(e.target.value)}
-              autoComplete="new-password"
-            />
-          </div>
+              <div className="space-y-2">
+                <Label htmlFor="senha-nova">Nova senha</Label>
+                <Input
+                  id="senha-nova"
+                  type="password"
+                  value={senhaNova}
+                  onChange={(e) => setSenhaNova(e.target.value)}
+                  autoComplete="new-password"
+                />
+                <p className="text-xs text-muted-foreground">Pelo menos 8 caracteres.</p>
+              </div>
 
-          {erroDaSenha && (
-            <Alert variant="destructive">
-              <AlertDescription>{erroDaSenha}</AlertDescription>
-            </Alert>
+              <div className="space-y-2">
+                <Label htmlFor="senha-repetida">Repita a nova senha</Label>
+                <Input
+                  id="senha-repetida"
+                  type="password"
+                  value={senhaRepetida}
+                  onChange={(e) => setSenhaRepetida(e.target.value)}
+                  autoComplete="new-password"
+                />
+              </div>
+
+              {erroDaSenha && (
+                <Alert variant="destructive">
+                  <AlertDescription>{erroDaSenha}</AlertDescription>
+                </Alert>
+              )}
+
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  disabled={!podeTrocarSenha || trocandoSenha}
+                  onClick={() => void trocarSenha()}
+                >
+                  {/* "Salvar a senha nova", e não "Trocar a senha" de novo: o
+                      botão que REVELA o painel já se chama assim, e dois
+                      botões com o mesmo nome fazendo coisas diferentes é o
+                      tipo de ambiguidade que só aparece quando alguém erra. */}
+                  {trocandoSenha ? "Trocando…" : "Salvar a senha nova"}
+                </Button>
+                <Button variant="ghost" size="sm" onClick={fecharSenha} disabled={trocandoSenha}>
+                  Cancelar
+                </Button>
+              </div>
+            </>
           )}
-
-          <div className="flex items-center gap-3">
-            <Button
-              size="sm"
-              disabled={!podeTrocarSenha || trocandoSenha}
-              onClick={() => void trocarSenha()}
-            >
-              {trocandoSenha ? "Trocando…" : "Trocar a senha"}
-            </Button>
-            {senhaTrocada && (
-              <span className="text-sm text-zelo-green-fg inline-flex items-center gap-1.5">
-                <Check className="w-4 h-4" aria-hidden /> Senha trocada
-              </span>
-            )}
-          </div>
         </section>
 
         {/* ── Trocar o e-mail — Issue #46 ─────────────────────────────────
@@ -338,7 +449,14 @@ export default function SettingsAccountPage() {
             </p>
           </div>
 
-          {pendente ? (
+          {/* Fechado atrás de um botão — Issue #115. A exceção é ter um pedido
+              pendente: aí o painel abre sozinho, senão a pessoa não teria como
+              digitar o código que já está na caixa de entrada dela. */}
+          {!abrindoEmail && !pendente ? (
+            <Button variant="outline" size="sm" onClick={() => setAbrindoEmail(true)}>
+              Trocar o e-mail de acesso
+            </Button>
+          ) : pendente ? (
             <div className="space-y-3">
               <Alert>
                 <AlertDescription>
@@ -388,10 +506,13 @@ export default function SettingsAccountPage() {
                 <CampoLabel htmlFor="senha-para-email" obrigatorio>
                   Sua senha atual
                 </CampoLabel>
+                {/* `off`, e não `current-password` — Issue #115. Mesmo motivo
+                    do campo do painel de senha: preenchido pelo gerenciador,
+                    ele deixa de ser prova de que quem está ali sabe a senha. */}
                 <Input
                   id="senha-para-email"
                   type="password"
-                  autoComplete="current-password"
+                  autoComplete="off"
                   value={senhaParaEmail}
                   onChange={(e) => setSenhaParaEmail(e.target.value)}
                   required
@@ -407,9 +528,25 @@ export default function SettingsAccountPage() {
               {erroDoEmail && (
                 <Alert><AlertDescription>{erroDoEmail}</AlertDescription></Alert>
               )}
-              <Button type="submit" disabled={salvandoEmail}>
-                {salvandoEmail ? "Enviando…" : "Enviar código para o e-mail novo"}
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button type="submit" disabled={salvandoEmail}>
+                  {salvandoEmail ? "Enviando…" : "Enviar código para o e-mail novo"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={salvandoEmail}
+                  onClick={() => {
+                    setAbrindoEmail(false);
+                    setEmailNovo("");
+                    setSenhaParaEmail("");
+                    setErroDoEmail("");
+                  }}
+                >
+                  Cancelar
+                </Button>
+              </div>
             </form>
           )}
 

@@ -17,7 +17,7 @@ import { apagarMidiasDaFamilia } from "../lib/media-cleanup.ts";
  */
 
 import { Router } from "express";
-import { eq, and, lte, gt, desc, inArray } from "drizzle-orm";
+import { eq, and, lte, gt, gte, desc, inArray, count } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@workspace/db";
 import {
@@ -29,6 +29,7 @@ import {
   refreshTokensTable,
   emailChangesTable,
   recoveryEmailsTable,
+  passwordResetsTable,
 } from "@workspace/db";
 import { requireAuth, requirePrimaryCaregiver } from "../middleware/require-auth";
 import {
@@ -38,6 +39,7 @@ import {
   hasEmailProvider,
   sendRecoveryEmailCode,
   sendRecoveryEmailWarning,
+  sendPasswordResetEmail,
 } from "../lib/email";
 import { audit } from "../lib/audit";
 import { safeLog } from "../lib/safe-logger";
@@ -679,6 +681,154 @@ router.post("/account/password", requireAuth, verifyPasswordLimiter, async (req,
 
   res.json({ accessToken, refreshToken: refreshRaw, expiresIn: 900 });
 });
+
+// ── "NÃO LEMBRO MINHA SENHA ATUAL" — Issues #115 e #99 ───────────────────
+
+/**
+ * Teto por conta, mais apertado que o da rota pública (5) de propósito.
+ *
+ * Lá o pedido custa alguma coisa a quem não tem conta nenhuma. Aqui quem pede
+ * já está autenticado, e disparar e-mail não lhe custa nada.
+ */
+const MAX_CODIGOS_AUTENTICADO_POR_HORA = 3;
+
+/**
+ * `g•••@gmail.com` — diz para onde o código foi sem escrever o endereço.
+ *
+ * Existe para resolver na hora o caso de "cadastrei com o e-mail errado":
+ * sem isto, a pessoa espera dez minutos por um e-mail que nunca vai chegar,
+ * sem nunca descobrir que o endereço da conta não é o que ela pensa.
+ */
+function mascararEmail(email: string): string {
+  const [local, dominio] = email.split("@");
+  if (!dominio || local.length === 0) return "•••";
+  return `${local.slice(0, 1)}${"•".repeat(Math.max(local.length - 1, 1))}@${dominio}`;
+}
+
+/**
+ * Emite um código de redefinição para o e-mail DA PRÓPRIA SESSÃO.
+ *
+ * ── O caso que isto resolve ───────────────────────────────────────────────
+ *
+ * Quem entra pelo login salvo no celular tem uma sessão viva e nada mais. Para
+ * trocar a senha sem lembrar a atual, o único caminho até aqui era **sair da
+ * conta** e usar "Recuperar" na tela de login — ou seja, jogar fora a única
+ * credencial que ainda tem. Se o e-mail atrasar, cair no spam, ou o endereço
+ * do cadastro estiver errado, a pessoa fica sem sessão **e** sem senha,
+ * trancada para fora de uma conta que gerencia o cuidado de alguém.
+ *
+ * ── Por que uma rota nova, e não a pública ────────────────────────────────
+ *
+ * **O endereço não pode vir do cliente.** Na rota pública ele vem do corpo
+ * porque não há sessão. Aqui há — e aceitar um endereço do corpo transformaria
+ * uma tela autenticada num disparador de e-mail para qualquer destinatário.
+ * **O corpo desta requisição não é lido em lugar nenhum.**
+ *
+ * A pública também responde igual exista ou não a conta (antienumeração).
+ * Dentro da sessão sabemos quem é, então dá para dizer **para onde foi**,
+ * mascarado.
+ *
+ * ── O que esta rota NÃO faz ───────────────────────────────────────────────
+ *
+ * Não desloga ninguém. Pedir o código é reversível; **usá-lo** é que revoga
+ * todas as sessões, e isso continua no `password-reset/confirm` — a defesa
+ * contra sessão roubada, que não muda.
+ */
+router.post(
+  "/account/password/reset-code",
+  requireAuth,
+  verifyPasswordLimiter,
+  async (req, res): Promise<void> => {
+    if (!allowsDevelopmentShortcuts() && !hasEmailProvider()) {
+      res.status(503).json({
+        error: "Não é possível enviar o código agora. Tente de novo mais tarde.",
+        code: "EMAIL_PROVIDER_UNAVAILABLE",
+      });
+      return;
+    }
+
+    const userId = getAuth(req).userId;
+
+    // SEMPRE o e-mail da sessão, resolvido pelo `userId` do JWT.
+    const [user] = await db
+      .select({ email: usersTable.email, passwordHash: usersTable.passwordHash })
+      .from(usersTable)
+      .where(eq(usersTable.id, userId))
+      .limit(1);
+
+    if (!user) {
+      res.status(404).json({ error: "Conta não encontrada" });
+      return;
+    }
+
+    // Conta só do Google não tem senha para redefinir. Dizer outra coisa
+    // mandaria a pessoa esperar um e-mail que não resolve o problema dela.
+    if (!user.passwordHash || user.passwordHash === "!") {
+      res.status(400).json({
+        error: "Esta conta entra pelo Google e não tem senha.",
+        code: "NO_PASSWORD_SET",
+      });
+      return;
+    }
+
+    const umaHoraAtras = new Date(Clock.now().getTime() - 60 * 60 * 1000);
+    const [emitidos] = await db
+      .select({ total: count() })
+      .from(passwordResetsTable)
+      .where(
+        and(
+          eq(passwordResetsTable.userId, userId),
+          gte(passwordResetsTable.createdAt, umaHoraAtras),
+        ),
+      );
+
+    if ((emitidos?.total ?? 0) >= MAX_CODIGOS_AUTENTICADO_POR_HORA) {
+      // 429 honesto: quem pede já provou ser dono da sessão, então não há
+      // enumeração a proteger — ao contrário da rota pública, que recusa
+      // em silêncio.
+      res.status(429).json({
+        error: "Você já pediu o código algumas vezes. Espere uma hora e tente de novo.",
+        code: "RESET_CODE_LIMIT",
+      });
+      return;
+    }
+
+    // Um código vivo por vez: cada código ativo é mais cinco palpites
+    // oferecidos a quem estiver adivinhando (mesma regra da #77).
+    await db.transaction(async (tx) => {
+      await tx
+        .update(passwordResetsTable)
+        .set({ used: true, usedAt: Clock.now() })
+        .where(
+          and(
+            eq(passwordResetsTable.userId, userId),
+            eq(passwordResetsTable.used, false),
+          ),
+        );
+
+      const codigo = gerarCodigo();
+      await tx.insert(passwordResetsTable).values({
+        userId,
+        tokenHash: hashDoCodigo(userId, codigo),
+        expiresAt: expiraEm(Clock.now()),
+        requestIp: req.ip ?? null,
+      });
+
+      // Dentro da transação: se o envio falhar, o código não fica gravado
+      // prometendo um e-mail que não saiu.
+      await sendPasswordResetEmail(user.email, codigo);
+    });
+
+    // Nunca o código, nunca o e-mail inteiro — `safeLog` sanitiza o contexto,
+    // e a mensagem é escrita à mão.
+    safeLog.info(
+      { action: "reset_code_autenticado", userId },
+      "Codigo de redefinicao pedido de dentro da sessao",
+    );
+
+    res.json({ emailMascarado: mascararEmail(user.email) });
+  },
+);
 
 // ── TROCAR O E-MAIL DA CONTA — Issue #46 ─────────────────────────────────
 //
