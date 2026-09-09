@@ -7,7 +7,7 @@ import { getAuth } from "../lib/auth-types.ts";
 import { Router } from "express";
 import { eq, and } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { caregiversTable, pushSubscriptionsTable, usersTable, familiesTable } from "@workspace/db";
+import { caregiversTable, pushSubscriptionsTable, usersTable, familiesTable, caregiverPatientsTable, patientsTable } from "@workspace/db";
 import { z } from "zod";
 import { requireAuth, requirePrimaryCaregiver } from "../middleware/require-auth";
 import { audit } from "../lib/audit";
@@ -79,14 +79,62 @@ function comFoto<T extends { id: number; avatarObjectKey: string | null }>(linha
   return { ...resto, fotoUrl: urlDaFoto(linha.id, avatarObjectKey) };
 }
 
+/**
+ * De quem cada cuidador é responsável — Issue #121.
+ *
+ * ── Duas consultas, e não um join ─────────────────────────────────────────
+ *
+ * Um join de cuidador com paciente multiplica a linha do cuidador por
+ * paciente vinculado, e aí a foto, o telefone e o parentesco viriam repetidos
+ * em cada uma — para serem descartados no agrupamento. Duas consultas e um
+ * `Map` custam menos e não precisam desfazer nada.
+ *
+ * O escopo é a família de quem perguntou, nos dois lados: o vínculo só existe
+ * entre pares da mesma família, e a consulta filtra por ela de qualquer jeito.
+ */
+async function pacientesPorCuidador(familyId: number): Promise<Map<number, Array<{ id: number; name: string }>>> {
+  const linhas = await db
+    .select({
+      caregiverId: caregiverPatientsTable.caregiverId,
+      id: patientsTable.id,
+      name: patientsTable.name,
+    })
+    .from(caregiverPatientsTable)
+    .innerJoin(patientsTable, eq(patientsTable.id, caregiverPatientsTable.patientId))
+    .where(eq(patientsTable.familyId, familyId))
+    .orderBy(patientsTable.name);
+
+  const mapa = new Map<number, Array<{ id: number; name: string }>>();
+  for (const l of linhas) {
+    const lista = mapa.get(l.caregiverId) ?? [];
+    lista.push({ id: l.id, name: l.name });
+    mapa.set(l.caregiverId, lista);
+  }
+  return mapa;
+}
+
 router.get("/caregivers", requireAuth, async (req, res): Promise<void> => {
-  const caregivers = await db
-    .select(CAMPOS_DO_CUIDADOR)
-    .from(caregiversTable)
-    .leftJoin(usersTable, eq(usersTable.id, caregiversTable.userId))
-    .where(eq(caregiversTable.familyId, getAuth(req).familyId))
-    .orderBy(caregiversTable.name);
-  res.json(caregivers.map(comFoto));
+  const familyId = getAuth(req).familyId;
+
+  const [caregivers, porCuidador] = await Promise.all([
+    db
+      .select(CAMPOS_DO_CUIDADOR)
+      .from(caregiversTable)
+      .leftJoin(usersTable, eq(usersTable.id, caregiversTable.userId))
+      .where(eq(caregiversTable.familyId, familyId))
+      .orderBy(caregiversTable.name),
+    pacientesPorCuidador(familyId),
+  ]);
+
+  res.json(
+    caregivers.map((c) => ({
+      ...comFoto(c),
+      // Lista vazia, nunca `undefined`: a tela distingue "não cuida de
+      // ninguém ainda" de "o campo não veio", e as duas coisas se parecem
+      // demais quando a diferença é `undefined`.
+      pacientes: porCuidador.get(c.id) ?? [],
+    })),
+  );
 });
 
 router.get("/caregivers/:caregiverId", requireAuth, async (req, res): Promise<void> => {
