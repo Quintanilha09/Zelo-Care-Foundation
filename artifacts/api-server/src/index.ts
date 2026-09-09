@@ -7,6 +7,7 @@ import { decrementStockForDoseTaken } from "./lib/stock";
 import { sendDoseReminder, checkDeliveryAndEscalate } from "./lib/dose-reminders";
 import { runOperationalChecks } from "./lib/operational-monitor";
 import { apagarMidiasVencidas } from "./lib/media-cleanup";
+import { avisarPacientesSemCuidador } from "./lib/paciente-sem-cuidador";
 import { sendAppointmentReminder } from "./lib/appointment-reminders";
 
 const rawPort = process.env["PORT"];
@@ -38,6 +39,9 @@ await startQueue({
   },
   purgeExpiredMedia: async () => {
     await apagarMidiasVencidas();
+  },
+  avisarPacientesSemCuidador: async () => {
+    await avisarPacientesSemCuidador();
   },
   onDoseTaken: async ({ patientId, medicationId }) => {
     await decrementStockForDoseTaken(patientId, medicationId);
