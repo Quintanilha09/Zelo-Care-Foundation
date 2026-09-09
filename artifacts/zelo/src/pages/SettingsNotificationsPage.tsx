@@ -4,17 +4,14 @@
  * por ajustes de outra categoria pra chegar aqui.
  */
 import { useEffect, useState } from "react";
-import { Link } from "wouter";
 import { authFetch } from "@/lib/auth-client";
 import { useAuth } from "@/context/AuthContext";
-import { AppHeader } from "@/components/app-header";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Switch } from "@/components/ui/switch";
 import { PushDiagnostics } from "@/components/push-diagnostics";
-import { ArrowLeft } from "lucide-react";
 
 export default function SettingsNotificationsPage() {
   const { user } = useAuth();
@@ -89,15 +86,7 @@ export default function SettingsNotificationsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <AppHeader />
-      <main className="max-w-2xl mx-auto px-5 py-8 space-y-6">
-        <Link href="/ajustes">
-          <a className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
-            <ArrowLeft className="w-4 h-4" /> Ajustes
-          </a>
-        </Link>
-
+    <div className="space-y-6">
         <div>
           <h2 className="text-2xl font-semibold">Notificações</h2>
           <p className="text-muted-foreground text-[17px]">O que aparece na notificação e quando ela chama todo mundo.</p>
@@ -175,7 +164,6 @@ export default function SettingsNotificationsPage() {
         </div>
 
         <PushDiagnostics />
-      </main>
     </div>
   );
 }

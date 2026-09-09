@@ -22,11 +22,9 @@
  * de esconder atrás de um "tem certeza?".
  */
 import { useState } from "react";
-import { Link } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { authFetch } from "@/lib/auth-client";
 import { useAuth } from "@/context/AuthContext";
-import { AppHeader } from "@/components/app-header";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
@@ -35,7 +33,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ArrowLeft, Download, Trash2, ShieldAlert, FileText } from "lucide-react";
+import { Download, Trash2, ShieldAlert, FileText } from "lucide-react";
 
 interface PedidoDeExclusao {
   scheduledDeletionAt: string;
@@ -136,15 +134,7 @@ export default function SettingsDataPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <AppHeader />
-      <main className="max-w-2xl mx-auto px-5 py-8 space-y-6">
-        <Link href="/ajustes">
-          <a className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
-            <ArrowLeft className="w-4 h-4" /> Ajustes
-          </a>
-        </Link>
-
+    <div className="space-y-6">
         <div>
           <h2 className="text-2xl font-semibold">Seus dados</h2>
           <p className="text-muted-foreground text-[17px]">
@@ -290,7 +280,6 @@ export default function SettingsDataPage() {
             <Alert variant="destructive"><AlertDescription>{erroDaExclusao}</AlertDescription></Alert>
           )}
         </section>
-      </main>
 
       {/* Digitar o nome da família, mesmo padrão de excluir paciente. Não é
           burocracia: é o intervalo entre a intenção e o toque, que é onde o

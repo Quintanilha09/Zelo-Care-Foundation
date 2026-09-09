@@ -11,12 +11,10 @@
  * PSP real é decisão de fornecedor adiada pelo fundador (mesmo padrão do
  * SMS). Os cartões são honestos sobre isso em vez de simular cobrança.
  */
-import { Link } from "wouter";
 import { useAuth } from "@/context/AuthContext";
-import { AppHeader } from "@/components/app-header";
 import { Button } from "@/components/ui/button";
 import type { PlanTier } from "@/lib/plan-limits-client";
-import { ArrowLeft, Check, Heart, Clock, Building2, Briefcase } from "lucide-react";
+import { Check, Heart, Clock, Building2, Briefcase } from "lucide-react";
 
 interface PlanCard {
   tier: PlanTier;
@@ -58,15 +56,7 @@ export default function PlansPage() {
   const currentTier: PlanTier = user?.plan?.tier ?? "free";
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <AppHeader />
-      <main className="max-w-3xl mx-auto px-5 py-8 space-y-6">
-        <Link href="/ajustes">
-          <a className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
-            <ArrowLeft className="w-4 h-4" /> Ajustes
-          </a>
-        </Link>
-
+    <div className="space-y-6">
         <div>
           <h2 className="text-2xl font-semibold">Planos</h2>
           <p className="text-muted-foreground text-[17px]">
@@ -160,7 +150,6 @@ export default function PlansPage() {
             <a href="mailto:contato@zelo.app?subject=ZELO%20para%20instituições">Falar com a gente</a>
           </Button>
         </div>
-      </main>
     </div>
   );
 }

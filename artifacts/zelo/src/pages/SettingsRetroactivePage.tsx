@@ -7,16 +7,13 @@
  * todo outro lugar de "escolher uma entre poucas opções".
  */
 import { useEffect, useState } from "react";
-import { Link } from "wouter";
 import { authFetch } from "@/lib/auth-client";
 import { useAuth } from "@/context/AuthContext";
-import { AppHeader } from "@/components/app-header";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select";
-import { ArrowLeft } from "lucide-react";
 
 // Opções comuns em vez de digitar um número qualquer — cobre desde "só até
 // mais tarde hoje" (1h) até "a semana inteira" (168h), com 24h (padrão) no
@@ -71,15 +68,7 @@ export default function SettingsRetroactivePage() {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <AppHeader />
-      <main className="max-w-2xl mx-auto px-5 py-8 space-y-6">
-        <Link href="/ajustes">
-          <a className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
-            <ArrowLeft className="w-4 h-4" /> Ajustes
-          </a>
-        </Link>
-
+    <div className="space-y-6">
         <div>
           <h2 className="text-2xl font-semibold">Registro retroativo</h2>
         </div>
@@ -104,7 +93,6 @@ export default function SettingsRetroactivePage() {
           {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
           {saved && !error && <p className="text-sm text-zelo-green-fg">Salvo.</p>}
         </div>
-      </main>
     </div>
   );
 }
