@@ -1,6 +1,7 @@
 export * from "./families";
 export * from "./patients";
 export * from "./caregivers";
+export * from "./caregiver-patients";
 export * from "./medications";
 export * from "./treatments";
 export * from "./photo-extractions";
