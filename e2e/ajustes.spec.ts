@@ -71,7 +71,12 @@ test.describe("Tela de Ajustes", () => {
   test("mostra os quatro grupos, na ordem", async ({ page }) => {
     // Ordem importa: agrupar por dono é diferente de empilhar por ordem de
     // chegada, e é a ordem que carrega essa diferença.
-    const titulos = await lista(page).locator("h2").allInnerTexts();
+    //
+    // `allTextContents`, nunca `allInnerTexts`: os títulos são desenhados com
+    // `uppercase`, e `innerText` devolve o texto DEPOIS do CSS — "CONTA" no
+    // lugar de "Conta". O que este teste checa é o conteúdo, não a caixa em
+    // que ele aparece.
+    const titulos = await lista(page).locator("h2").allTextContents();
     expect(titulos, "os quatro grupos, nesta ordem").toEqual(GRUPOS);
   });
 
@@ -109,16 +114,17 @@ test.describe("Tela de Ajustes", () => {
   });
 
   test("a seção aberta fica marcada na lista", async ({ page }) => {
-    await page.goto("/ajustes/seus-dados");
-    await expect(page.getByRole("heading", { name: "Seus dados" })).toBeVisible({ timeout: 15_000 });
+    // No celular a lista está escondida atrás do voltar — a marcação só tem
+    // o que fazer quando as duas convivem. Pular ANTES de navegar.
+    test.skip(!ehDesktop(page), "a marcação só existe com as duas colunas");
 
-    if (!ehDesktop(page)) {
-      // No celular a lista está escondida atrás do voltar — a marcação só
-      // tem o que fazer quando as duas convivem.
-      test.skip();
-    }
+    await page.goto("/ajustes/seus-dados");
+
+    // Sem esperar por um `heading` aqui: "Seus dados" é ao mesmo tempo um
+    // GRUPO da lista e o título da seção, então `getByRole("heading")` acha
+    // dois e o modo estrito reprova. A asserção abaixo já espera sozinha.
     const marcada = lista(page).locator('a[aria-current="page"]');
-    await expect(marcada).toHaveCount(1);
+    await expect(marcada).toHaveCount(1, { timeout: 15_000 });
     await expect(marcada).toHaveAttribute("href", "/ajustes/seus-dados");
   });
 
