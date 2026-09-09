@@ -17,6 +17,7 @@ import { revokeAllAccessTokensForUser } from "../lib/tokens";
 import { safeLog } from "../lib/safe-logger";
 import { closeConnectionsForUser } from "../lib/realtime.ts";
 import { sendRescueNotice } from "../lib/email.ts";
+import { urlDaFoto } from "./perfil.ts";
 
 const router = Router();
 
@@ -41,13 +42,51 @@ async function revokeCaregiverAccess(userId: number | null, familyId: number): P
   closeConnectionsForUser(userId);
 }
 
+/**
+ * A ficha de um cuidador, como a família a vê — Issue #116.
+ *
+ * ── Por que o join é LEFT ─────────────────────────────────────────────────
+ *
+ * `caregivers.userId` é nulo enquanto o convite não foi aceito. Um join
+ * interno sumiria com o convidado da lista — que é justamente quem a família
+ * está esperando aparecer.
+ *
+ * ── O que sai daqui, e o que não sai ──────────────────────────────────────
+ *
+ * Telefone e parentesco são visíveis para a família toda (decisão D2 do
+ * refinamento). A foto vem como URL, nunca como bytes. E **nada** daqui diz
+ * em que OUTRAS famílias a pessoa cuida: isso expõe relação de terceiro que
+ * esta família não tem direito de conhecer (achado 2 do refinamento).
+ */
+const CAMPOS_DO_CUIDADOR = {
+  id: caregiversTable.id,
+  familyId: caregiversTable.familyId,
+  name: caregiversTable.name,
+  email: caregiversTable.email,
+  userId: caregiversTable.userId,
+  role: caregiversTable.role,
+  phone: caregiversTable.phone,
+  relationship: caregiversTable.relationship,
+  selectedPatientId: caregiversTable.selectedPatientId,
+  createdAt: caregiversTable.createdAt,
+  updatedAt: caregiversTable.updatedAt,
+  avatarObjectKey: usersTable.avatarObjectKey,
+};
+
+/** Troca a chave do objeto pela URL que a tela usa. A chave nunca sai daqui. */
+function comFoto<T extends { id: number; avatarObjectKey: string | null }>(linha: T) {
+  const { avatarObjectKey, ...resto } = linha;
+  return { ...resto, fotoUrl: urlDaFoto(linha.id, avatarObjectKey) };
+}
+
 router.get("/caregivers", requireAuth, async (req, res): Promise<void> => {
   const caregivers = await db
-    .select()
+    .select(CAMPOS_DO_CUIDADOR)
     .from(caregiversTable)
+    .leftJoin(usersTable, eq(usersTable.id, caregiversTable.userId))
     .where(eq(caregiversTable.familyId, getAuth(req).familyId))
     .orderBy(caregiversTable.name);
-  res.json(caregivers);
+  res.json(caregivers.map(comFoto));
 });
 
 router.get("/caregivers/:caregiverId", requireAuth, async (req, res): Promise<void> => {
@@ -55,13 +94,14 @@ router.get("/caregivers/:caregiverId", requireAuth, async (req, res): Promise<vo
   if (isNaN(caregiverId)) { res.status(400).json({ error: "ID inválido" }); return; }
 
   const [caregiver] = await db
-    .select()
+    .select(CAMPOS_DO_CUIDADOR)
     .from(caregiversTable)
+    .leftJoin(usersTable, eq(usersTable.id, caregiversTable.userId))
     .where(and(eq(caregiversTable.id, caregiverId), eq(caregiversTable.familyId, getAuth(req).familyId)))
     .limit(1);
 
   if (!caregiver) { res.status(404).json({ error: "Cuidador não encontrado" }); return; }
-  res.json(caregiver);
+  res.json(comFoto(caregiver));
 });
 
 router.patch("/caregivers/:caregiverId", requirePrimaryCaregiver, async (req, res): Promise<void> => {
