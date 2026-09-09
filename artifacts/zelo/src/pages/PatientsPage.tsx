@@ -12,8 +12,9 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
 import { AreaCarregando, Esqueleto } from "@/components/esqueleto";
+import { cn } from "@/lib/utils";
 import { nomeCurto } from "@workspace/nomes";
-import { Plus, User, ChevronRight } from "lucide-react";
+import { Plus, User, ChevronRight, UserX } from "lucide-react";
 
 /**
  * Esqueleto da lista de pacientes — Issue #5.
@@ -43,12 +44,40 @@ function EsqueletoDaLista() {
   );
 }
 
+interface Responsavel {
+  id: number;
+  name: string;
+}
+
 interface Patient {
   id: number;
   name: string;
   birthDate: string | null;
   timezone: string;
   archived: boolean;
+  /**
+   * Issue #122. Opcional de propósito: o app é uma PWA e o service worker
+   * pode servir uma resposta gravada antes desta issue existir. Sem o `?`, o
+   * TypeScript deixaria de exigir o `?? []`, e a primeira abertura offline
+   * depois de atualizar quebraria em `.length` de `undefined`.
+   */
+  responsaveis?: Responsavel[];
+}
+
+/**
+ * Paciente descoberto — Issue #122.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * "SEM CUIDADOR" NÃO É "SEM ACESSO".
+ *
+ * Um paciente sem responsável continua visível e registrável por todo
+ * cuidador da família, exatamente como antes. O destaque diz *"falta apontar
+ * alguém"*, não *"este paciente está trancado"* — e nada nesta tela bloqueia
+ * o que quer que seja por causa disso.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+function semResponsavel(p: Patient): boolean {
+  return (p.responsaveis ?? []).length === 0;
 }
 
 async function fetchPatients(): Promise<Patient[]> {
@@ -60,11 +89,26 @@ async function fetchPatients(): Promise<Patient[]> {
 export default function PatientsPage() {
   const [open, setOpen] = useState(false);
   const [paywallMessage, setPaywallMessage] = useState("");
+  const [soDescobertos, setSoDescobertos] = useState(false);
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const { data: patients, isLoading } = useQuery({ queryKey: ["patients"], queryFn: fetchPatients });
 
   const activePatients = (patients ?? []).filter((p) => !p.archived);
+  const descobertos = activePatients.filter(semResponsavel);
+
+  /**
+   * O filtro só existe enquanto há o que filtrar — critério de aceite da
+   * #122: nada de filtro que só devolve lista vazia.
+   *
+   * `filtrando` é derivado, e não um `useEffect` que desliga o estado. Se
+   * alguém vincula um cuidador ao último paciente descoberto com o filtro
+   * ligado, `descobertos` esvazia no mesmo render e a lista inteira volta —
+   * sem tela vazia no meio do caminho, e sem um efeito para dar manutenção.
+   */
+  const filtroDisponivel = descobertos.length > 0;
+  const filtrando = soDescobertos && filtroDisponivel;
+  const visiveis = filtrando ? descobertos : activePatients;
 
   const handleCreated = () => {
     setOpen(false);
@@ -124,6 +168,46 @@ export default function PatientsPage() {
 
         {isLoading && <EsqueletoDaLista />}
 
+        {/* ── Filtro "sem cuidador" — Issue #122 ─────────────────────────────
+
+            SOBRE O NÚMERO NO BOTÃO, e por que ele não é o placar que o
+            CON-012 proíbe.
+
+            O CON-012 proíbe contagem em Momentos porque lá o número seria
+            *de uma pessoa*: quantas fotos cada cuidador mandou vira ranking,
+            e ranking transforma cuidar em competir.
+
+            Este número não é de ninguém. Ele conta PACIENTES A QUEM FALTA
+            ALGO, sem nome de cuidador em lugar nenhum, e o caminho dele é
+            para zero — some da tela quando o trabalho acaba. É contagem de
+            pendência, como a de uma caixa de entrada, e não saldo que alguém
+            acumula. Numa instituição com quarenta pacientes, saber que são
+            dois e não trinta é a diferença entre uma tarde e uma semana.
+
+            Se um dia isto virar "cuidador X tem 5 descobertos", aí sim é o
+            que o CON-012 proíbe — e a linha está escrita aqui para ser
+            lembrada por quem for mexer. */}
+        {!isLoading && filtroDisponivel && (
+          <div className="flex items-center gap-3 flex-wrap">
+            <Button
+              type="button"
+              variant={filtrando ? "default" : "outline"}
+              size="sm"
+              aria-pressed={filtrando}
+              onClick={() => setSoDescobertos((v) => !v)}
+              className="gap-2"
+            >
+              <UserX className="w-4 h-4" />
+              Sem cuidador ({descobertos.length})
+            </Button>
+            {filtrando && (
+              <p className="text-sm text-muted-foreground">
+                Mostrando só quem ainda não tem responsável.
+              </p>
+            )}
+          </div>
+        )}
+
         {!isLoading && patients?.length === 0 && (
           <div className="text-center py-16 border rounded-xl border-dashed">
             <User className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
@@ -133,34 +217,78 @@ export default function PatientsPage() {
         )}
 
         <div className={`space-y-3 ${isLoading ? "" : "zelo-entra"}`}>
-          {patients?.filter((p) => !p.archived).map((patient) => (
-            <Link key={patient.id} href={`/pacientes/${patient.id}`} asChild>
-              <a className="flex items-center gap-4 p-4 rounded-xl border bg-card shadow-sm hover:border-primary/40 transition-colors">
-                <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center shrink-0">
-                  <User className="w-6 h-6 text-muted-foreground" />
-                </div>
-                {/* Issue #88. Duas coisas, e as duas precisam existir:
+          {visiveis.map((patient) => {
+            const descoberto = semResponsavel(patient);
+            const responsaveis = patient.responsaveis ?? [];
+            return (
+              <Link key={patient.id} href={`/pacientes/${patient.id}`} asChild>
+                {/* Âmbar, nunca vermelho — invariante 5. "Falta vincular
+                    alguém" é pendência; vermelho neste produto é ação
+                    destrutiva, e confundir os dois ensina a pessoa errada a
+                    ter medo da tela. */}
+                <a
+                  data-descoberto={descoberto ? "sim" : "nao"}
+                  className={cn(
+                    "flex items-center gap-4 p-4 rounded-xl border bg-card shadow-sm transition-colors",
+                    descoberto
+                      ? "border-zelo-amber/40 bg-zelo-amber-bg hover:border-zelo-amber"
+                      : "hover:border-primary/40",
+                  )}
+                >
+                  <div
+                    className={cn(
+                      "w-12 h-12 rounded-full flex items-center justify-center shrink-0",
+                      descoberto ? "bg-zelo-amber/20" : "bg-muted",
+                    )}
+                  >
+                    <User
+                      className={cn(
+                        "w-6 h-6",
+                        descoberto ? "text-zelo-amber-fg" : "text-muted-foreground",
+                      )}
+                    />
+                  </div>
+                  {/* Issue #88. Duas coisas, e as duas precisam existir:
 
-                    `min-w-0` - sem ele este item de flex NAO ENCOLHE abaixo
-                    da largura do proprio conteudo (`min-width: auto` e o
-                    padrao), entao uma palavra comprida empurra a linha e a
-                    pagina inteira ganha rolagem horizontal. `flex-1` nao
-                    resolve: ele e `flex: 1 1 0%`, e o `min-width: auto`
-                    vence a base zero.
+                      `min-w-0` - sem ele este item de flex NAO ENCOLHE abaixo
+                      da largura do proprio conteudo (`min-width: auto` e o
+                      padrao), entao uma palavra comprida empurra a linha e a
+                      pagina inteira ganha rolagem horizontal. `flex-1` nao
+                      resolve: ele e `flex: 1 1 0%`, e o `min-width: auto`
+                      vence a base zero.
 
-                    `nomeCurto` - decisao do fundador: guardar completo,
-                    mostrar curto. O nome inteiro fica no `title`, e continua
-                    inteiro na ficha e na exportacao. */}
-                <div className="flex-1 min-w-0">
-                  <p className="text-[18px] font-medium" title={patient.name}>
-                    {nomeCurto(patient.name)}
-                  </p>
-                  <p className="text-sm text-muted-foreground">{patient.timezone}</p>
-                </div>
-                <ChevronRight className="w-5 h-5 text-muted-foreground" />
-              </a>
-            </Link>
-          ))}
+                      `nomeCurto` - decisao do fundador: guardar completo,
+                      mostrar curto. O nome inteiro fica no `title`, e continua
+                      inteiro na ficha e na exportacao.
+
+                      Issue #122: a linha de responsaveis mora dentro do mesmo
+                      `min-w-0` e leva `truncate` por conta propria - quatro
+                      nomes emendados sao mais compridos que qualquer nome de
+                      paciente, e o celular e onde isso aparece primeiro. */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[18px] font-medium" title={patient.name}>
+                      {nomeCurto(patient.name)}
+                    </p>
+                    {descoberto ? (
+                      <p className="text-sm text-zelo-amber-fg font-medium flex items-center gap-1.5">
+                        <UserX className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                        Ninguém é responsável ainda
+                      </p>
+                    ) : (
+                      <p
+                        className="text-sm text-muted-foreground truncate"
+                        title={responsaveis.map((r) => r.name).join(", ")}
+                      >
+                        Responsável: {responsaveis.map((r) => nomeCurto(r.name)).join(", ")}
+                      </p>
+                    )}
+                    <p className="text-sm text-muted-foreground">{patient.timezone}</p>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-muted-foreground shrink-0" />
+                </a>
+              </Link>
+            );
+          })}
         </div>
       </main>
     </div>
