@@ -16,6 +16,7 @@ import AdherenceCalendarPage from '@/pages/AdherenceCalendarPage';
 import AppointmentsPage from '@/pages/AppointmentsPage';
 import RoutinePage from '@/pages/RoutinePage';
 import CaregiversPage from '@/pages/CaregiversPage';
+import { AjustesShell } from '@/components/ajustes-shell';
 import SettingsPage from '@/pages/SettingsPage';
 import SettingsNotificationsPage from '@/pages/SettingsNotificationsPage';
 import SettingsRetroactivePage from '@/pages/SettingsRetroactivePage';
@@ -217,13 +218,18 @@ function Router() {
           <Route path="/pacientes/:id/rotina" component={RoutinePage} />
           <Route path="/pacientes/:id" component={PatientDetailPage} />
           <Route path="/cuidadores" component={CaregiversPage} />
-          <Route path="/ajustes" component={SettingsPage} />
-          <Route path="/ajustes/notificacoes" component={SettingsNotificationsPage} />
-          <Route path="/ajustes/registro-retroativo" component={SettingsRetroactivePage} />
-          <Route path="/ajustes/conta" component={SettingsAccountPage} />
-          <Route path="/ajustes/seus-dados" component={SettingsDataPage} />
-          <Route path="/planos" component={PlansPage} />
-          <Route path="/notificacoes/ios" component={IOSInstallGuidePage} />
+          {/* As seções de Ajustes dividem a mesma casca — Issue #114. É ela
+              que traz o cabeçalho, a lista fixa à esquerda e o "voltar" do
+              celular; as telas abaixo renderizam só o próprio conteúdo.
+              As URLs não mudaram: `/planos` e `/notificacoes/ios` continuam
+              onde sempre estiveram, agora com a lista do lado. */}
+          <Route path="/ajustes"><AjustesShell><SettingsPage /></AjustesShell></Route>
+          <Route path="/ajustes/notificacoes"><AjustesShell><SettingsNotificationsPage /></AjustesShell></Route>
+          <Route path="/ajustes/registro-retroativo"><AjustesShell><SettingsRetroactivePage /></AjustesShell></Route>
+          <Route path="/ajustes/conta"><AjustesShell><SettingsAccountPage /></AjustesShell></Route>
+          <Route path="/ajustes/seus-dados"><AjustesShell><SettingsDataPage /></AjustesShell></Route>
+          <Route path="/planos"><AjustesShell><PlansPage /></AjustesShell></Route>
+          <Route path="/notificacoes/ios"><AjustesShell><IOSInstallGuidePage /></AjustesShell></Route>
           <Route path="/design" component={DesignReference} />
           <Route path="/consentimento" component={() => <ConsentPage onComplete={() => window.location.href = '/'} />} />
           <Route component={NotFound} />

@@ -7,9 +7,8 @@
  * Essa tela existe pra explicar o passo intermediário que o iOS exige.
  */
 import { Link } from "wouter";
-import { AppHeader } from "@/components/app-header";
 import { Button } from "@/components/ui/button";
-import { Share, SquarePlus, Smartphone, ArrowLeft } from "lucide-react";
+import { Share, SquarePlus, Smartphone } from "lucide-react";
 import { isStandalone } from "@/lib/push-client";
 
 const STEPS = [
@@ -34,13 +33,7 @@ export default function IOSInstallGuidePage() {
   const alreadyInstalled = isStandalone();
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <AppHeader />
-      <main className="max-w-2xl mx-auto px-5 py-8 space-y-6">
-        <Link href="/ajustes" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="w-4 h-4" /> Ajustes
-        </Link>
-
+    <div className="space-y-6">
         <div>
           <h2 className="text-2xl font-semibold">Ativar lembretes no iPhone</h2>
           <p className="text-muted-foreground text-[17px]">
@@ -79,7 +72,6 @@ export default function IOSInstallGuidePage() {
         <Button asChild variant="outline">
           <Link href="/ajustes">Voltar para Ajustes</Link>
         </Button>
-      </main>
     </div>
   );
 }

@@ -27,15 +27,13 @@ import { useState, useEffect } from "react";
 import { CampoLabel } from "@/components/campo-label";
 import { EmailDeRecuperacao } from "@/components/email-de-recuperacao";
 import { AparelhosConfiaveis } from "@/components/aparelhos-confiaveis";
-import { Link } from "wouter";
 import { authFetch, setTokens } from "@/lib/auth-client";
 import { useAuth } from "@/context/AuthContext";
-import { AppHeader } from "@/components/app-header";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Check } from "lucide-react";
+import { Check } from "lucide-react";
 
 export default function SettingsAccountPage() {
   const { user, recarregarUsuario } = useAuth();
@@ -207,15 +205,7 @@ export default function SettingsAccountPage() {
     senhaAtual.length > 0 && senhaNova.length > 0 && senhaRepetida.length > 0;
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <AppHeader />
-      <main className="max-w-2xl mx-auto px-5 py-8 space-y-6">
-        <Link href="/ajustes">
-          <a className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
-            <ArrowLeft className="w-4 h-4" /> Ajustes
-          </a>
-        </Link>
-
+    <div className="space-y-6">
         <div>
           <h2 className="text-2xl font-semibold">Sua conta</h2>
           <p className="text-muted-foreground text-[17px]">
@@ -435,7 +425,6 @@ export default function SettingsAccountPage() {
         <EmailDeRecuperacao />
 
         <AparelhosConfiaveis />
-      </main>
     </div>
   );
 }
