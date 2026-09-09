@@ -37,6 +37,45 @@ export const patientsTable = pgTable("patients", {
   // Arquivar suspende doses futuras sem apagar histórico. Nunca DELETE aqui —
   // exclusão de verdade é o fluxo de LGPD (export-deletion), não este campo.
   archived: boolean("archived").notNull().default(false),
+  /**
+   * Desde quando este paciente está sem nenhum responsável — Issue #123.
+   *
+   * ── Quem escreve nestas duas colunas ──────────────────────────────────
+   *
+   * **Só o job diário** (`lib/paciente-sem-cuidador.ts`). Nenhuma rota mexe
+   * aqui, e é de propósito: o vínculo também some por CASCATA — apagar o
+   * cuidador leva as linhas de `caregiver_patients` junto, sem passar por
+   * rota nenhuma. Se a rota de desvincular fosse a dona do relógio, esse
+   * caminho deixaria o estado parado para sempre e o aviso nunca sairia.
+   *
+   * O job vê o estado real todo dia e reescreve: paciente coberto tem o
+   * relógio zerado, paciente descoberto tem o relógio andando.
+   *
+   * ── O preço disso, medido e aceito ───────────────────────────────────
+   *
+   * O relógio de um paciente que PERDE o responsável começa na última vez
+   * que o job o viu coberto — até 24h antes do desvínculo real. Então esse
+   * caso avisa entre 1 e 2 dias, não exatos 2. O caso que o fundador
+   * descreveu — paciente novo que ninguém vinculou — é exato, porque o
+   * `defaultNow()` abaixo o marca no instante do cadastro.
+   *
+   * Fila diária não tem como ser mais preciso que um dia sem virar gatilho
+   * em rota, que é justamente o que a cascata quebraria.
+   */
+  uncoveredSince: timestamp("uncovered_since", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  /**
+   * Quando o aviso de "sem cuidador" foi enviado — Issue #123.
+   *
+   * `null` significa "ainda não avisamos por este período descoberto". O job
+   * zera de volta assim que vê o paciente coberto, e é isso que faz o aviso
+   * **não se repetir todo dia** e ao mesmo tempo **voltar a valer** se a
+   * situação se repetir. Sem isso o e-mail viraria ruído diário, e ruído
+   * diário acaba numa regra de filtro na caixa de entrada — que é o mesmo
+   * que não avisar.
+   */
+  uncoveredAlertSentAt: timestamp("uncovered_alert_sent_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
@@ -48,6 +87,12 @@ export const insertPatientSchema = createInsertSchema(patientsTable).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+  // Issue #123: as duas colunas do aviso são do job, não de quem cadastra.
+  // Hoje este schema não é usado por rota nenhuma; no dia em que for, aceitar
+  // `uncoveredAlertSentAt` no corpo deixaria qualquer cliente desligar o aviso
+  // do próprio paciente escrevendo uma data.
+  uncoveredSince: true,
+  uncoveredAlertSentAt: true,
 });
 
 export type InsertPatient = z.infer<typeof insertPatientSchema>;

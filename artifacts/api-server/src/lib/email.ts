@@ -760,3 +760,62 @@ export async function sendDeviceCodeEmail(
 
   return resultados.some(Boolean);
 }
+
+/**
+ * Avisa que um ou mais pacientes estão sem cuidador responsável — Issue #123.
+ *
+ * ── O que este e-mail NÃO pode fazer a quem lê ───────────────────────────
+ *
+ * Fazer a pessoa achar que o paciente ficou trancado. Vínculo não é
+ * autorização: quem cuida continua vendo e registrando dose de todo mundo da
+ * família. Se este texto deixar isso ambíguo, alguém vai agir com pressa por
+ * um motivo que não existe — por isso o `aviso` no rodapé diz a frase inteira,
+ * e não uma versão curta dela.
+ *
+ * ── Invariante 3 ─────────────────────────────────────────────────────────
+ *
+ * Vai o **nome do paciente**, e nada além disso. Nem medicamento, nem
+ * condição, nem aferição — nem "3 doses pendentes", que também é dado de
+ * saúde vestido de número. Um teste lê o corpo enviado e prova.
+ *
+ * ── Por que o botão vai para `/pacientes` e não para o filtro ────────────
+ *
+ * O e-mail já **nomeia** quem está descoberto. Levar a um endereço que
+ * pré-liga o filtro economizaria um toque e criaria um acoplamento entre o
+ * texto do e-mail e o estado interno de uma tela; a lista já destaca os
+ * descobertos em âmbar assim que abre (#122).
+ *
+ * @param pacientes nome e há quantos dias cada um está sem responsável
+ */
+export async function sendPacienteSemCuidadorEmail(
+  para: string,
+  pacientes: Array<{ nome: string; dias: number }>,
+): Promise<boolean> {
+  const link = `${baseUrl()}/pacientes`;
+  devLog("Aviso de paciente sem cuidador", link);
+
+  const varios = pacientes.length > 1;
+
+  return enviar(
+    {
+      para,
+      assunto: varios
+        ? `${pacientes.length} pacientes estão sem cuidador responsável — ZELO`
+        : "Um paciente está sem cuidador responsável — ZELO",
+      titulo: varios ? "Falta apontar quem responde por eles" : "Falta apontar quem responde",
+      paragrafos: [
+        varios
+          ? "Estas pessoas estão cadastradas no ZELO e ninguém foi apontado como responsável por elas:"
+          : "Esta pessoa está cadastrada no ZELO e ninguém foi apontado como responsável por ela:",
+        ...pacientes.map(
+          (p) => `${p.nome} — ${p.dias === 1 ? "há 1 dia" : `há ${p.dias} dias`} sem responsável.`,
+        ),
+        "Você é quem pode resolver: só o cuidador principal indica responsável, na ficha de cada pessoa.",
+      ],
+      acao: { rotulo: "Ver os pacientes", url: link },
+      aviso:
+        "Isto não bloqueia nada. Quem cuida continua vendo e registrando as doses normalmente — o aviso é só para ninguém ficar sem alguém que responda por ela.",
+    },
+    "paciente_sem_cuidador",
+  );
+}
