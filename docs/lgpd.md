@@ -71,3 +71,61 @@ provado por teste em `medication-photos.test.ts`.
 Ver `consent_records` (consentimento por paciente), `export_tokens` e
 `deletion_requests` (exportação/exclusão de dados sob pedido do titular) —
 já documentados nos respectivos routers e no `FOUNDATION.md`.
+
+## Perfil do cuidador — foto, telefone e parentesco (Issue #116)
+
+Desde 09/09/2026 o cuidador pode guardar **foto de perfil**, **telefone** e
+**parentesco**. Os três são **opcionais** e existem para uma finalidade só,
+declarada aqui: **a família saber quem cuida e como falar com essa pessoa.**
+
+| Dado | Onde fica | Quem vê |
+|---|---|---|
+| Foto | `users.avatar_object_key` — a chave; os bytes ficam no mesmo bucket privado da mídia | quem tem o link assinado, emitido só para a família |
+| Telefone | `caregivers.phone` | os cuidadores da mesma família |
+| Parentesco | `caregivers.relationship` | os cuidadores da mesma família |
+
+### Por que telefone e parentesco ficam no cuidador, e não na pessoa
+
+Porque mudam de círculo para círculo: a mesma pessoa é "filha" numa família e
+"contratada" noutra, e pode dar um telefone de trabalho numa e o pessoal na
+outra. A foto fica na pessoa — o rosto é um só.
+
+### O que a família vê, e o que ela não vê
+
+Telefone e parentesco são **visíveis para a família toda** (decisão do fundador
+em 08/09/2026). É dado pessoal de terceiro, e por isso está aqui.
+
+**O que nunca sai:** em que **outras famílias** aquele cuidador atua. Um
+cuidador pode servir a várias; contar isso a uma delas expõe uma relação que
+ela não tem direito de conhecer. Há teste de servidor que falha se um campo
+com esse nome aparecer no payload.
+
+### A foto não é `media_asset`
+
+Ela **não** passa pelo consentimento de imagem (QUI-6) nem pelo expurgo de 90
+dias (QUI-11), e é de propósito: não há consentimento a pedir de quem publica o
+próprio rosto, e a foto não expira. O que ela compartilha com a mídia do mural é
+só o bucket e o desenho do link assinado.
+
+### Link assinado, e por quê
+
+`<img src>` não manda header de sessão. A foto é servida por
+`GET /api/caregivers/foto/:token`, com um token que carrega o id e a validade,
+vale **10 minutos** e é assinado com uma chave derivada **própria** — um token
+de mídia não abre foto de perfil. Quem autoriza é a rota que emite o link, e ela
+só emite para quem é da família.
+
+### Titular e exclusão
+
+O cuidador troca ou **remove** a própria foto quando quiser
+(`DELETE /api/account/avatar`), e limpa o telefone salvando o campo em branco.
+Remover apaga a coluna **e** o objeto no armazenamento. Os três campos entram na
+exportação de dados e são apagados junto com a família na exclusão.
+
+### O que NÃO se guarda, e é decisão registrada
+
+**CPF, endereço e data de nascimento não entram** — Issue #124, bloqueada. Sem
+finalidade declarada, sem base legal escrita aqui, sem encarregado de dados
+definido e com o repositório público, guardar documento de identificação seria
+assumir obrigação sem contrapartida. CPF não conferido contra a Receita não
+prova identidade nenhuma; dá a sensação de rigor sem o rigor.

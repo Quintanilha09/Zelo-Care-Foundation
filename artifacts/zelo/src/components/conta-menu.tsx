@@ -17,8 +17,10 @@
  */
 import { useLocation } from "wouter";
 import { useAuth } from "@/context/AuthContext";
+import { apiUrl } from "@/lib/auth-client";
+import { iniciais } from "@/lib/perfil";
 import { FamilySwitcher } from "@/components/family-switcher";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -28,14 +30,6 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { User, Settings, LogOut } from "lucide-react";
-
-/** Até duas iniciais do nome, para o avatar enquanto não há foto. */
-function iniciais(nome: string | undefined): string {
-  const partes = (nome ?? "").trim().split(/\s+/).filter(Boolean);
-  if (partes.length === 0) return "?";
-  if (partes.length === 1) return partes[0].slice(0, 1).toUpperCase();
-  return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase();
-}
 
 export function ContaMenu() {
   const { user, logout } = useAuth();
@@ -48,6 +42,13 @@ export function ContaMenu() {
         aria-label={`Menu de ${user?.name ?? "conta"}`}
       >
         <Avatar className="h-9 w-9 border">
+          {/* Issue #116: a foto de verdade. O `AvatarFallback` do Radix só
+              aparece quando a imagem não carrega — então as iniciais
+              continuam sendo o que se vê enquanto não há foto, e também se o
+              link vencer. */}
+          {user?.caregiver?.fotoUrl && (
+            <AvatarImage src={apiUrl(user.caregiver.fotoUrl)} alt="" />
+          )}
           <AvatarFallback className="bg-muted text-sm font-medium text-muted-foreground">
             {iniciais(user?.name)}
           </AvatarFallback>

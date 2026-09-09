@@ -22,6 +22,7 @@ import SettingsNotificationsPage from '@/pages/SettingsNotificationsPage';
 import SettingsRetroactivePage from '@/pages/SettingsRetroactivePage';
 import SettingsDataPage from '@/pages/SettingsDataPage';
 import SettingsAccountPage from '@/pages/SettingsAccountPage';
+import SettingsProfilePage from '@/pages/SettingsProfilePage';
 import PlansPage from '@/pages/PlansPage';
 import IOSInstallGuidePage from '@/pages/IOSInstallGuidePage';
 import AdminPage from '@/pages/AdminPage';
@@ -227,6 +228,7 @@ function Router() {
           <Route path="/ajustes/notificacoes"><AjustesShell><SettingsNotificationsPage /></AjustesShell></Route>
           <Route path="/ajustes/registro-retroativo"><AjustesShell><SettingsRetroactivePage /></AjustesShell></Route>
           <Route path="/ajustes/conta"><AjustesShell><SettingsAccountPage /></AjustesShell></Route>
+          <Route path="/ajustes/perfil"><AjustesShell><SettingsProfilePage /></AjustesShell></Route>
           <Route path="/ajustes/seus-dados"><AjustesShell><SettingsDataPage /></AjustesShell></Route>
           <Route path="/planos"><AjustesShell><PlansPage /></AjustesShell></Route>
           <Route path="/notificacoes/ios"><AjustesShell><IOSInstallGuidePage /></AjustesShell></Route>

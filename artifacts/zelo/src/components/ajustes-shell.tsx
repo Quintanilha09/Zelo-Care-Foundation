@@ -32,7 +32,7 @@ import { useAuth } from "@/context/AuthContext";
 import { AppHeader } from "@/components/app-header";
 import { cn } from "@/lib/utils";
 import {
-  User, CreditCard, Users, Bell, History, ShieldCheck, Smartphone,
+  User, IdCard, CreditCard, Users, Bell, History, ShieldCheck, Smartphone,
   ArrowLeft, ExternalLink,
 } from "lucide-react";
 
@@ -62,6 +62,7 @@ const GRUPOS: Array<{ titulo: string; secoes: Secao[] }> = [
     titulo: "Conta",
     secoes: [
       { href: "/ajustes/conta", rotulo: "Sua conta", icone: User },
+      { href: "/ajustes/perfil", rotulo: "Seu perfil", icone: IdCard },
       { href: "/planos", rotulo: "Plano", icone: CreditCard },
     ],
   },

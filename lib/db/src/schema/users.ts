@@ -107,6 +107,23 @@ export const usersTable = pgTable("users", {
    * nada para ninguém — e sem essa propriedade ele não poderia ir sozinho.
    */
   segundoFatorAtivoEm: timestamp("segundo_fator_ativo_em", { withTimezone: true }),
+  /**
+   * Foto de perfil do cuidador — Issue #116.
+   *
+   * ── Por que vive na PESSOA, e não no cuidador ────────────────────────────
+   *
+   * Decisão D1 do refinamento (08/09/2026). Quem cuida da própria mãe E é
+   * contratada de outra casa tem duas linhas em `caregivers`, mas um rosto só.
+   * Foto por família seria dois uploads para manter a mesma imagem.
+   *
+   * Guarda a CHAVE do objeto, nunca a imagem. Os bytes vivem no mesmo
+   * armazenamento da mídia (`lib/media-storage.ts`), e a chave não carrega
+   * nome, id nem sequência previsível.
+   *
+   * **Não é `media_asset`, de propósito.** Aquela tabela traz consentimento de
+   * imagem, expiração de 90 dias e vínculo com paciente — os três errados aqui.
+   */
+  avatarObjectKey: text("avatar_object_key"),
   status: userStatusEnum("status").notNull().default("pending_verification"),
   // Qual família a sessão abre. O JWT carrega UM familyId, mas o usuário
   // pode ser cuidador em várias (ver comentário acima) — sem isto, o login
