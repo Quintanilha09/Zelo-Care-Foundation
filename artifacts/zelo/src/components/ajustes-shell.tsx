@@ -138,7 +138,15 @@ export function AjustesShell({ children }: { children: ReactNode }) {
                     const ativa = location === secao.href;
                     return (
                       <li key={secao.href}>
-                        <Link href={secao.href}>
+                        {/* `asChild` não é enfeite — Issue #114.
+                            Sem ele, o `<Link>` do wouter monta o PRÓPRIO `<a>`
+                            e põe o meu dentro. Dois âncoras aninhadas são HTML
+                            inválido: o navegador achata em duas irmãs, a de
+                            fora com o `href` e a minha com a classe e o
+                            `aria-current`, sem href nenhum. O leitor de tela
+                            anuncia dois links por seção, e o CI pegou isso
+                            pelo href vazio no item marcado. */}
+                        <Link href={secao.href} asChild>
                           <a
                             aria-current={ativa ? "page" : undefined}
                             className={cn(
@@ -170,7 +178,7 @@ export function AjustesShell({ children }: { children: ReactNode }) {
             {/* Voltar só no celular: no desktop a lista está do lado, e um
                 "voltar" para algo que nunca saiu da tela confunde. */}
             {!naRaiz && (
-              <Link href="/ajustes">
+              <Link href="/ajustes" asChild>
                 <a className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground md:hidden">
                   <ArrowLeft className="h-4 w-4" aria-hidden /> Ajustes
                 </a>
