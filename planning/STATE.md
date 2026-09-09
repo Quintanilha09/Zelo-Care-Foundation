@@ -302,5 +302,12 @@ por decisão registrada em
    01/09/2026) e deixou de bloquear código. A **marca**, porém, não foi pesquisada nem depositada:
    continua risco de identidade, agora sem prazo forçado por dependência técnica
 6. Encarregado de dados (DPO)
-7. O repositório GitHub está **público** — decidir se troca para privado
+7. ~~O repositório GitHub está **público** — decidir se troca para privado~~ — **resolvido em
+   09/09/2026: continua público por enquanto.** Fechar hoje custaria ~US$ 70/mês de GitHub Actions
+   (medido: ~27 min por execução × ~13/dia; público é ilimitado, privado free tem teto de 2.000
+   min/mês). Nenhum segredo está versionado — o que fica exposto é o `planning/`, com a auditoria
+   e os riscos aceitos, e hoje não há usuário real para quem isso sirva.
+   **Gatilho de revisão: fechar é pré-condição do primeiro usuário real**, junto com o refresh
+   token em `localStorage`. Números, o que ficou por verificar no Replit e a alternativa descartada
+   em [decisoes/PLATFORM_DECISIONS.md §13](decisoes/PLATFORM_DECISIONS.md)
 8. Aumentar o limite de gasto do Replit para destravar o banco de produção

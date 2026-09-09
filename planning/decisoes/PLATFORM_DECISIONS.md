@@ -330,6 +330,79 @@ isolamento entre famílias — pelo contrário: é o que um comprador examina pr
 
 ---
 
+## 13. O repositório fica público até haver usuário real — 09/09/2026
+
+**Decisão do fundador em 09/09/2026**, depois de medição. Ele levantou a questão
+por segurança: repositório público "é perigoso". Está certo — mas o custo de
+fechar hoje é alto e o risco de hoje é baixo, e é essa combinação que decide.
+
+### O que foi medido (09/09/2026, nas execuções reais)
+
+| | |
+|---|---|
+| Playwright | 15 min |
+| Testes de servidor | 11 min |
+| Typecheck, lint e build | 1 min |
+| **Por execução de CI** | **~27 min** |
+| Frequência | **200 execuções em 15 dias** ≈ 13/dia |
+| **Consumo mensal** | **≈ 10.800 min** |
+
+Limites publicados do GitHub: repositório **público = Actions ilimitado e
+grátis**; **privado no plano free = 2.000 min/mês**, Pro (US$ 4/mês) = 3.000;
+excedente a US$ 0,008/min em runner Linux.
+
+**No ritmo desta semana, o teto grátis acabaria em ~5 dias, com excedente de
+~US$ 70/mês** — perto de R$ 420 no câmbio de cartão. Num projeto cujo banco de
+produção está **pausado por um teto de US$ 1**, isso decide sozinho.
+
+> Ressalva: 13 execuções/dia é o ritmo de uma semana de oito Issues por dia. Em
+> ritmo normal cai bastante, e a conta muda. **Remedir antes de fechar.**
+
+### O que NÃO está exposto
+
+Conferido em 09/09/2026: **nenhum segredo versionado.** Nenhum `.env`, nenhuma
+chave, nenhum certificado. O `.gitignore` cobre `.env` e `.env.*`, e os segredos
+vivem nos Secrets do Replit.
+
+### O que ESTÁ exposto, e é o risco de verdade
+
+O `planning/` — que inclui a **auditoria de segurança**, o `ARMADILHAS.md` e os
+**riscos aceitos em aberto**, como o refresh token em `localStorage` (§9).
+
+Isso não é código: é um mapa de onde bater. Só que hoje **não há para quem
+bater** — zero usuário real, banco de produção vazio e pausado. Postura de
+segurança exposta só vira dano quando existe alguém a atacar.
+
+### O gatilho de revisão, que é a parte que não pode se perder
+
+**Fechar o repositório é pré-condição do primeiro usuário real** — na mesma
+lista do refresh token em `localStorage` (§9), e pelo mesmo motivo. Não é "um
+dia"; é antes de existir gente de verdade lá dentro.
+
+### O que ficou em aberto, para quem for fechar
+
+1. **O Replit não foi verificado.** Não dá para ver daqui como ele autentica o
+   `git pull`. Se for a integração GitHub (OAuth), repositório privado costuma
+   exigir plano pago lá; se for clone HTTPS simples, o `pull` quebra. O teste,
+   no Shell do Replit:
+   `git remote -v && git config --get credential.helper && git ls-remote origin -h refs/heads/main`
+2. **Privar e voltar é instantâneo e reversível** — dá para testar e desfazer.
+3. **Duas economias de CI que baratearão o fechamento**, e que valem a pena
+   antes dele:
+   - `paths-ignore` no gatilho de `push` em `main`: hoje um commit só de `.md`
+     dispara os 27 minutos completos. Risco zero.
+   - O gatilho de `push` em `main` re-roda a suíte que o PR acabou de validar —
+     **47 das 100 últimas execuções**. Tirar corta quase metade, mas é troca:
+     some a rede que pega o `main` mexendo entre a checagem e o merge.
+
+### Alternativa descartada
+
+**Mover só o `planning/` para um repositório privado.** Resolveria a exposição
+sem custo de CI — e desfaz a decisão de 23/08/2026, que trouxe todo o contexto
+para dentro do repositório justamente porque ele espalhado em seis lugares
+divergiu e quebrou a suíte no `main`. O ganho não paga o retorno daquele
+problema.
+
 ## Relação com a especificação original
 
 A [especificação completa](../referencia/ESPECIFICACAO.md) foi escrita **antes** destas decisões.
