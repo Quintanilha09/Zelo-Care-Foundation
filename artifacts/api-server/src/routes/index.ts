@@ -10,6 +10,7 @@ import segundoFatorRouter from "./segundo-fator";
 import configRouter from "./config";
 import activityRouter from "./activity";
 import exportRouter from "./export";
+import responsaveisRouter from "./responsaveis";
 import patientsRouter from "./patients";
 import caregiversRouter from "./caregivers";
 import medicationsRouter from "./medications";
@@ -52,6 +53,9 @@ router.use(accountRouter);
 router.use(segundoFatorRouter);
 router.use(activityRouter);
 router.use(exportRouter);
+// ANTES do patientsRouter: /patients/:id/caregivers nao pode ser engolida
+// por uma rota de parametro. Mesma armadilha do /patients/today-summary.
+router.use(responsaveisRouter);
 router.use(patientsRouter);
 router.use(caregiversRouter);
 router.use(medicationsRouter);
