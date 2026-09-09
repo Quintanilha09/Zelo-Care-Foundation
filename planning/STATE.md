@@ -56,36 +56,48 @@ Das 10 fases do backlog original só sobraram três buracos, todos deixados de p
 
 ## Onde o desenvolvimento parou
 
-**Sete Issues abertas — medido em 08/09/2026 com `gh`.** Este bloco envelhece rápido: se a sessão
-for depois disso, meça de novo.
+**Três Issues abertas, uma delas bloqueada — medido em 09/09/2026 com `gh`.** Este bloco envelhece
+rápido: se a sessão for depois disso, meça de novo.
 
 Duas levas, dois refinamentos:
 
 - [`refinamentos/ajustes-e-perfil.md`](refinamentos/ajustes-e-perfil.md) — navegação e Ajustes no
-  padrão GitHub, perfil do cuidador, senha por revelação. Seis decisões já tomadas.
+  padrão GitHub, perfil do cuidador, senha por revelação. **Entregue por inteiro.**
 - [`refinamentos/cuidador-paciente-e-identificacao.md`](refinamentos/cuidador-paciente-e-identificacao.md)
   — quem cuida de quem, paciente descoberto, e o que se guarda sobre o cuidador. Traz uma
   **discordância registrada** (a #124) e a decisão de separar *vínculo* de *autorização*.
 
-**Ordem estrita: #115 → #116 → #119 → #120 → #121 → #122 → #123.** A #124 está bloqueada.
+**Ordem estrita: #121 → #122 → #123.** A #124 está bloqueada e não entra na fila.
 
 | Issue | O quê |
 |---|---|
-| [#115](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/115) | trocar senha e e-mail por revelação, com a senha atual sempre vazia. **Absorve a #99**; o PR fecha as duas. O servidor de senha **já exige a atual** (`account.ts:633`) — o buraco é de tela. **Próxima da fila** |
-| [#116](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/116) | perfil do cuidador: foto (em `users`), telefone e parentesco (em `caregivers`), e a ficha de cada um em `/cuidadores`. Ciclo completo: banco, `POST /api/account/avatar`, LGPD |
-| [#119](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/119) | **cada link de navegação vira dois no leitor de tela.** `<Link><a/></Link>` do wouter v3 gera âncoras aninhadas; `asChild` resolve. **13 ocorrências em 9 arquivos**, medido em 08/09. O `ajustes-shell.tsx` já está certo e serve de referência |
-| [#120](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/120) | **vincular cuidador a paciente** — a junção `caregiver_patients` que nunca existiu. É a base das três seguintes. Entrega **vínculo**, não autorização: o JWT não muda, e quem vê continua vendo |
-| [#121](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/121) | `/cuidadores` diz quem cuida de quem, e o título deixa de afirmar família única |
+| [#121](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/121) | `/cuidadores` diz quem cuida de quem, e o título deixa de afirmar família única. **Próxima da fila.** Absorveu do escopo da #120 o `GET /caregivers` devolver os pacientes de cada um |
 | [#122](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/122) | `/pacientes`: quem é responsável, e filtro de paciente sem cuidador |
 | [#123](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/123) | alerta por e-mail quando um paciente fica 2 dias sem cuidador. Job cron pelo pg-boss, no mesmo molde dos cinco que já rodam |
 | [#124](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/124) | ⛔ **BLOQUEADA** — identificação do cuidador (CPF, endereço, nascimento). Quatro pré-condições, nenhuma de código: finalidade declarada, base legal no `docs/lgpd.md`, DPO definido, repositório privado |
 
-**#99** continua aberta como rastro até o PR da #115 fechá-la.
-
 **A fase 11.6 destravou pela metade.** Ela estava `ADIÁVEL` por "sem caso de uso real"; o fundador
-forneceu um em 08/09/2026. A #120 entrega a **junção** cuidador×paciente que ela pedia, mas **não**
-a autorização por paciente — o JWT continua carregando um `role` único por sessão. A parte cara da
-11.6 segue adiada, agora com a metade barata feita.
+forneceu um em 08/09/2026. A #120 entregou a **junção** cuidador×paciente que ela pedia, mas **não**
+a autorização por paciente — o JWT continua carregando um `role` único por sessão, e um cuidador sem
+vínculo continua vendo e registrando dose de todo paciente da família. Há teste que falha se alguém
+passar a filtrar acesso pelo vínculo. **A parte cara da 11.6 segue adiada**, agora com a metade
+barata feita.
+
+**Duas armadilhas novas, registradas onde doeram:**
+
+1. **`<img src>` não manda header de sessão.** A #116 quase subiu servindo a foto de perfil por rota
+   autenticada — não renderizaria. O `media-links.ts` já explicava isso desde a QUI-5. A foto usa o
+   mesmo link assinado, com **chave derivada própria**: sem separação de domínio, um token de mídia
+   abriria a foto do cuidador de id igual ao do asset.
+2. **`<Link><a/></Link>` do wouter v3 gera duas âncoras.** O `<Link>` monta o próprio `<a>` e põe o
+   seu dentro; o navegador achata em duas irmãs, uma com `href` e vazia, outra com o texto e sem
+   destino. Eram **13 ocorrências em 9 arquivos** (#119). `asChild` é obrigatório sempre que o
+   `<Link>` embrulhar um `<a>` próprio.
+
+**Fechadas em 09/09/2026:** #99 e #115 (senha e e-mail por revelação, com o caminho de quem não
+lembra a atual — PR #125), #119 (um link por item de navegação, 13 correções de  — PR
+#126), #116 (perfil do cuidador: foto, telefone e parentesco — PR #127), #120 (a junção
+cuidador×paciente — PR #128).
 
 **Fechadas em 08/09/2026:** #97 (selecionar vários momentos para apagar — PR #112), #113 (menu na
 foto de perfil, sai a engrenagem — PR #117), #114 (Ajustes com a lista à esquerda — PR #118, que
