@@ -134,7 +134,7 @@ export default function PatientsPage() {
 
         <div className={`space-y-3 ${isLoading ? "" : "zelo-entra"}`}>
           {patients?.filter((p) => !p.archived).map((patient) => (
-            <Link key={patient.id} href={`/pacientes/${patient.id}`}>
+            <Link key={patient.id} href={`/pacientes/${patient.id}`} asChild>
               <a className="flex items-center gap-4 p-4 rounded-xl border bg-card shadow-sm hover:border-primary/40 transition-colors">
                 <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center shrink-0">
                   <User className="w-6 h-6 text-muted-foreground" />

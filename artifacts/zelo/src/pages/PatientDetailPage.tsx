@@ -441,7 +441,7 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
     <div className="min-h-screen bg-background text-foreground">
       <AppHeader />
       <main className="max-w-2xl mx-auto px-5 py-8 space-y-6">
-        <Link href="/pacientes">
+        <Link href="/pacientes" asChild>
           <a className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
             <ArrowLeft className="w-4 h-4" /> Todos os pacientes
           </a>

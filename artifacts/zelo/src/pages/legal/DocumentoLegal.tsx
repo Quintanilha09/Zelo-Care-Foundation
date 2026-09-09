@@ -50,7 +50,7 @@ export function DocumentoLegal({
   return (
     <div className="min-h-screen bg-background text-foreground">
       <main className="max-w-2xl mx-auto px-5 py-8 space-y-6">
-        <Link href="/">
+        <Link href="/" asChild>
           <a className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
             <ArrowLeft className="w-4 h-4" aria-hidden /> Voltar ao ZELO
           </a>
@@ -91,7 +91,7 @@ export function DocumentoLegal({
  */
 export function LinkInterno({ href, children }: { href: string; children: ReactNode }) {
   return (
-    <Link href={href}>
+    <Link href={href} asChild>
       <a className="underline">{children}</a>
     </Link>
   );
