@@ -56,8 +56,12 @@ Das 10 fases do backlog original só sobraram três buracos, todos deixados de p
 
 ## Onde o desenvolvimento parou
 
-**Três Issues abertas, uma delas bloqueada — medido em 09/09/2026 com `gh`.** Este bloco envelhece
+**Uma Issue aberta, e ela está bloqueada — medido em 09/09/2026 com `gh`.** Este bloco envelhece
 rápido: se a sessão for depois disso, meça de novo.
+
+**Não há fila.** A leva de 08/09 fechou inteira no dia 09/09. O que sobra é a #124, e o que ela
+espera não é código — são as quatro pré-condições da tabela abaixo. **Antes de abrir trabalho novo,
+pergunte ao fundador**: o próximo passo é dele, não do backlog.
 
 Duas levas, dois refinamentos:
 
@@ -67,14 +71,8 @@ Duas levas, dois refinamentos:
   — quem cuida de quem, paciente descoberto, e o que se guarda sobre o cuidador. Traz uma
   **discordância registrada** (a #124) e a decisão de separar *vínculo* de *autorização*.
 
-**Ordem estrita: #121 → #122 → #123.** A #124 está bloqueada e não entra na fila. Em 09/09/2026
-a #121 e a #122 estão em revisão, e **resta a #123**.
-
 | Issue | O quê |
 |---|---|
-| [#121](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/121) | `/cuidadores` diz quem cuida de quem, e o título deixa de afirmar família única. **Em revisão — PR #129.** Absorveu do escopo da #120 o `GET /caregivers` devolver os pacientes de cada um |
-| [#122](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/122) | `/pacientes`: quem é responsável, e filtro de paciente sem cuidador. **Em revisão.** `GET /patients` devolve `responsaveis` em cada paciente; destaque âmbar e filtro que some quando ninguém está descoberto |
-| [#123](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/123) | alerta por e-mail quando um paciente fica 2 dias sem cuidador. Job cron pelo pg-boss, no mesmo molde dos cinco que já rodam |
 | [#124](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/124) | ⛔ **BLOQUEADA** — identificação do cuidador (CPF, endereço, nascimento). Quatro pré-condições, nenhuma de código: finalidade declarada, base legal no `docs/lgpd.md`, DPO definido, repositório privado |
 
 **A fase 11.6 destravou pela metade.** Ela estava `ADIÁVEL` por "sem caso de uso real"; o fundador
@@ -84,7 +82,7 @@ vínculo continua vendo e registrando dose de todo paciente da família. Há tes
 passar a filtrar acesso pelo vínculo. **A parte cara da 11.6 segue adiada**, agora com a metade
 barata feita.
 
-**Três armadilhas novas, registradas onde doeram:**
+**Cinco armadilhas novas, registradas onde doeram:**
 
 1. **`<img src>` não manda header de sessão.** A #116 quase subiu servindo a foto de perfil por rota
    autenticada — não renderizaria. O `media-links.ts` já explicava isso desde a QUI-5. A foto usa o
@@ -99,8 +97,24 @@ barata feita.
    asserção de que "Quem cuida com você" sumiu passar por engano. O que faltou foi o `grep`: o
    `movimento.spec.ts` esperava o rótulo antigo, e o Playwright caiu nos dois projetos.
    **Texto visível é interface de teste** — trocar um exige varrer `e2e/` atrás de quem o cita.
+4. **O plano Grátis cuida de UM paciente, e isso era um teto de cobertura.** Todo spec de `e2e/`
+   criava exatamente um paciente — não por escolha de quem escreveu, mas porque o segundo tomava
+   403 de `PLAN_LIMIT`. Nenhuma tela com vários pacientes tinha como ser testada. A #122 abriu
+   `POST /api/dev/plano` (só fora de produção, e com `requireAuth` — o alvo é uma família, então o
+   `familyId` vem do JWT) e o helper `subirPlano` em `e2e/apoio.ts`. **Antes de escrever spec com
+   mais de um paciente, cuidador ou medicamento, confira o limite do plano.**
+5. **Teste que reimplementa a regra em vez de exercê-la vira verde vazio.** O
+   `dev-clock-routes.test.ts` monta um app próprio porque o `routes/index.ts` lê o portão no
+   import. Quando a #122 acrescentou a segunda rota de desenvolvimento, o espelho ficou para trás
+   e a asserção de produção passou a **passar sem provar nada** — pedia 404 de uma rota que não
+   tinha sido montada em ambiente nenhum. Agora um caso lê o `routes/index.ts` e falha se aparecer
+   `dev-*` fora da lista do teste.
 
-**Fechadas em 09/09/2026:** #99 e #115 (senha e e-mail por revelação, com o caminho de quem não
+**Fechadas em 09/09/2026 (a leva de 08/09 inteira):** #121 (`/cuidadores` diz quem cuida de quem —
+PR #129), #122 (`/pacientes` mostra quem responde e filtra o descoberto — PR #130), #123 (aviso por
+e-mail de paciente sem responsável, job diário — PR #131).
+
+**Também fechadas em 09/09/2026:** #99 e #115 (senha e e-mail por revelação, com o caminho de quem não
 lembra a atual — PR #125), #119 (um link por item de navegação, 13 correções de `asChild` — PR
 #126), #116 (perfil do cuidador: foto, telefone e parentesco — PR #127), #120 (a junção
 cuidador×paciente — PR #128).
@@ -220,6 +234,10 @@ Checar tudo de uma vez no Replit:
      (#79), mais as colunas novas em `users` — `recovery_email`, `recovery_email_at`,
      `resgate_liberado_ate` e `segundo_fator_ativo_em`.
      **Sem este push o login quebra em produção**, porque a rota já lê essas colunas.
+   - **Cuidador e paciente (09/09/2026):** `avatar_object_key` em `users` (#116), as colunas
+     `phone` e `relationship` em `caregivers` com o enum `caregiver_relationship` (#116), a tabela
+     `caregiver_patients` (#120), e as colunas `uncovered_since` e `uncovered_alert_sent_at` em
+     `patients` (#123). Tudo aditivo — o `push` não deve oferecer `drop` nem `rename`.
 4. `pnpm --filter @workspace/db run push:raw` — trigger de imutabilidade (idempotente)
 5. **`ADMIN_PANEL_SECRET` — o fundador informou em 25/08/2026 que já está configurado** no Replit.
    `NÃO VERIFICADO`: falta abrir `/admin` e confirmar que a senha entra — estava **confirmado
@@ -236,7 +254,12 @@ Checar tudo de uma vez no Replit:
 
 ## Roteiro de teste pendente do fundador
 
-Nada disto foi aberto num navegador real ainda — só typecheck e teste automatizado:
+A leva de 08–09/09/2026 (#97 a #123) tem **guia publicado, com 17 passos em 7 grupos**:
+https://claude.ai/code/artifact/488e1904-4b62-4d2a-af0c-cfe74264ad9b — o passo do e-mail da #123
+**exige modo produção**, e o guia diz isso. Republicar no mesmo caminho de arquivo mantém a URL.
+
+O que segue abaixo é mais antigo e nada disto foi aberto num navegador real ainda — só typecheck e
+teste automatizado:
 
 - ZELO-30 / ZELO-32 — perfil de escalonamento e silêncio noturno; painel `/admin` (senha =
   `ADMIN_PANEL_SECRET`) e página `/status`
