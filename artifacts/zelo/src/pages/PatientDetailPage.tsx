@@ -27,8 +27,11 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
 import { AreaCarregando, Esqueleto } from "@/components/esqueleto";
-import { ArrowLeft, Plus, Pill, Package, Trash2, Smartphone, Tablet, Pause, Play, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Plus, Pill, Package, Trash2, Smartphone, Tablet, Pause, Play, CheckCircle2, Undo2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  usePulsoDeDesfazer, ultimoPrazoDeDesfazer, podeDesfazer,
+} from "@/hooks/use-pode-desfazer";
 import { nomeCurto } from "@workspace/nomes";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -110,6 +113,15 @@ interface ScheduledDose {
   // tela só exibe.
   registeredAt: string | null;
   registeredByCaregiverName: string | null;
+  /**
+   * Issue #135 — o id do registro, e até quando ele pode ser desfeito.
+   *
+   * Os dois vêm do servidor. `desfazerAte` é um **instante**, não um
+   * booleano: um booleano envelhece na mão do cliente — chega dizendo "sim"
+   * e continua dizendo "sim" um minuto depois. Um instante não envelhece.
+   */
+  recordId: number | null;
+  desfazerAte: string | null;
 }
 
 interface StockEntry {
@@ -261,6 +273,31 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
   const { data: treatments, isLoading } = useQuery({ queryKey: ["treatments", params.id], queryFn: () => fetchTreatments(params.id) });
   const { data: todayDoses } = useQuery({ queryKey: ["today-doses", params.id], queryFn: () => fetchTodayDoses(params.id) });
   const { data: stock } = useQuery({ queryKey: ["stock", params.id], queryFn: () => fetchStock(params.id) });
+
+  // Issue #135: um pulso só para a tela inteira. O botão de desfazer some
+  // sozinho quando o minuto acaba, sem precisar recarregar nada — e o
+  // temporizador nem chega a nascer se não houver registro recente.
+  const agora = usePulsoDeDesfazer(ultimoPrazoDeDesfazer(todayDoses ?? []));
+  const [erroAoDesfazer, setErroAoDesfazer] = useState<string | null>(null);
+
+  const handleUndo = async (recordId: number) => {
+    setErroAoDesfazer(null);
+    const res = await authFetch(
+      `/api/patients/${params.id}/dose-records/${recordId}/undo`,
+      { method: "POST" },
+    );
+    if (!res.ok) {
+      // O 409 de prazo vencido é o caso comum aqui, e a mensagem do servidor
+      // já diz o que fazer. Mostrar a dele, e não uma genérica: mascarar a
+      // mensagem real do servidor já escondeu um 403 por dias neste app.
+      const corpo = (await res.json().catch(() => ({}))) as { error?: string };
+      setErroAoDesfazer(corpo.error ?? "Não deu pra desfazer agora.");
+      void queryClient.invalidateQueries({ queryKey: ["today-doses", params.id] });
+      return;
+    }
+    void queryClient.invalidateQueries({ queryKey: ["today-doses", params.id] });
+    void queryClient.invalidateQueries({ queryKey: ["stock", params.id] });
+  };
 
   const medicationByTreatment = new Map((treatments ?? []).map((t) => [t.id, { name: t.medicationName, dose: t.dose }]));
 
@@ -670,9 +707,38 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
                       </div>
                     )
                   )}
+
+                  {/* ── Issue #135: o desfazer que faltava nesta tela ──────
+
+                      Ele existia no servidor desde sempre e só a tela
+                      inicial o chamava. Aqui não havia nenhum — e foi aqui
+                      que o fundador registrou a dose por engano.
+
+                      Some sozinho quando o minuto acaba (o pulso lá em
+                      cima), sobrevive a recarregar a página (o prazo vem do
+                      servidor, não da memória da aba) e aparece para
+                      **qualquer** cuidador, não só para quem registrou. */}
+                  {d.recordId !== null && podeDesfazer(d.desfazerAte, agora) && (
+                    <div className="px-1">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="gap-1.5 text-muted-foreground h-auto py-1.5"
+                        onClick={() => void handleUndo(d.recordId!)}
+                      >
+                        <Undo2 className="w-3.5 h-3.5" aria-hidden /> Desfazer
+                      </Button>
+                    </div>
+                  )}
                 </div>
               );
             })}
+
+            {erroAoDesfazer && (
+              <Alert variant="destructive">
+                <AlertDescription>{erroAoDesfazer}</AlertDescription>
+              </Alert>
+            )}
           </div>
         )}
 
