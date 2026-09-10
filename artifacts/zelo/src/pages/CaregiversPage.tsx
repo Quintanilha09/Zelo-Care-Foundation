@@ -1,11 +1,23 @@
 /**
  * Cuidadores e convites — ZELO.
- * "Quem cuida com você" — a visibilidade da família é o diferencial do
- * produto. Ações de gestão (trocar papel, revogar, convidar) só aparecem
- * para o cuidador principal; o servidor é a autoridade real, isso aqui é
- * só esconder o botão que o backend rejeitaria de qualquer forma.
+ *
+ * A visibilidade da família é o diferencial do produto. Ações de gestão
+ * (trocar papel, revogar, convidar) só aparecem para o cuidador principal; o
+ * servidor é a autoridade real, isso aqui é só esconder o botão que o backend
+ * rejeitaria de qualquer forma.
+ *
+ * ── O título mudou na #121 ────────────────────────────────────────────────
+ *
+ * Era "Quem cuida com você". Isso afirma que todo mundo está no mesmo
+ * círculo — verdade numa família, falso numa casa com vários pacientes, onde
+ * cada cuidador atende os seus. O fundador notou testando: *"a mensagem
+ * sugere que estamos todos na mesma família. Mas e para uma empresa?"*.
+ *
+ * "Quem cuida aqui" não afirma nada sobre quem cuida de quem — e a resposta
+ * a isso passou a estar em cada cartão.
  */
 import { useState } from "react";
+import { Link } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { authFetch } from "@/lib/auth-client";
 import { PlanPaywall } from "@/components/plan-paywall";
@@ -34,7 +46,7 @@ import { UserPlus, X, Copy, Check, MessageCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 /**
- * Esqueleto de "Quem cuida com você" — Issue #5.
+ * Esqueleto de "Quem cuida aqui" — Issue #5.
  *
  * Mesmo formato da linha real: círculo do avatar, nome e a etiqueta de papel
  * logo abaixo. Duas linhas — a família típica tem dois ou três cuidadores, e
@@ -42,7 +54,7 @@ import { useToast } from "@/hooks/use-toast";
  */
 function EsqueletoDeCuidadores() {
   return (
-    <AreaCarregando rotulo="Carregando quem cuida com você">
+    <AreaCarregando rotulo="Carregando quem cuida aqui">
       <div className="space-y-3">
         {Array.from({ length: 2 }).map((_, i) => (
           <div key={i} className="flex items-center gap-4 p-4 rounded-xl border">
@@ -75,6 +87,16 @@ interface Caregiver {
   phone: string | null;
   relationship: string | null;
   fotoUrl: string | null;
+  /**
+   * De quem esta pessoa é responsável — Issue #121.
+   *
+   * Lista vazia, nunca ausente: "não é responsável por ninguém ainda" e "o
+   * campo não veio" se parecem demais quando a diferença é `undefined`.
+   *
+   * **Não diz quem ela pode ver.** Todo cuidador da família continua vendo
+   * todo paciente dela — o vínculo é informativo (#120).
+   */
+  pacientes: Array<{ id: number; name: string }>;
 }
 
 interface Invite {
@@ -340,8 +362,8 @@ export default function CaregiversPage() {
       <main className="max-w-2xl mx-auto px-5 py-8 space-y-8">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-semibold">Quem cuida com você</h2>
-            <p className="text-muted-foreground text-[17px]">Presença da família, visível para todo mundo.</p>
+            <h2 className="text-2xl font-semibold">Quem cuida aqui</h2>
+            <p className="text-muted-foreground text-[17px]">Quem é responsável por quem — visível para todo mundo.</p>
           </div>
           {isPrimary && (
             <InviteDialog onCreated={invalidate} plan={user?.plan} caregiverCount={caregivers?.length ?? 0} />
@@ -397,6 +419,31 @@ export default function CaregiversPage() {
                       )}
                     </p>
                   )}
+
+                  {/* De quem esta pessoa responde — Issue #121.
+                      Sem vínculo, a linha diz isso em vez de sumir: numa casa
+                      com vários pacientes, "não sei de quem essa pessoa cuida"
+                      e "essa pessoa não cuida de ninguém" são respostas
+                      diferentes, e só a segunda é acionável. */}
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {c.pacientes.length === 0 ? (
+                      <span>Ainda não é responsável por ninguém</span>
+                    ) : (
+                      <>
+                        Responsável por{" "}
+                        {c.pacientes.map((p, i) => (
+                          <span key={p.id}>
+                            {i > 0 && (i === c.pacientes.length - 1 ? " e " : ", ")}
+                            <Link href={`/pacientes/${p.id}`} asChild>
+                              <a className="text-foreground underline underline-offset-2 hover:no-underline">
+                                {p.name}
+                              </a>
+                            </Link>
+                          </span>
+                        ))}
+                      </>
+                    )}
+                  </p>
                   {isPrimary && !isSelf ? (
                     <Select value={c.role} onValueChange={(v) => void handleRoleChange(c.id, v as Role)}>
                       <SelectTrigger className="h-8 w-[220px] text-sm mt-1"><SelectValue /></SelectTrigger>

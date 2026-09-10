@@ -52,6 +52,11 @@
  *   aprendida no bug do "Adiar 15min" (ZELO-30): recriar com a mesma chave
  *   sem apagar o job antigo primeiro é descartado em silêncio pela policy
  *   exclusive.
+ * - QUEUE_PACIENTE_SEM_CUIDADOR: job diário (cron) que avisa o cuidador
+ *   principal quando um paciente passa 2 dias sem ninguém apontado como
+ *   responsável (#123). Um e-mail por família, e não por paciente. Ver
+ *   lib/paciente-sem-cuidador.ts — inclusive o motivo de o relógio do
+ *   aviso ser deste job e de nenhuma rota.
  */
 import { PgBoss } from "pg-boss";
 
@@ -66,6 +71,8 @@ export const QUEUE_DELIVERY_CHECK = "delivery-check";
 export const QUEUE_MARK_LATE_DOSES = "mark-late-doses";
 export const QUEUE_OPERATIONAL_MONITOR = "operational-monitor";
 export const QUEUE_APPOINTMENT_REMINDER = "appointment-reminder";
+// #123: aviso diário de paciente sem responsável. Cron, sem payload.
+export const QUEUE_PACIENTE_SEM_CUIDADOR = "paciente-sem-cuidador";
 
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL must be set. Did you forget to provision a database?");
@@ -120,6 +127,7 @@ export async function startQueue(handlers: {
   markLateDoses: () => Promise<void>;
   runOperationalChecks: () => Promise<void>;
   purgeExpiredMedia: () => Promise<void>;
+  avisarPacientesSemCuidador: () => Promise<void>;
   onDoseTaken: (data: { patientId: number; medicationId: number }) => Promise<void>;
   onDoseReminder: (data: { scheduledDoseId: number; level?: number }) => Promise<void>;
   onDeliveryCheck: (data: { notificationId: number }) => Promise<void>;
@@ -132,6 +140,7 @@ export async function startQueue(handlers: {
   await boss.createQueue(QUEUE_MARK_LATE_DOSES, { policy: "singleton" });
   await boss.createQueue(QUEUE_OPERATIONAL_MONITOR, { policy: "singleton" });
   await boss.createQueue(QUEUE_PURGE_EXPIRED_MEDIA, { policy: "singleton" });
+  await boss.createQueue(QUEUE_PACIENTE_SEM_CUIDADOR, { policy: "singleton" });
 
   // 03:00 UTC todo dia — não é crítico ser exato por fuso do paciente,
   // a janela é de 14 dias, algumas horas de folga não importam.
@@ -147,6 +156,10 @@ export async function startQueue(handlers: {
   // folga não mudam nada, e a madrugada é quando ninguém está olhando o
   // mural. Deslocado dos outros dois só pra não competirem à toa.
   await boss.schedule(QUEUE_PURGE_EXPIRED_MEDIA, "20 3 * * *", null, { tz: "UTC" });
+  // 03:30 UTC, uma vez por dia — o último da fila de madrugada. Manda e-mail,
+  // e e-mail de madrugada chega na caixa de quem acorda: ninguém precisa
+  // resolver isso às três da manhã, e a janela é de dois dias.
+  await boss.schedule(QUEUE_PACIENTE_SEM_CUIDADOR, "30 3 * * *", null, { tz: "UTC" });
 
   await boss.work(QUEUE_EXTEND_DOSE_WINDOW, async () => {
     await handlers.extendWindows();
@@ -162,6 +175,9 @@ export async function startQueue(handlers: {
   });
   await boss.work(QUEUE_PURGE_EXPIRED_MEDIA, async () => {
     await handlers.purgeExpiredMedia();
+  });
+  await boss.work(QUEUE_PACIENTE_SEM_CUIDADOR, async () => {
+    await handlers.avisarPacientesSemCuidador();
   });
   await boss.work(QUEUE_DOSE_TAKEN, async (jobs) => {
     for (const job of jobs) {

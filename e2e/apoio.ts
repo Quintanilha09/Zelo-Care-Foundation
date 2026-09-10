@@ -286,6 +286,36 @@ export async function criarPaciente(
 }
 
 /**
+ * Sobe o plano da família desta conta — Issue #122.
+ *
+ * ── Por que isto precisou existir ────────────────────────────────────────
+ *
+ * O plano Grátis cuida de **um** paciente. Todo spec deste diretório criava
+ * exatamente um, e não por escolha de quem escreveu: era o teto. Isso deixava
+ * sem cobertura de tela tudo que só aparece a partir do segundo paciente — a
+ * lista com vários, o filtro de descoberto, a ordenação.
+ *
+ * Descoberto pelo CI, com um 403 de `PLAN_LIMIT` no lugar do 201 esperado.
+ *
+ * A rota do outro lado só existe fora de produção, exige sessão, e só alcança
+ * a família de quem chamou — ver `routes/dev-plano.ts`.
+ */
+export async function subirPlano(
+  request: APIRequestContext,
+  conta: ContaDeTeste,
+  plano: "free" | "basic" | "premium" | "professional" = "professional",
+): Promise<void> {
+  const accessToken = await tokenDaConta(request, conta);
+
+  const res = await request.post("/api/dev/plano", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    data: { plano },
+  });
+
+  expect(res.status(), `subir plano falhou: ${await res.text()}`).toBe(200);
+}
+
+/**
  * Confere que a página não rola na horizontal.
  *
  * Três dos defeitos relatados pelo fundador eram disso: conteúdo mais largo

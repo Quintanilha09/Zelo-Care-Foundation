@@ -108,7 +108,7 @@ test.describe("Toda tela que carrega mostra esqueleto", () => {
   test("Cuidadores", async ({ page }) => {
     const portao = segurar(page, "**/api/caregivers");
     await page.goto("/cuidadores");
-    await esperaEsqueleto(page, /Carregando quem cuida com você/i);
+    await esperaEsqueleto(page, /Carregando quem cuida aqui/i);
     portao.soltar();
   });
 

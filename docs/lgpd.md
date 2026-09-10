@@ -129,3 +129,39 @@ finalidade declarada, sem base legal escrita aqui, sem encarregado de dados
 definido e com o repositório público, guardar documento de identificação seria
 assumir obrigação sem contrapartida. CPF não conferido contra a Receita não
 prova identidade nenhuma; dá a sensação de rigor sem o rigor.
+
+## Aviso por e-mail de paciente sem responsável (Issue #123)
+
+Um job diário manda ao **cuidador principal** um e-mail quando algum paciente da
+família passa 2 dias sem ninguém apontado como responsável.
+
+### Que dado sai do sistema, e para onde
+
+**O nome do paciente, e nada além disso.** Nem medicamento, nem condição, nem
+aferição, nem contagem de dose — que também é dado de saúde vestido de número. O
+e-mail nomeia a pessoa, diz há quantos dias ela está sem responsável, e aponta
+para `/pacientes`. Um teste lê o corpo enviado e falha se qualquer coisa a mais
+aparecer.
+
+O destinatário é o cuidador principal **daquela família**, que já tem acesso ao
+prontuário inteiro daquele paciente dentro do app. O e-mail não amplia o círculo
+de quem sabe o quê: ele avisa quem já sabia.
+
+### Por que só o principal
+
+Vincular responsável é ação de cuidador principal. Mandar o aviso para toda a
+família espalharia uma pendência operacional para quem não pode resolvê-la — e
+cada envio a mais é um endereço a mais com o nome de um paciente dentro.
+
+### O log não repete o e-mail
+
+`patientId` não está na allowlist do `safeLog`, e nome de paciente nunca esteve.
+O que o job registra é contagem: quantos avisos saíram, de quantos descobertos.
+E-mail e log têm leitores diferentes — o primeiro vai a quem já cuida daquela
+pessoa, o segundo a quem opera o sistema.
+
+### Duas colunas novas em `patients`
+
+`uncovered_since` e `uncovered_alert_sent_at`. Nenhuma das duas é dado de saúde:
+a primeira é quando o cadastro ficou sem responsável, a segunda é quando o aviso
+saiu. Somem junto com o paciente na exclusão, como o resto da linha.

@@ -136,6 +136,15 @@ describe("Rotas dev/clock — proteção de produção", () => {
       const res = await httpRequest(port, "POST", "/api/dev/clock/advance", { ms: "não-é-número" });
       assert.equal(res.status, 400);
     });
+
+    it("POST /api/dev/plano sem sessão retorna 401 — a rota existe, mas tem dono", async () => {
+      // 401 e não 404 é o ponto: em desenvolvimento a rota ESTÁ registrada, e
+      // quem barra é o `requireAuth`. É o contraste com o caso de produção
+      // logo abaixo, onde os 404 provam que ela não chegou a existir.
+      const res = await httpRequest(port, "POST", "/api/dev/plano", { plano: "professional" });
+      assert.equal(res.status, 401,
+        `Em desenvolvimento /api/dev/plano sem token deve ser 401, recebeu ${res.status}`);
+    });
   });
 
   describe("Em produção (NODE_ENV=production) — rotas não existem", () => {
@@ -175,6 +184,16 @@ describe("Rotas dev/clock — proteção de produção", () => {
       const res = await httpRequest(port, "POST", "/api/dev/clock/reset", {});
       assert.equal(res.status, 404,
         `Em produção /api/dev/clock/reset deve ser 404, recebeu ${res.status}`);
+    });
+
+    it("POST /api/dev/plano retorna 404 em produção — e 404 é o número certo", async () => {
+      // **404, nunca 401.** 401 diria que a rota existe e só faltou credencial,
+      // e uma rota que troca o plano de uma família não pode existir em
+      // produção nem para dizer "não autorizado". A proteção é o router não
+      // registrar — ver `routes/dev-plano.ts`.
+      const res = await httpRequest(port, "POST", "/api/dev/plano", { plano: "professional" });
+      assert.equal(res.status, 404,
+        `Em produção /api/dev/plano deve ser 404 (rota não existe), recebeu ${res.status}`);
     });
   });
 });

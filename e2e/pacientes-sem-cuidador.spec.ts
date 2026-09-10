@@ -1,5 +1,7 @@
 import { test, expect, type APIRequestContext } from "@playwright/test";
-import { criarConta, criarPaciente, entrar, tokenDaConta, type ContaDeTeste } from "./apoio";
+import {
+  criarConta, criarPaciente, entrar, subirPlano, tokenDaConta, type ContaDeTeste,
+} from "./apoio";
 
 /**
  * Paciente sem cuidador em `/pacientes` — Issue #122.
@@ -31,6 +33,13 @@ interface Cenario {
 
 async function cenario(request: APIRequestContext): Promise<Cenario> {
   const conta = await criarConta(request);
+
+  // O plano Grátis cuida de UM paciente, e este roteiro precisa de dois: com
+  // um só, "o filtro deixou os descobertos" e "o filtro deixou a lista como
+  // estava" são a mesma tela. Foi o CI que cobrou — 403 de PLAN_LIMIT no
+  // lugar do 201.
+  await subirPlano(request, conta);
+
   const maria = await criarPaciente(request, conta, "Dona Maria Teste");
   const joao = await criarPaciente(request, conta, "Seu João Teste");
   const token = await tokenDaConta(request, conta);
