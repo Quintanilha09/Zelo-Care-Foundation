@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { criarConta, entrar, PNG_1X1, type ContaDeTeste } from "./apoio";
+import { criarConta, entrar, pngSolido, type ContaDeTeste } from "./apoio";
 
 /**
  * Perfil do cuidador: foto, telefone e parentesco — Issue #116.
@@ -20,7 +20,15 @@ import { criarConta, entrar, PNG_1X1, type ContaDeTeste } from "./apoio";
  * 4. Remover a foto volta para as iniciais.
  */
 
-const FOTO = { name: "rosto.png", mimeType: "image/png", buffer: PNG_1X1 };
+/**
+ * Issue #137 — 400×300, e não mais o PNG de 1×1.
+ *
+ * Duas razões. O recorte **recusa** foto com menos de 200 px no lado menor, e
+ * um pixel esticado num avatar era metade do "ou pequena" que o fundador
+ * relatou. E é **retangular** de propósito: é a foto não-quadrada que faz o
+ * recorte existir.
+ */
+const FOTO = { name: "rosto.png", mimeType: "image/png", buffer: pngSolido(400, 300) };
 
 let conta: ContaDeTeste;
 
@@ -56,6 +64,10 @@ test.describe("Seu perfil", () => {
 
     // O input é `hidden` — o botão é quem o dispara na vida real.
     await page.locator('input[type="file"]').setInputFiles(FOTO);
+
+    // Issue #137: escolher o arquivo não envia mais nada — abre o recorte. O
+    // envio só acontece na confirmação, e é isso que este passo representa.
+    await page.getByRole("button", { name: "Usar esta foto" }).click();
 
     // A foto aparece em DOIS lugares, e os dois importam: o perfil, onde a
     // pessoa acabou de escolhê-la, e o avatar do cabeçalho, que precisa

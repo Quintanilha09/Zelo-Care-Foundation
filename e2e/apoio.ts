@@ -1,5 +1,6 @@
 import type { Page, APIRequestContext } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { deflateSync } from "node:zlib";
 
 /**
  * Apoio para os testes de ponta a ponta — Issue #7.
@@ -339,6 +340,78 @@ export const PNG_1X1 = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
   "base64"
 );
+
+/**
+ * Um PNG sólido do tamanho pedido — Issue #137.
+ *
+ * ── Por que o `PNG_1X1` deixou de servir para a foto de perfil ────────────
+ *
+ * Ele continua ótimo para Momentos, onde o teste só precisa de "um arquivo de
+ * imagem válido". Mas o recorte da #137 **recusa foto pequena demais** (piso
+ * de 200 px no lado menor), e com razão: um pixel esticado num avatar de
+ * 80 px é um borrão, e deixar isso passar era metade do "ou pequena" que o
+ * fundador relatou.
+ *
+ * Então o teste do perfil precisa de uma imagem com dimensão de verdade — e
+ * **não quadrada**, porque é justamente a foto retangular que o recorte
+ * existe para resolver.
+ *
+ * ── Por que montado à mão, e não um arquivo no repositório ───────────────
+ *
+ * Um PNG de 400×300 comitado seriam ~alguns KB de binário que ninguém sabe
+ * inspecionar num diff. Aqui a imagem é gerada, o tamanho é declarado na
+ * chamada, e o teste que precisar de outro tamanho pede outro — sem mexer em
+ * arquivo nenhum.
+ */
+export function pngSolido(largura: number, altura: number): Buffer {
+  const crcTabela = (() => {
+    const t = new Int32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+      t[n] = c;
+    }
+    return t;
+  })();
+
+  const crc32 = (buf: Buffer): number => {
+    let c = -1;
+    for (const b of buf) c = crcTabela[(c ^ b) & 0xff] ^ (c >>> 8);
+    return (c ^ -1) >>> 0;
+  };
+
+  const pedaco = (tipo: string, dados: Buffer): Buffer => {
+    const tamanho = Buffer.alloc(4);
+    tamanho.writeUInt32BE(dados.length);
+    const corpo = Buffer.concat([Buffer.from(tipo, "ascii"), dados]);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(corpo));
+    return Buffer.concat([tamanho, corpo, crc]);
+  };
+
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(largura, 0);
+  ihdr.writeUInt32BE(altura, 4);
+  ihdr[8] = 8; // 8 bits por canal
+  ihdr[9] = 2; // RGB, sem alfa
+  // 10, 11, 12 ficam em zero: compressão, filtro e entrelaçamento padrão.
+
+  // Cada linha começa com o byte de filtro (0 = nenhum) e segue em RGB.
+  const linha = Buffer.alloc(1 + largura * 3);
+  for (let x = 0; x < largura; x++) {
+    linha[1 + x * 3] = 0x8a; // um cinza-esverdeado qualquer: é foto fictícia
+    linha[2 + x * 3] = 0x9a;
+    linha[3 + x * 3] = 0x8a;
+  }
+  const cru = Buffer.concat(Array.from({ length: altura }, () => linha));
+
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    pedaco("IHDR", ihdr),
+    pedaco("IDAT", deflateSync(cru)),
+    pedaco("IEND", Buffer.alloc(0)),
+  ]);
+}
 
 /**
  * Consentimento de imagem + uma foto no mural, tudo pela API.
