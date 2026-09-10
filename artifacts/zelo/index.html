@@ -31,6 +31,40 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!--
+      Tema aplicado ANTES DA PRIMEIRA PINTURA — Issue #138.
+
+      Precisa ser inline e síncrono, aqui no `head`. Qualquer coisa feita
+      depois — no React, num `useEffect`, ou até num módulo importado —
+      acontece **depois** de o navegador já ter pintado a página clara: o
+      resultado é um lampejo branco a cada abertura.
+
+      Para quem pediu o modo noturno porque a vista dói, esse lampejo é o
+      problema inteiro acontecendo de novo, toda vez. Por isso estas linhas
+      são a exceção à regra de "nada de lógica no HTML".
+
+      A lógica é a mesma de `src/lib/tema.ts` — mantida curta de propósito
+      para que a duplicação seja óbvia e barata de conferir.
+    -->
+    <script>
+      (function () {
+        try {
+          var escolha = localStorage.getItem("zelo_tema");
+          var escuro =
+            escolha === "escuro" ||
+            (escolha !== "claro" &&
+              window.matchMedia &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches);
+          if (escuro) {
+            document.documentElement.classList.add("dark");
+            var m = document.querySelector('meta[name="theme-color"]');
+            if (m) m.setAttribute("content", "#282725");
+          }
+        } catch (e) {
+          /* Armazenamento bloqueado: fica no claro, que é o padrão do CSS. */
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root" translate="no"></div>
