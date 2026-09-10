@@ -36,7 +36,7 @@ import { AppHeader } from "@/components/app-header";
 import { cn } from "@/lib/utils";
 import {
   User, IdCard, CreditCard, Users, Bell, History, ShieldCheck, Smartphone,
-  ArrowLeft, ExternalLink, ChevronRight,
+  ArrowLeft, ExternalLink, ChevronRight, SunMoon,
 } from "lucide-react";
 
 interface Secao {
@@ -80,6 +80,11 @@ const GRUPOS: Array<{ titulo: string; secoes: Secao[] }> = [
        */
       { href: "/ajustes/perfil", rotulo: "Seu perfil", icone: IdCard },
       { href: "/ajustes/conta", rotulo: "Sua conta", icone: User },
+      // Issue #138 — onde o GitHub tambem poe: Ajustes, no grupo da conta.
+      // A preferencia e por APARELHO, entao ela nao mora no perfil (que e o
+      // que a familia ve sobre voce) nem na conta (que e a mesma em todo
+      // lugar). Aparencia e deste telefone.
+      { href: "/ajustes/aparencia", rotulo: "Aparência", icone: SunMoon },
       { href: "/planos", rotulo: "Plano", icone: CreditCard },
     ],
   },

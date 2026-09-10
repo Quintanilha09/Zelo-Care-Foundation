@@ -52,7 +52,11 @@
   --color-zelo-green-fg: hsl(140 21% 30%);
   --color-zelo-green-bg: hsl(140 21% 95%);
   --color-zelo-amber: hsl(38 82% 55%);
-  --color-zelo-amber-fg: hsl(38 82% 35%);
+  /* Issue #138 — era 35%, que dava **4,1:1** sobre o `amber-bg`: abaixo do
+     piso AA de 4,5. Medido ao derivar o tema escuro, e corrigido aqui porque
+     o público deste produto é idoso e âmbar é a cor de dose pendente — a que
+     mais precisa ser lida. Com 32% são 4,76:1, e o tom não muda a olho. */
+  --color-zelo-amber-fg: hsl(38 82% 32%);
 
   /* Azul calmo, exclusivo das MEDIÇÕES na tela de rotina. Verde e âmbar já
      significam estado de dose (invariante 5 do FOUNDATION.md); reusá-los aqui
@@ -134,6 +138,61 @@
   
   --input: 40 5% 25%;
   --ring: 140 20% 45%;
+
+  /* ══════════════════════════════════════════════════════════════════════
+     AS CORES QUE SIGNIFICAM ALGUMA COISA — Issue #138
+
+     Este bloco `.dark` existia desde a fundação com os 21 tokens acima, e
+     **nunca foi ligado**: nada no app adicionava a classe. Era CSS morto.
+
+     Quando fui acendê-lo, o buraco apareceu: os oito tokens `zelo-*` — as
+     cores que carregam SIGNIFICADO CLÍNICO — não estavam aqui. Verde é dose
+     tomada, âmbar é dose pendente ou atrasada, azul é medição.
+
+     `--color-zelo-amber-bg` no claro é `hsl(38 82% 95%)`, quase branco. Sem
+     estas linhas, acender o tema escuro faria **o cartão de dose pendente
+     virar um retângulo branco no fundo escuro** — em 131 usos, por 27
+     arquivos. Não ficaria feio: destruiria a linguagem de cor da dose, que é
+     o invariante 5.
+
+     ── A regra da derivação ──────────────────────────────────────────────
+
+     **A MATIZ NÃO MUDA.** Âmbar continua 38°, verde continua 140°, azul
+     continua 205°. O que inverte é o papel da luminosidade: no claro o `-bg`
+     é pálido e o `-fg` é escuro; aqui o `-bg` é um tom baixo e o `-fg` é
+     claro. Vermelho continua **proibido** em qualquer estado de dose.
+
+     ── Contraste medido, não estimado ────────────────────────────────────
+
+     Piso: WCAG AA, 4,5:1 para texto. Medido em 10/09/2026:
+
+       amber-fg sobre amber-bg ......... 6,94:1
+       green-fg sobre green-bg ......... 6,68:1
+       measure  sobre measure-bg ....... 5,42:1
+       amber-fg sobre o fundo da página  8,92:1
+       green-fg sobre o fundo da página  8,51:1
+       amber-fg sobre o cartão ......... 8,02:1
+       green-fg sobre o cartão ......... 7,65:1
+
+     Todos acima do piso, e **acima do tema claro** — que tinha um par em
+     4,1:1 (corrigido junto, ver `--color-zelo-amber-fg` lá em cima).
+
+     ── Sobre os `-bg` quase não se distinguirem do cartão ────────────────
+
+     Eles ficam em 1,16:1 e 1,14:1 do cartão, e isso é de propósito: **no tema claro a
+     mesma relação é 1,08:1**. Nunca foi a luminosidade que separava um
+     cartão de dose pendente de um cartão comum — é a matiz mais a borda
+     (`border-zelo-amber/20`). Aqui a separação é um pouco maior que no
+     claro, não menor.
+     ══════════════════════════════════════════════════════════════════════ */
+  --color-zelo-green: hsl(140 30% 55%);
+  --color-zelo-green-fg: hsl(140 40% 70%);
+  --color-zelo-green-bg: hsl(140 18% 20%);
+  --color-zelo-amber: hsl(38 70% 58%);
+  --color-zelo-amber-fg: hsl(38 85% 68%);
+  --color-zelo-amber-bg: hsl(38 30% 20%);
+  --color-zelo-measure: hsl(205 45% 65%);
+  --color-zelo-measure-bg: hsl(205 25% 19%);
 }
 
 @layer base {
