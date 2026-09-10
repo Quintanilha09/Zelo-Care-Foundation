@@ -190,8 +190,10 @@ seria tirar da foto o que ela tem.
 | `react-easy-crop` | pinça e arrasto no celular funcionando de primeira; ~15 KB gzip | mais uma dependência |
 | Na mão, sobre o `comprimir-imagem.ts` | zero dependência; o canvas e o `createImageBitmap` já estão lá | gesto de pinça correto em toque é bastante código, e o público está no celular |
 
-**Recomendação: a biblioteca.** O bundle já tem 380 KB gzip e um aviso de tamanho; 15 KB não muda
-o quadro, e gesto de toque mal feito muda. Mas o custo é real e a escolha é do fundador.
+**Decidido pelo fundador em 10/09/2026: a biblioteca.** O bundle já tem 380 KB gzip e um aviso de
+tamanho; 15 KB não muda o quadro, e gesto de toque mal feito muda. O custo real entra medido no
+PR, e a instalação passa pelo `vet-dependencies` antes — se a auditoria reprovar, o plano B é o
+recorte à mão, e não outra biblioteca sem repetir a auditoria.
 
 ---
 
@@ -269,8 +271,15 @@ As duas primeiras tocam **registro de dose**, que é o dado vital do produto, e 
 silencioso — a dose sai da lista de pendentes e ninguém é lembrado dela. Nada disso espera por
 tela bonita.
 
-## Uma decisão que continua do fundador
+### Por que o modo noturno é o último, e não o primeiro
 
-A #137 pede uma dependência nova (`react-easy-crop`, ~15 KB gzip) ou o dobro de código à mão. A
-recomendação está escrita lá, com o argumento dos dois lados — mas quem decide sobre dependência
-neste repositório é ele.
+Não é por ser menos importante — é porque ele **atravessa todas as outras**. A #133 mexe na lista
+de Ajustes, a #134 e a #135 mexem nos cartões de dose, a #136 acrescenta tela de correção e a #137
+acrescenta o diálogo de recorte. Cada uma dessas telas precisa de cor no escuro e de contraste
+medido. Feito por último, cada tela é conferida **uma vez**; feito antes, é conferida de novo a
+cada issue que entrar depois.
+
+### Nenhuma decisão pendente
+
+A única que restava — dependência do recorte na #137 — foi decidida pelo fundador em 10/09/2026
+(ver acima). A fila pode ser executada inteira sem parar para perguntar.

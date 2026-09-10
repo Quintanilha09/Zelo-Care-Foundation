@@ -74,7 +74,7 @@ dose, que é o dado vital do produto.
 | [#132](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/132) | a foto some sozinha: o token do link vale 10 min e a mesma rota manda o navegador guardar 24 h (144× de diferença). Junto, o `AvatarImage` sem `object-cover`, que estica o rosto |
 | [#133](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/133) | "Seu perfil" antes de "Sua conta", e o avatar no topo dos Ajustes — o fundador procurou a própria foto em `/ajustes/conta`, onde ela não mora |
 | [#136](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/136) | corrigir um registro de dose depois dos 60 s, **emendando com rastro, nunca apagando** |
-| [#137](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/137) | recortar a foto (1:1) antes de enviar. **Tem uma decisão de dependência pendente do fundador** |
+| [#137](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/137) | recortar a foto (1:1) antes de enviar. Dependência decidida pelo fundador em 10/09/2026: `react-easy-crop`, com `vet-dependencies` antes de instalar |
 | [#138](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/138) | modo noturno. O `.dark` já existe no `index.css` com 21 tokens e **nunca é ligado**; os 8 tokens `zelo-*` (dose) não são redefinidos nele — ligar a classe sem tratar isso destrói a linguagem de cor da dose |
 
 Duas levas, dois refinamentos:
