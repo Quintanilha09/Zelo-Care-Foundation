@@ -19,13 +19,26 @@ const Avatar = React.forwardRef<
 ));
 Avatar.displayName = AvatarPrimitive.Root.displayName;
 
+/**
+ * Issue #132 — `object-cover` é o que impede o rosto de ser espremido.
+ *
+ * O shadcn entrega este componente com `aspect-square h-full w-full` e mais
+ * nada. Uma `<img>` presa num quadrado, **sem `object-fit`**, é esticada
+ * para preencher: uma foto 16:9 vira um rosto achatado. Foi o "muito puxada"
+ * relatado pelo fundador.
+ *
+ * `object-cover` recorta pelo centro em vez de deformar. Deixa de cortar
+ * mal quando a #137 entrar e a pessoa escolher qual pedaço vira o rosto —
+ * mas nada disso adianta enquanto a imagem for esticada, e por isso esta
+ * linha entra antes e sozinha.
+ */
 const AvatarImage = React.forwardRef<
   React.ElementRef<typeof AvatarPrimitive.Image>,
   React.ComponentPropsWithoutRef<typeof AvatarPrimitive.Image>
 >(({ className, ...props }, ref) => (
   <AvatarPrimitive.Image
     ref={ref}
-    className={cn('aspect-square h-full w-full', className)}
+    className={cn('aspect-square h-full w-full object-cover', className)}
     {...props}
   />
 ));
