@@ -155,6 +155,10 @@ describe("Registro de dose via modo idoso — atribuição na tela inicial", () 
     const beforeBody = before.body as { doses: Array<{ id: number; status: string }> };
     const pending = beforeBody.doses.find((d) => d.status === "pending");
     assert.ok(pending, "precisa haver ao menos uma dose pendente pra registrar");
+    // #134: a dose pendente aqui e quase sempre a das 23:59, e este teste e
+    // sobre ATRIBUICAO na tela, nao sobre a regra de antecipacao. Puxar para
+    // agora deixa o caso no caminho normal de registro.
+    await puxarDoseParaAgora(pending!.id);
 
     const register = await api("POST", `/patients/${patientId}/dose-records`, {
       scheduledDoseId: pending!.id,
@@ -196,6 +200,7 @@ describe("Registro de dose via modo idoso — atribuição na tela inicial", () 
     const beforeBody = before.body as { doses: Array<{ id: number; status: string }> };
     const pending = beforeBody.doses.find((d) => d.status === "pending");
     assert.ok(pending);
+    await puxarDoseParaAgora(pending!.id); // #134, mesmo motivo do caso acima
 
     await api("POST", `/patients/${patientId}/dose-records`, {
       scheduledDoseId: pending!.id,
