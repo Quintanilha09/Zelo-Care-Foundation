@@ -295,12 +295,6 @@ describe("Registrar a dose pelo aparelho do paciente", () => {
     const [record] = await db.select().from(doseRecordsTable).where(eq(doseRecordsTable.scheduledDoseId, dose.id));
     assert.equal(record, undefined, "nada pode ter sido gravado");
 
-    // E a tela do paciente recebe o instante agendado, que é o que faz o
-    // botao "Tomei" nem aparecer antes da hora.
-    const today = await patientApi("GET", "/patient-access/today", undefined, accessToken);
-    const next = (today.body as { nextDose: { scheduledAt?: string } | null }).nextDose;
-    assert.ok(next?.scheduledAt, "nextDose precisa trazer scheduledAt, nao so a etiqueta");
-
     await db.delete(treatmentsTable).where(eq(treatmentsTable.id, treatment.id));
   });
 
@@ -319,8 +313,15 @@ describe("Registrar a dose pelo aparelho do paciente", () => {
     }).returning();
 
     const today = await patientApi("GET", "/patient-access/today", undefined, accessToken);
-    const next = (today.body as { nextDose: { id: number } | null }).nextDose;
+    const next = (today.body as { nextDose: { id: number; scheduledAt?: string } | null }).nextDose;
     assert.ok(next, "a dose pendente precisa aparecer pro paciente");
+    // Issue #134: é `scheduledAt` que faz o botão "Tomei" não aparecer antes
+    // da hora — `scheduledLocalTime` é só a etiqueta e não serve para conta.
+    //
+    // A asserção mora AQUI, e não no caso da dose distante, porque uma dose a
+    // 22 h de distância pode cair no dia seguinte no fuso do paciente e
+    // simplesmente não entrar em "hoje" — foi assim que o CI a derrubou.
+    assert.ok(next!.scheduledAt, "nextDose precisa trazer scheduledAt, nao so a etiqueta");
 
     const taken = await patientApi("POST", "/patient-access/taken", { scheduledDoseId: next!.id }, accessToken);
     assert.equal(taken.status, 201);

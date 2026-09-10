@@ -295,7 +295,19 @@ router.post("/patients/:patientId/dose-records", requireAuth, requireCapability(
   // O 400 não é o fim do caminho: o mesmo pedido com `confirmarAntecipacao`
   // entra. O que a recusa compra é que **um toque acidental não resolve uma
   // dose que ainda vai demorar horas**.
-  if (!doseJaChegou(scheduled.scheduledAt, takenAt) && !body.data.confirmarAntecipacao) {
+  //
+  // ── E a comparação é com AGORA, não com `takenAt` ──────────────────────
+  //
+  // Errei isto na primeira versão e o CI cobrou: comparar com `takenAt`
+  // fazia todo **registro retroativo** cair aqui. Registrar hoje, às 10h,
+  // uma dose que foi dada ontem às 9h dá uma distância de 25 h — e a rota
+  // respondia `ANTECIPACAO_REQUERIDA` para o que é exatamente o oposto de
+  // uma antecipação.
+  //
+  // A pergunta desta regra é *"esta dose já chegou?"*, e isso é sobre o
+  // agendamento contra o **presente**. O que o cuidador diz sobre a hora em
+  // que deu o remédio é assunto do eixo retroativo, logo abaixo.
+  if (!doseJaChegou(scheduled.scheduledAt, now) && !body.data.confirmarAntecipacao) {
     res.status(400).json({
       // O horário vem no fuso do PACIENTE, não no de quem registra — a
       // armadilha da ZELO-19. `scheduledLocalTime` já é essa etiqueta.
