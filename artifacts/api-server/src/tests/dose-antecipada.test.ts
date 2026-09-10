@@ -46,6 +46,7 @@ import {
 } from "@workspace/db";
 import { generateAccessToken } from "../lib/tokens.ts";
 import { Clock } from "../lib/clock.ts";
+import { boss } from "../lib/queue.ts";
 import app from "../app.ts";
 
 const SUFIXO = "@antecipada.zelo.test";
@@ -67,6 +68,12 @@ before(async () => {
 
 after(async () => {
   await closeServer();
+  // Registrar dose com desfecho `taken` publica em QUEUE_DOSE_TAKEN, e isso
+  // LIGA o pg-boss. Sem parar aqui, o processo deste arquivo nao termina — o
+  // `node --test` fica esperando, e o job do CI morre no timeout de 20 min
+  // sem nenhum teste ter falhado. Outros 27 arquivos da suite ja faziam isto;
+  // este nasceu sem, e foi o que cancelou a primeira execucao da #134.
+  await boss.stop({ graceful: false });
   await db.delete(usersTable).where(like(usersTable.email, `%${SUFIXO}`));
   await db.delete(familiesTable).where(like(familiesTable.name, "Família Fictícia Antecipada %"));
 });
