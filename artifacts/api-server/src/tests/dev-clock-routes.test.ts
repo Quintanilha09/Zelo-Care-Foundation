@@ -11,6 +11,8 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import express from "express";
 import type { Express } from "express";
 import { Clock } from "../lib/clock.ts";
@@ -71,14 +73,38 @@ async function httpRequest(
 
 // ── cria app isolado com NODE_ENV controlado ──────────────────────────────
 
+/**
+ * Os módulos que `routes/index.ts` monta dentro do
+ * `if (allowsDevelopmentShortcuts())`.
+ *
+ * ── Isto é um ESPELHO, e espelho descola ─────────────────────────────────
+ *
+ * O `createApp` abaixo não usa o `routes/index.ts` de verdade: montar o
+ * router inteiro exigiria banco, e o gate é lido no momento do import, o que
+ * obrigaria a furar o cache de módulo para trocar de ambiente. Então este
+ * arquivo reimplementa a regra.
+ *
+ * O preço apareceu na Issue #122: entrou uma segunda rota de desenvolvimento
+ * (`dev-plano`), este espelho continuou só com o relógio, e a asserção de
+ * produção passou a **passar sem provar nada** — a rota nunca tinha sido
+ * montada, nem no ambiente em que deveria existir.
+ *
+ * O caso `o espelho não pode ficar para trás` fecha o buraco: ele lê o
+ * `routes/index.ts` e falha se aparecer uma rota de desenvolvimento que não
+ * esteja nesta lista.
+ */
+const ROTAS_DE_DESENVOLVIMENTO = ["dev-clock", "dev-plano"] as const;
+
 async function createApp(nodeEnv: string): Promise<Express> {
   const app = express();
   app.use(express.json());
   const router = express.Router();
 
   if (nodeEnv !== "production") {
-    const { default: devClockRouter } = await import("../routes/dev-clock.ts");
-    router.use(devClockRouter);
+    for (const nome of ROTAS_DE_DESENVOLVIMENTO) {
+      const modulo = (await import(`../routes/${nome}.ts`)) as { default: express.Router };
+      router.use(modulo.default);
+    }
   }
 
   app.use("/api", router);
@@ -90,6 +116,29 @@ async function createApp(nodeEnv: string): Promise<Express> {
 describe("Rotas dev/clock — proteção de produção", () => {
   before(() => Clock.reset());
   after(() => Clock.reset());
+
+  it("o espelho não pode ficar para trás do routes/index.ts", () => {
+    // Lê a fonte de verdade e compara com a lista deste arquivo. Sem isto,
+    // uma rota de desenvolvimento nova entra no app e sai deste teste ao
+    // mesmo tempo — e os casos de produção abaixo passam sem provar nada,
+    // porque estariam pedindo 404 de uma rota que ninguém montou.
+    const fonte = readFileSync(
+      fileURLToPath(new URL("../routes/index.ts", import.meta.url)),
+      "utf8",
+    );
+
+    const inicio = fonte.indexOf("if (allowsDevelopmentShortcuts()) {");
+    assert.ok(inicio >= 0, "o portão de desenvolvimento sumiu do routes/index.ts");
+
+    const bloco = fonte.slice(inicio, fonte.indexOf("\n}", inicio));
+    const montadas = [...bloco.matchAll(/import\("\.\/(dev-[a-z0-9-]+)\.js"\)/g)].map((m) => m[1]!);
+
+    assert.deepEqual(
+      montadas.slice().sort(),
+      [...ROTAS_DE_DESENVOLVIMENTO].sort(),
+      "rota de desenvolvimento montada no app mas ausente deste teste (ou o contrário)",
+    );
+  });
 
   describe("Em desenvolvimento (NODE_ENV=development)", () => {
     let port: number;
@@ -136,6 +185,15 @@ describe("Rotas dev/clock — proteção de produção", () => {
       const res = await httpRequest(port, "POST", "/api/dev/clock/advance", { ms: "não-é-número" });
       assert.equal(res.status, 400);
     });
+
+    it("POST /api/dev/plano sem sessão retorna 401 — a rota existe, mas tem dono", async () => {
+      // 401 e não 404 é o ponto: em desenvolvimento a rota ESTÁ registrada, e
+      // quem barra é o `requireAuth`. É o contraste com o caso de produção
+      // logo abaixo, onde os 404 provam que ela não chegou a existir.
+      const res = await httpRequest(port, "POST", "/api/dev/plano", { plano: "professional" });
+      assert.equal(res.status, 401,
+        `Em desenvolvimento /api/dev/plano sem token deve ser 401, recebeu ${res.status}`);
+    });
   });
 
   describe("Em produção (NODE_ENV=production) — rotas não existem", () => {
@@ -175,6 +233,16 @@ describe("Rotas dev/clock — proteção de produção", () => {
       const res = await httpRequest(port, "POST", "/api/dev/clock/reset", {});
       assert.equal(res.status, 404,
         `Em produção /api/dev/clock/reset deve ser 404, recebeu ${res.status}`);
+    });
+
+    it("POST /api/dev/plano retorna 404 em produção — e 404 é o número certo", async () => {
+      // **404, nunca 401.** 401 diria que a rota existe e só faltou credencial,
+      // e uma rota que troca o plano de uma família não pode existir em
+      // produção nem para dizer "não autorizado". A proteção é o router não
+      // registrar — ver `routes/dev-plano.ts`.
+      const res = await httpRequest(port, "POST", "/api/dev/plano", { plano: "professional" });
+      assert.equal(res.status, 404,
+        `Em produção /api/dev/plano deve ser 404 (rota não existe), recebeu ${res.status}`);
     });
   });
 });

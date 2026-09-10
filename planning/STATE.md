@@ -67,12 +67,13 @@ Duas levas, dois refinamentos:
   — quem cuida de quem, paciente descoberto, e o que se guarda sobre o cuidador. Traz uma
   **discordância registrada** (a #124) e a decisão de separar *vínculo* de *autorização*.
 
-**Ordem estrita: #121 → #122 → #123.** A #124 está bloqueada e não entra na fila.
+**Ordem estrita: #121 → #122 → #123.** A #124 está bloqueada e não entra na fila. Em 09/09/2026
+a #121 e a #122 estão em revisão, e **resta a #123**.
 
 | Issue | O quê |
 |---|---|
-| [#121](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/121) | `/cuidadores` diz quem cuida de quem, e o título deixa de afirmar família única. **Próxima da fila.** Absorveu do escopo da #120 o `GET /caregivers` devolver os pacientes de cada um |
-| [#122](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/122) | `/pacientes`: quem é responsável, e filtro de paciente sem cuidador |
+| [#121](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/121) | `/cuidadores` diz quem cuida de quem, e o título deixa de afirmar família única. **Em revisão — PR #129.** Absorveu do escopo da #120 o `GET /caregivers` devolver os pacientes de cada um |
+| [#122](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/122) | `/pacientes`: quem é responsável, e filtro de paciente sem cuidador. **Em revisão.** `GET /patients` devolve `responsaveis` em cada paciente; destaque âmbar e filtro que some quando ninguém está descoberto |
 | [#123](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/123) | alerta por e-mail quando um paciente fica 2 dias sem cuidador. Job cron pelo pg-boss, no mesmo molde dos cinco que já rodam |
 | [#124](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/124) | ⛔ **BLOQUEADA** — identificação do cuidador (CPF, endereço, nascimento). Quatro pré-condições, nenhuma de código: finalidade declarada, base legal no `docs/lgpd.md`, DPO definido, repositório privado |
 
@@ -83,7 +84,7 @@ vínculo continua vendo e registrando dose de todo paciente da família. Há tes
 passar a filtrar acesso pelo vínculo. **A parte cara da 11.6 segue adiada**, agora com a metade
 barata feita.
 
-**Duas armadilhas novas, registradas onde doeram:**
+**Três armadilhas novas, registradas onde doeram:**
 
 1. **`<img src>` não manda header de sessão.** A #116 quase subiu servindo a foto de perfil por rota
    autenticada — não renderizaria. O `media-links.ts` já explicava isso desde a QUI-5. A foto usa o
@@ -93,6 +94,11 @@ barata feita.
    seu dentro; o navegador achata em duas irmãs, uma com `href` e vazia, outra com o texto e sem
    destino. Eram **13 ocorrências em 9 arquivos** (#119). `asChild` é obrigatório sempre que o
    `<Link>` embrulhar um `<a>` próprio.
+3. **Renomear texto de tela sem procurar quem o lê.** A #121 trocou o rótulo do esqueleto de
+   `/cuidadores` — e tinha de trocar, porque `getByText` casa por trecho e o rótulo antigo faria a
+   asserção de que "Quem cuida com você" sumiu passar por engano. O que faltou foi o `grep`: o
+   `movimento.spec.ts` esperava o rótulo antigo, e o Playwright caiu nos dois projetos.
+   **Texto visível é interface de teste** — trocar um exige varrer `e2e/` atrás de quem o cita.
 
 **Fechadas em 09/09/2026:** #99 e #115 (senha e e-mail por revelação, com o caminho de quem não
 lembra a atual — PR #125), #119 (um link por item de navegação, 13 correções de `asChild` — PR

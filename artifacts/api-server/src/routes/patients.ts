@@ -7,7 +7,13 @@ import { getAuth } from "../lib/auth-types.ts";
 import { Router } from "express";
 import { eq, and } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { patientsTable, consentRecordsTable, treatmentsTable } from "@workspace/db";
+import {
+  patientsTable,
+  consentRecordsTable,
+  treatmentsTable,
+  caregiverPatientsTable,
+  caregiversTable,
+} from "@workspace/db";
 import { apagarMidiasDoPaciente } from "../lib/media-cleanup.ts";
 import { z } from "zod";
 import { requireAuth, requirePrimaryCaregiver } from "../middleware/require-auth";
@@ -50,19 +56,70 @@ const UpdatePatientBody = z.object({
 // ── Listar pacientes ──────────────────────────────────────────────────────
 // Por padrão só mostra ativos; ?archived=true lista os arquivados.
 
+/**
+ * Quem é responsável por cada paciente da família — Issue #122.
+ *
+ * Espelho exato do `pacientesPorCuidador` da #121, virado do outro lado. Duas
+ * consultas e um Map, e não um join com a lista de pacientes: um paciente com
+ * três responsáveis multiplicaria a linha dele por três, e a lista teria de
+ * ser desduplicada depois. Uma consulta a mais é mais barato que isso.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * CONTINUA SENDO VÍNCULO, NÃO AUTORIZAÇÃO.
+ *
+ * Paciente sem responsável nesta lista **não** está bloqueado para ninguém.
+ * Todo cuidador da família continua vendo e registrando dose dele. O que a
+ * lista vazia diz é "ninguém foi apontado ainda", não "ninguém tem acesso".
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * O escopo é a família de quem perguntou: o `where` filtra por ela, e o
+ * vínculo só existe entre pares da mesma família de qualquer forma.
+ */
+async function responsaveisPorPaciente(
+  familyId: number,
+): Promise<Map<number, Array<{ id: number; name: string }>>> {
+  const linhas = await db
+    .select({
+      patientId: caregiverPatientsTable.patientId,
+      id: caregiversTable.id,
+      name: caregiversTable.name,
+    })
+    .from(caregiverPatientsTable)
+    .innerJoin(caregiversTable, eq(caregiversTable.id, caregiverPatientsTable.caregiverId))
+    .where(eq(caregiversTable.familyId, familyId))
+    .orderBy(caregiversTable.name);
+
+  const mapa = new Map<number, Array<{ id: number; name: string }>>();
+  for (const l of linhas) {
+    const lista = mapa.get(l.patientId) ?? [];
+    lista.push({ id: l.id, name: l.name });
+    mapa.set(l.patientId, lista);
+  }
+  return mapa;
+}
+
 router.get("/patients", requireAuth, async (req, res): Promise<void> => {
   const showArchived = req.query.archived === "true";
-  const patients = await db
-    .select()
-    .from(patientsTable)
-    .where(
-      and(
-        eq(patientsTable.familyId, getAuth(req).familyId),
-        eq(patientsTable.archived, showArchived)
-      )
-    )
-    .orderBy(patientsTable.name);
-  res.json(patients);
+  const familyId = getAuth(req).familyId;
+
+  const [patients, porPaciente] = await Promise.all([
+    db
+      .select()
+      .from(patientsTable)
+      .where(and(eq(patientsTable.familyId, familyId), eq(patientsTable.archived, showArchived)))
+      .orderBy(patientsTable.name),
+    responsaveisPorPaciente(familyId),
+  ]);
+
+  res.json(
+    patients.map((p) => ({
+      ...p,
+      // Lista vazia, nunca `undefined` — a tela precisa distinguir "este
+      // paciente está descoberto" de "o campo não veio nesta resposta", e as
+      // duas coisas se parecem demais quando a diferença é `undefined`.
+      responsaveis: porPaciente.get(p.id) ?? [],
+    })),
+  );
 });
 
 // ── Criar paciente ─────────────────────────────────────────────────────────

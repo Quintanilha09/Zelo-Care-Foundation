@@ -103,6 +103,11 @@ router.use(momentosRouter);
 if (allowsDevelopmentShortcuts()) {
   const { default: devClockRouter } = await import("./dev-clock.js");
   router.use(devClockRouter);
+  // #122: o plano Grátis cuida de 1 paciente, e isso deixava toda tela com
+  // vários pacientes sem como ser testada. Mesma porta, mesmo motivo — e esta
+  // ainda exige sessão, porque o alvo é uma família e não o processo.
+  const { default: devPlanoRouter } = await import("./dev-plano.js");
+  router.use(devPlanoRouter);
 }
 
 export default router;
