@@ -56,12 +56,26 @@ Das 10 fases do backlog original só sobraram três buracos, todos deixados de p
 
 ## Onde o desenvolvimento parou
 
-**Uma Issue aberta, e ela está bloqueada — medido em 09/09/2026 com `gh`.** Este bloco envelhece
+**Oito Issues abertas, uma delas bloqueada — medido em 10/09/2026 com `gh`.** Este bloco envelhece
 rápido: se a sessão for depois disso, meça de novo.
 
-**Não há fila.** A leva de 08/09 fechou inteira no dia 09/09. O que sobra é a #124, e o que ela
-espera não é código — são as quatro pré-condições da tabela abaixo. **Antes de abrir trabalho novo,
-pergunte ao fundador**: o próximo passo é dele, não do backlog.
+**Há fila, e ela é nova.** A leva de 08/09 fechou inteira no dia 09/09. Em 10/09 o fundador
+relatou dois problemas e pediu duas melhorias, refinados em
+[`refinamentos/foto-dose-e-modo-noturno.md`](refinamentos/foto-dose-e-modo-noturno.md) e abertos
+como sete Issues.
+
+**Ordem: #134 → #135 → #132 → #133 → #136 → #137 → #138.** As duas primeiras tocam registro de
+dose, que é o dado vital do produto.
+
+| Issue | O quê |
+|---|---|
+| [#134](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/134) | 🔴 dose pode ser marcada como tomada com **horas de antecedência**. O servidor nunca compara `takenAt` com `scheduledAt`; a ficha do paciente oferece o botão para toda dose pendente, enquanto a tela inicial já não oferece. Defeito silencioso: a dose sai da lista e ninguém é lembrado dela |
+| [#135](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/135) | o desfazer **existe e não está ao alcance** — um único chamador (`HomePage`), estado de React que morre ao recarregar, e só para quem venceu a corrida |
+| [#132](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/132) | a foto some sozinha: o token do link vale 10 min e a mesma rota manda o navegador guardar 24 h (144× de diferença). Junto, o `AvatarImage` sem `object-cover`, que estica o rosto |
+| [#133](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/133) | "Seu perfil" antes de "Sua conta", e o avatar no topo dos Ajustes — o fundador procurou a própria foto em `/ajustes/conta`, onde ela não mora |
+| [#136](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/136) | corrigir um registro de dose depois dos 60 s, **emendando com rastro, nunca apagando** |
+| [#137](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/137) | recortar a foto (1:1) antes de enviar. **Tem uma decisão de dependência pendente do fundador** |
+| [#138](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/138) | modo noturno. O `.dark` já existe no `index.css` com 21 tokens e **nunca é ligado**; os 8 tokens `zelo-*` (dose) não são redefinidos nele — ligar a classe sem tratar isso destrói a linguagem de cor da dose |
 
 Duas levas, dois refinamentos:
 
