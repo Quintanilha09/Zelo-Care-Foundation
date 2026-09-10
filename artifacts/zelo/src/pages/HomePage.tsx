@@ -18,6 +18,9 @@ import { AppHeader } from "@/components/app-header";
 import { AreaCarregando, Esqueleto } from "@/components/esqueleto";
 import { nomeCurto } from "@workspace/nomes";
 import { CampoNumero } from "@/components/campo-numero";
+import {
+  usePulsoDeDesfazer, ultimoPrazoDeDesfazer, podeDesfazer,
+} from "@/hooks/use-pode-desfazer";
 import { DoseCard } from "@/components/dose-card";
 import { Button } from "@/components/ui/button";
 import {
@@ -38,6 +41,10 @@ interface HomeDose {
   medicationName: string;
   registeredAt: string | null;
   registeredByCaregiverName: string | null;
+  // Issue #135: o id do registro e o instante ate quando ele pode ser
+  // desfeito. Os dois vem do servidor; a tela nao conhece o prazo.
+  recordId: number | null;
+  desfazerAte: string | null;
 }
 
 interface HomeData {
@@ -162,11 +169,25 @@ export default function HomePage() {
 
   const currentPatient = activePatients.find((p) => p.id === selectedPatientId);
 
-  // Desfazer fica disponível por 60s depois de UM registro que a própria
-  // requisição venceu — undoableRecordId aponta pra qual dose_record, não
-  // pra dose agendada, já que desfazer é sobre o registro em si.
-  const [undoableRecordId, setUndoableRecordId] = useState<number | null>(null);
+  // Issue #135: um pulso so para a tela. Ele nem nasce se nao houver dose
+  // registrada com prazo aberto, e morre no segundo em que o ultimo vence.
+  const pulso = usePulsoDeDesfazer(ultimoPrazoDeDesfazer(home?.doses ?? []));
+
+  /**
+   * Issue #135 — o prazo de desfazer passou a vir do SERVIDOR.
+   *
+   * Antes era um `undoableRecordId` no estado do React, apagado por um
+   * `setTimeout` de 60 s, e só para quem tivesse **vencido a corrida** do
+   * registro. Isso perdia o desfazer ao recarregar a página, escondia-o de
+   * quem não registrou, e não existia na ficha do paciente.
+   *
+   * Agora cada dose já registrada traz `desfazerAte`, e o botão mora na
+   * linha da própria dose — antes era um botão só no cabeçalho de "Já foi",
+   * e com duas doses registradas não dava para saber qual delas ele
+   * desfaria.
+   */
   const [raceMessage, setRaceMessage] = useState<string | null>(null);
+  const [erroAoDesfazer, setErroAoDesfazer] = useState<string | null>(null);
 
   // ZELO-24: registro retroativo — qual dose está com o horário aberto pra
   // edição, e (só aparece se o servidor pedir) a justificativa de quando
@@ -256,8 +277,10 @@ export default function HomePage() {
 
     const winBody = body as { id: number; wonRace: boolean; message?: string };
     if (winBody.wonRace) {
-      setUndoableRecordId(winBody.id);
-      setTimeout(() => setUndoableRecordId((cur) => (cur === winBody.id ? null : cur)), 60_000);
+      // #135: nada a guardar. A dose recém-registrada volta do
+      // `today-doses` com `desfazerAte`, e é ele que decide o botão — daí
+      // o desfazer sobreviver a recarregar a página e valer para qualquer
+      // cuidador, não só para quem venceu a corrida.
     } else {
       // Outro cuidador venceu a corrida — ajusta com mensagem simpática, não erro.
       setRaceMessage(winBody.message ?? "Essa dose já foi registrada por outra pessoa.");
@@ -272,13 +295,18 @@ export default function HomePage() {
     setRetroJustification("");
   };
 
-  const handleUndo = async () => {
-    if (!selectedPatientId || !undoableRecordId) return;
-    const res = await authFetch(`/api/patients/${selectedPatientId}/dose-records/${undoableRecordId}/undo`, { method: "POST" });
-    if (res.ok) {
-      setUndoableRecordId(null);
-      void queryClient.invalidateQueries({ queryKey: ["home", selectedPatientId] });
+  const handleUndo = async (recordId: number) => {
+    if (!selectedPatientId) return;
+    setErroAoDesfazer(null);
+    const res = await authFetch(`/api/patients/${selectedPatientId}/dose-records/${recordId}/undo`, { method: "POST" });
+    if (!res.ok) {
+      // Antes o erro era engolido (`if (res.ok)` e nada no else): o toque
+      // não fazia nada e a pessoa não sabia por quê. A mensagem do servidor
+      // já diz o que fazer quando o prazo passou.
+      const corpo = (await res.json().catch(() => ({}))) as { error?: string };
+      setErroAoDesfazer(corpo.error ?? "Não deu pra desfazer agora.");
     }
+    void queryClient.invalidateQueries({ queryKey: ["home", selectedPatientId] });
   };
 
   const now = Date.now();
@@ -488,19 +516,24 @@ export default function HomePage() {
 
             {jaFoi.length > 0 && (
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-medium text-muted-foreground">Já foi</h3>
-                  {!isObserver && undoableRecordId && (
-                    <Button variant="ghost" size="sm" className="gap-1 h-auto py-1" onClick={() => void handleUndo()}>
-                      <Undo2 className="w-3.5 h-3.5" /> Desfazer
-                    </Button>
-                  )}
-                </div>
+                <h3 className="text-sm font-medium text-muted-foreground">Já foi</h3>
+                {erroAoDesfazer && (
+                  <p className="text-sm text-zelo-amber-fg">{erroAoDesfazer}</p>
+                )}
                 <AnimatePresence initial={false}>
                   {jaFoi.map((d) => (
-                    <motion.div key={d.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center justify-between px-4 py-3 rounded-lg border bg-zelo-green-bg/40 text-[17px] mb-2">
-                      <span>✓ {d.medicationName} {d.scheduledLocalTime}</span>
-                      <span className="text-muted-foreground">{d.registeredByCaregiverName ?? "—"}</span>
+                    <motion.div key={d.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center justify-between gap-2 px-4 py-3 rounded-lg border bg-zelo-green-bg/40 text-[17px] mb-2">
+                      <span className="min-w-0">✓ {d.medicationName} {d.scheduledLocalTime}</span>
+                      {/* #135: o desfazer mora na LINHA da dose. Antes era um
+                          botão só, no cabeçalho de "Já foi" — com duas doses
+                          registradas, não dava para saber qual ele desfaria. */}
+                      {!isObserver && d.recordId !== null && podeDesfazer(d.desfazerAte, pulso) ? (
+                        <Button variant="ghost" size="sm" className="gap-1 h-auto py-1 shrink-0" onClick={() => void handleUndo(d.recordId!)}>
+                          <Undo2 className="w-3.5 h-3.5" /> Desfazer
+                        </Button>
+                      ) : (
+                        <span className="text-muted-foreground shrink-0">{d.registeredByCaregiverName ?? "—"}</span>
+                      )}
                     </motion.div>
                   ))}
                 </AnimatePresence>

@@ -15,6 +15,9 @@ import { Clock } from "../lib/clock";
 import { localDayBoundsUtc, toLocalDateTime } from "@workspace/scheduling";
 import { computeDaysRemaining, loadActiveTreatmentSchedule } from "../lib/stock.ts";
 import { getPlanLimits } from "../lib/plan-limits.ts";
+// Issue #135: um dono só para o prazo de desfazer. Quem recusa o 409 é
+// `dose-records.ts`; aqui só se calcula o instante que a tela vai comparar.
+import { UNDO_WINDOW_MS } from "./dose-records.ts";
 
 const router = Router();
 
@@ -226,6 +229,11 @@ router.get("/patients/:patientId/today-doses", requireAuth, async (req, res): Pr
       registeredByCaregiverName: caregiversTable.name,
       registeredViaElderMode: doseRecordsTable.registeredViaElderMode,
       recordId: doseRecordsTable.id,
+      // Issue #135: quando o registro foi CRIADO, que é o que decide o prazo
+      // de desfazer. `takenAt` (acima) é quando a dose foi dada segundo o
+      // cuidador, e num registro retroativo os dois são bem diferentes — usar
+      // o errado daria um minuto para desfazer contado a partir de ontem.
+      recordCreatedAt: doseRecordsTable.createdAt,
     })
     .from(scheduledDosesTable)
     .innerJoin(treatmentsTable, eq(scheduledDosesTable.treatmentId, treatmentsTable.id))
@@ -246,6 +254,29 @@ router.get("/patients/:patientId/today-doses", requireAuth, async (req, res): Pr
   const dosesWithDisplayName = doses.map((d) => ({
     ...d,
     registeredByCaregiverName: d.registeredViaElderMode ? patient.name : d.registeredByCaregiverName,
+    /**
+     * Issue #135 — até quando esta dose ainda pode ser desfeita.
+     *
+     * ── Por que um INSTANTE, e não um booleano ───────────────────────────
+     *
+     * Um `podeDesfazer: true` envelhece na mão do cliente: a resposta chega,
+     * a pessoa olha a tela por trinta segundos, e o booleano continua
+     * dizendo "sim" muito depois de ter virado "não". Um instante não
+     * envelhece — a tela compara com o relógio dela e acerta sozinha, sem
+     * pedir nada de novo ao servidor.
+     *
+     * ── E por que a tela não recebe o NÚMERO da janela ───────────────────
+     *
+     * Porque aí seriam dois donos do mesmo prazo, e um dia discordariam.
+     * O servidor manda o resultado pronto; quem decide quanto vale um
+     * minuto continua sendo `dose-records.ts`, que é quem recusa o 409.
+     *
+     * `null` quando não há registro — a dose está pendente e não há o que
+     * desfazer.
+     */
+    desfazerAte: d.recordCreatedAt
+      ? new Date(d.recordCreatedAt.getTime() + UNDO_WINDOW_MS).toISOString()
+      : null,
   }));
 
   // ZELO-34: "baixo" é dias restantes (a partir da posologia prescrita),

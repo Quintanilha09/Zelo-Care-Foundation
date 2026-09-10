@@ -48,7 +48,21 @@ import { publishPatientEvent } from "../lib/realtime.ts";
 
 const router = Router();
 
-const UNDO_WINDOW_MS = 60_000;
+/**
+ * Quanto tempo depois de registrar ainda dá para **apagar** o registro.
+ *
+ * ── Desfazer e corrigir não são a mesma coisa ────────────────────────────
+ *
+ * Este minuto é para o toque errado que ainda é o "agora" da pessoa. Passado
+ * ele, um registro de dose é registro clínico: apagar destrói informação —
+ * some quem registrou, some quando, some que houve um engano. O caminho
+ * depois do prazo é **emendar com rastro**, e é a Issue #136.
+ *
+ * Exportado a partir da #135 porque o `today-doses` precisa dizer à tela até
+ * quando o botão vale. A tela **não** conhece este número: ela recebe um
+ * instante pronto (`desfazerAte`) e só compara com o relógio dela.
+ */
+export const UNDO_WINDOW_MS = 60_000;
 
 // Margem para relógios fora de sincronia entre o aparelho e o servidor.
 // 5 minutos cobre com folga o drift típico de um celular/PC sem NTP e a
@@ -445,8 +459,21 @@ router.post("/patients/:patientId/dose-records/:scheduledDoseId/snooze", require
   res.json({ scheduledDoseId, snoozedUntil: snoozedUntil.toISOString() });
 });
 
-// ── Desfazer (até 60s depois de registrar) ─────────────────────────────────
-
+/**
+ * ── Desfazer (até 60 s depois de registrar) ───────────────────────────────
+ *
+ * QUEM PODE: qualquer cuidador da família com `register_dose` — **não só
+ * quem registrou**. Isto sempre foi assim no servidor, e é deliberado: quem
+ * está junto no quarto vê o engano tanto quanto quem tocou no botão, e
+ * obrigar a chamar a outra pessoa para desfazer um toque acidental seria
+ * transformar um segundo de descuido num problema de logística.
+ *
+ * Até a #135 a tela não deixava isso acontecer: o botão dependia de um
+ * `undoableRecordId` guardado na memória da aba de quem tinha **vencido a
+ * corrida**, com um `setTimeout` de 60 s. Recarregar a página perdia o
+ * desfazer mesmo dentro do prazo, e a ficha do paciente não oferecia nenhum.
+ * O remédio existia e não estava ao alcance.
+ */
 router.post("/patients/:patientId/dose-records/:recordId/undo", requireAuth, requireCapability("register_dose"), async (req, res): Promise<void> => {
   const patientId = Number(req.params.patientId);
   const recordId = Number(req.params.recordId);
@@ -468,7 +495,13 @@ router.post("/patients/:patientId/dose-records/:recordId/undo", requireAuth, req
 
   const ageMs = Clock.now().getTime() - record.createdAt.getTime();
   if (ageMs > UNDO_WINDOW_MS) {
-    res.status(409).json({ error: "Prazo para desfazer expirou (60 segundos)" });
+    // Mensagem que a tela mostra como está. A anterior ("Prazo para desfazer
+    // expirou (60 segundos)") descrevia a regra e não dizia o que fazer —
+    // quem lê quer saber qual é a saída, não qual foi o prazo.
+    res.status(409).json({
+      error: "Passou o tempo de desfazer. Este registro agora só pode ser corrigido.",
+      code: "PRAZO_DE_DESFAZER_EXPIROU",
+    });
     return;
   }
 
