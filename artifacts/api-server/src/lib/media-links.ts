@@ -51,8 +51,56 @@
 import crypto from "node:crypto";
 import { Clock } from "./clock.ts";
 
-/** Segundos de vida de um link. Curto de propósito. */
+/** Segundos de vida de um link de MÍDIA. Curto de propósito. */
 export const VALIDADE_DO_LINK_SEGUNDOS = 10 * 60;
+
+/**
+ * Segundos de vida do link da FOTO DE PERFIL — Issue #132.
+ *
+ * ── Por que não são os mesmos 10 minutos ─────────────────────────────────
+ *
+ * Os 10 minutos acima foram desenhados para o mural: muitas fotos, de
+ * paciente, sensíveis, abertas uma vez e nunca mais. A foto de perfil é o
+ * oposto — **uma só, da própria pessoa, em toda tela**, e remontada o tempo
+ * todo pela navegação do SPA.
+ *
+ * ── O defeito que isto conserta ──────────────────────────────────────────
+ *
+ * A rota que serve a foto manda `Cache-Control: private, max-age=86400`, ou
+ * seja: *"navegador, guarde por um dia"*. E assinava um token que morria em
+ * dez minutos. Os dois números da mesma rota discordavam por **144×**.
+ *
+ * Enquanto o cache do navegador tem a URL, ninguém percebe. Quando não tem —
+ * janela anônima, cache limpo, DevTools com *Disable cache*, outro aparelho,
+ * ou a foto sendo a primeira coisa pedida depois de dez minutos de app
+ * aberto — a imagem recebe **410** e o Radix cai no `AvatarFallback`: a foto
+ * **volta a ser as iniciais, sem erro nenhum na tela**.
+ *
+ * Foi o que o fundador viu, e o que o fez concluir que a foto não tinha sido
+ * salva.
+ *
+ * ── A regra, agora escrita ───────────────────────────────────────────────
+ *
+ * **O token tem que viver pelo menos tanto quanto o cache que a própria rota
+ * manda o navegador guardar.** Um link que morre antes do cache que ele
+ * mesmo autorizou é uma contradição, não uma escolha de segurança. Há um
+ * teste que falha se os dois voltarem a discordar.
+ *
+ * O que a validade maior custa: se esta URL vazar (histórico, log), ela abre
+ * o rosto de um cuidador por 24 h em vez de 10 min. É rosto de adulto que
+ * escolheu publicá-lo para a própria família — não é a mesma classe de dado
+ * que uma foto de paciente no mural, e por isso a conta fecha diferente.
+ *
+ * ── O que NÃO precisou entrar junto ──────────────────────────────────────
+ *
+ * Um `?v=` para invalidar o cache quando a foto troca. Ele está prometido
+ * num comentário da rota desde a #116 e nunca existiu — e não existe porque
+ * **não é preciso**: o token embute o instante de expiração, então muda a
+ * cada leitura, e a URL nova já é o que invalida a antiga. Quem trocar isto
+ * por um token estável (para o cache passar a valer de verdade) aí sim
+ * precisa do `v`; hoje ele seria peça sem função.
+ */
+export const VALIDADE_DA_FOTO_SEGUNDOS = 24 * 60 * 60;
 
 const ROTULO_DE_DOMINIO = "zelo:media-link:v1";
 
@@ -141,7 +189,10 @@ function assinarFoto(corpo: string): string {
 
 /** Gera o link da foto de um cuidador. Só chame depois de autorizar o acesso. */
 export function gerarTokenDeFoto(caregiverId: number): string {
-  const expSec = Math.floor(Clock.now().getTime() / 1000) + VALIDADE_DO_LINK_SEGUNDOS;
+  // #132: `VALIDADE_DA_FOTO_SEGUNDOS`, e não a do mural. Ver o porquê inteiro
+  // na declaração da constante — em resumo, o token precisa durar pelo menos
+  // o que o `Cache-Control` da própria rota manda o navegador guardar.
+  const expSec = Math.floor(Clock.now().getTime() / 1000) + VALIDADE_DA_FOTO_SEGUNDOS;
   const corpo = `${caregiverId}.${expSec}`;
   return `${corpo}.${assinarFoto(corpo)}`;
 }

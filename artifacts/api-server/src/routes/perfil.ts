@@ -25,7 +25,7 @@
  *
  * Quem autoriza é a rota que **emite** o link: `GET /caregivers` e
  * `/account/me` só devolvem a URL de quem é da família de quem perguntou. O
- * token carrega o id e a validade, vale 10 minutos, e é assinado com uma
+ * token carrega o id e a validade, e é assinado com uma
  * chave derivada própria — um token de mídia não abre foto de perfil.
  */
 
@@ -41,7 +41,7 @@ import { mediaUploadLimiter, mediaContentLimiter } from "../lib/rate-limit";
 import { safeLog } from "../lib/safe-logger";
 import { audit } from "../lib/audit";
 import { Clock } from "../lib/clock";
-import { gerarTokenDeFoto, lerTokenDeFoto } from "../lib/media-links.ts";
+import { gerarTokenDeFoto, lerTokenDeFoto, VALIDADE_DA_FOTO_SEGUNDOS } from "../lib/media-links.ts";
 
 const router = Router();
 
@@ -71,7 +71,8 @@ const TETO_DA_FOTO = 2 * 1024 * 1024;
  * `<img src="...">` **não manda header nenhum**. Uma rota de imagem atrás de
  * `Authorization: Bearer` simplesmente não renderiza numa tag `<img>` — é o
  * mesmo problema que a QUI-5 resolveu para a mídia do mural, e a solução é a
- * mesma: um link curto e assinado, sem estado, que expira em 10 minutos.
+ * mesma: um link assinado e sem estado. A validade dele nao e a do mural
+ * (ver VALIDADE_DA_FOTO_SEGUNDOS, e o porque na Issue #132).
  *
  * O token é assinado com uma chave **própria** (ver `media-links.ts`): um
  * token de mídia não abre foto de perfil, e vice-versa.
@@ -271,9 +272,19 @@ router.get<{ token: string }>(
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Content-Disposition", "inline");
     // `private`: nunca em cache compartilhado — é rosto de pessoa, dentro de
-    // uma família. O `v` da URL é quem invalida quando a foto troca, então o
-    // cache do navegador pode ser longo sem servir imagem velha.
-    res.setHeader("Cache-Control", "private, max-age=86400");
+    // uma família.
+    //
+    // Issue #132 — este `max-age` já foi uma promessa que o token não
+    // cumpria. Ele mandava guardar por 24 h enquanto o link morria em 10
+    // minutos: **144× de diferença na mesma resposta**. Quando o cache não
+    // tinha a URL, a imagem tomava 410 e a tela caía nas iniciais sem erro
+    // nenhum — a foto "sumia sozinha".
+    //
+    // Agora os dois números são o mesmo, e há teste que falha se voltarem a
+    // discordar. O comentário antigo dizia que um `v` na URL invalidava o
+    // cache; esse `v` nunca existiu. Quem invalida é o token, que muda a
+    // cada leitura (ver `urlDaFoto` e `VALIDADE_DA_FOTO_SEGUNDOS`).
+    res.setHeader("Cache-Control", `private, max-age=${VALIDADE_DA_FOTO_SEGUNDOS}`);
     res.send(bytes);
   },
 );
