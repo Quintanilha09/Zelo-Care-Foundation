@@ -25,6 +25,7 @@ import { useState, useRef, useEffect } from "react";
 import { authFetch, apiUrl } from "@/lib/auth-client";
 import { useAuth } from "@/context/AuthContext";
 import { comprimirFoto } from "@/lib/comprimir-imagem";
+import { RecortarFoto } from "@/components/recortar-foto";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -42,6 +43,8 @@ export default function SettingsProfilePage() {
   const inputFoto = useRef<HTMLInputElement>(null);
   const [enviandoFoto, setEnviandoFoto] = useState(false);
   const [erroDaFoto, setErroDaFoto] = useState("");
+  /** Issue #137 — a foto escolhida, esperando o enquadramento. */
+  const [aRecortar, setARecortar] = useState<File | null>(null);
 
   const [telefone, setTelefone] = useState(user?.caregiver?.phone ?? "");
   const [parentesco, setParentesco] = useState<string>(user?.caregiver?.relationship ?? "");
@@ -59,9 +62,25 @@ export default function SettingsProfilePage() {
 
   const fotoUrl = user?.caregiver?.fotoUrl;
 
-  const trocarFoto = async (lista: FileList | null) => {
+  /**
+   * Issue #137 — escolher o arquivo não envia mais nada.
+   *
+   * O caminho passou a ser: escolher → **recortar** → comprimir → enviar. O
+   * recorte vem ANTES da compressão para o `LADO_MAXIMO` de 1600 px valer
+   * sobre a imagem já quadrada, e não sobre um retângulo do qual a maior
+   * parte vai ser jogada fora logo em seguida.
+   */
+  const escolherFoto = (lista: FileList | null) => {
     const arquivo = lista?.[0];
     if (!arquivo) return;
+    setErroDaFoto("");
+    setARecortar(arquivo);
+    // Zerar o input já aqui: sem isto, escolher o MESMO arquivo depois de
+    // cancelar o recorte não dispara `onChange`, e parece que o app ignorou.
+    if (inputFoto.current) inputFoto.current.value = "";
+  };
+
+  const trocarFoto = async (arquivo: File) => {
     setEnviandoFoto(true);
     setErroDaFoto("");
     try {
@@ -77,13 +96,14 @@ export default function SettingsProfilePage() {
       // O cabeçalho, a lista de cuidadores e esta tela mostram a mesma foto —
       // recarregar o usuário é o que faz as três acompanharem sem F5.
       await recarregarUsuario();
+      // Só fecha o recorte quando a foto ENTROU. Fechar antes deixaria a
+      // pessoa olhando a foto antiga sem saber se deu certo.
+      setARecortar(null);
     } catch (e) {
       setErroDaFoto(e instanceof Error ? e.message : "Não conseguimos guardar a foto.");
+      setARecortar(null);
     } finally {
       setEnviandoFoto(false);
-      // Zerar o input: sem isto, escolher o MESMO arquivo de novo não dispara
-      // `onChange` e parece que o app ignorou o toque.
-      if (inputFoto.current) inputFoto.current.value = "";
     }
   };
 
@@ -161,7 +181,7 @@ export default function SettingsProfilePage() {
               type="file"
               accept="image/jpeg,image/png,image/webp"
               className="hidden"
-              onChange={(e) => void trocarFoto(e.target.files)}
+              onChange={(e) => escolherFoto(e.target.files)}
             />
             <Button
               variant="outline"
@@ -192,6 +212,16 @@ export default function SettingsProfilePage() {
             <AlertDescription>{erroDaFoto}</AlertDescription>
           </Alert>
         )}
+
+        {/* Issue #137 — entre escolher e enviar. Fica dentro desta seção
+            porque é dela que a foto vem, e porque assim o erro de recorte
+            aparece perto do avatar que ele afeta. */}
+        <RecortarFoto
+          arquivo={aRecortar}
+          enviando={enviandoFoto}
+          onCancelar={() => setARecortar(null)}
+          onPronto={(recortada) => void trocarFoto(recortada)}
+        />
       </section>
 
       {/* ── Contato e parentesco ───────────────────────────────────────── */}
