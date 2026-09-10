@@ -41,6 +41,7 @@ import {
 } from "@workspace/db";
 import { generateAccessToken } from "../lib/tokens.ts";
 import { Clock } from "../lib/clock.ts";
+import { boss } from "../lib/queue.ts";
 import app from "../app.ts";
 
 const SUFIXO = "@desfazer.zelo.test";
@@ -62,6 +63,10 @@ before(async () => {
 
 after(async () => {
   await closeServer();
+  // Mesmo motivo da #134: registrar dose `taken` publica em QUEUE_DOSE_TAKEN
+  // e liga o pg-boss. Sem parar, o processo deste arquivo nao termina e o job
+  // do CI e cancelado no timeout de 20 min sem nenhum teste falhar.
+  await boss.stop({ graceful: false });
   await db.delete(usersTable).where(like(usersTable.email, `%${SUFIXO}`));
   await db.delete(familiesTable).where(like(familiesTable.name, "Família Fictícia Desfazer %"));
 });
