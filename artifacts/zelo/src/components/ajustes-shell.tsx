@@ -29,11 +29,14 @@
 import type { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/context/AuthContext";
+import { apiUrl } from "@/lib/auth-client";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import { iniciais } from "@/lib/perfil";
 import { AppHeader } from "@/components/app-header";
 import { cn } from "@/lib/utils";
 import {
   User, IdCard, CreditCard, Users, Bell, History, ShieldCheck, Smartphone,
-  ArrowLeft, ExternalLink,
+  ArrowLeft, ExternalLink, ChevronRight,
 } from "lucide-react";
 
 interface Secao {
@@ -61,8 +64,22 @@ const GRUPOS: Array<{ titulo: string; secoes: Secao[] }> = [
   {
     titulo: "Conta",
     secoes: [
-      { href: "/ajustes/conta", rotulo: "Sua conta", icone: User },
+      /**
+       * Issue #133 — "Seu perfil" vem PRIMEIRO, e a ordem é o conserto.
+       *
+       * O fundador foi procurar a própria foto em "Sua conta" e não achou:
+       * ela mora aqui, em "Seu perfil". A divisão veio da #114 copiando o
+       * GitHub (*Account* de um lado, *Public profile* do outro) e **está
+       * certa** — o que estava errado era a ordem.
+       *
+       * No GitHub, *Public profile* é o primeiro item da lista e é onde
+       * está a foto. No Zelo, "Sua conta" vinha antes — e "conta" é a
+       * palavra que uma pessoa procura quando quer trocar o próprio
+       * retrato. Quem varre a lista de cima para baixo agora encontra o
+       * perfil antes de desistir.
+       */
       { href: "/ajustes/perfil", rotulo: "Seu perfil", icone: IdCard },
+      { href: "/ajustes/conta", rotulo: "Sua conta", icone: User },
       { href: "/planos", rotulo: "Plano", icone: CreditCard },
     ],
   },
@@ -105,18 +122,40 @@ export function AjustesShell({ children }: { children: ReactNode }) {
 
         {/* Identidade só no índice, e fora da grade — senão sumiria no
             celular, que é justamente onde a pergunta "estou em qual conta?"
-            aparece (Issue #78). Repetir em toda seção seria ruído. */}
+            aparece (Issue #78). Repetir em toda seção seria ruído.
+
+            ── Issue #133: o cartão existia e mostrava um desconhecido ──────
+
+            Ele nasceu na #78 com um ícone genérico de pessoa, e continuou
+            assim depois de a #116 trazer a foto de perfil. O efeito: quem
+            tinha foto abria os Ajustes e via a silhueta cinza — a mesma
+            imagem de quem nunca mandou nenhuma.
+
+            Foi metade do relato do fundador ("a imagem não é salva"). A
+            outra metade é que o cartão não levava a lugar nenhum: ele
+            dizia quem você é sem oferecer o caminho para mexer nisso, e a
+            pessoa ia procurar em "Sua conta", onde a foto não mora.
+
+            Agora mostra o rosto de verdade e é o atalho para "Seu perfil". */}
         {naRaiz && (
-          <div className="mt-5 flex items-center gap-4 rounded-xl border bg-card p-4 shadow-sm">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted">
-              <User className="h-5 w-5 text-muted-foreground" />
-            </div>
-            <div className="min-w-0">
-              <p className="truncate text-[16px] font-medium">{user?.name ?? "…"}</p>
-              <p className="truncate text-sm text-muted-foreground">{user?.email ?? ""}</p>
-              <p className="truncate text-sm text-muted-foreground">{user?.family?.name ?? ""}</p>
-            </div>
-          </div>
+          <Link href="/ajustes/perfil" asChild>
+            <a className="mt-5 flex items-center gap-4 rounded-xl border bg-card p-4 shadow-sm transition-colors hover:border-primary/40">
+              <Avatar className="h-12 w-12 shrink-0 border">
+                {user?.caregiver?.fotoUrl && (
+                  <AvatarImage src={apiUrl(user.caregiver.fotoUrl)} alt="" />
+                )}
+                <AvatarFallback className="bg-muted font-medium text-muted-foreground">
+                  {iniciais(user?.name)}
+                </AvatarFallback>
+              </Avatar>
+              <div className="min-w-0">
+                <p className="truncate text-[16px] font-medium">{user?.name ?? "…"}</p>
+                <p className="truncate text-sm text-muted-foreground">{user?.email ?? ""}</p>
+                <p className="truncate text-sm text-muted-foreground">{user?.family?.name ?? ""}</p>
+              </div>
+              <ChevronRight className="ml-auto h-5 w-5 shrink-0 text-muted-foreground" aria-hidden />
+            </a>
+          </Link>
         )}
 
         <div className="mt-6 md:grid md:grid-cols-[15rem_1fr] md:gap-10">
