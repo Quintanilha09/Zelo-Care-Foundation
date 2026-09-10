@@ -56,6 +56,60 @@ const UNDO_WINDOW_MS = 60_000;
 // doses — ou seja, nunca faz uma dose ser confundida com a seguinte.
 const CLOCK_SKEW_TOLERANCE_MS = 5 * 60_000;
 
+/**
+ * Quanto ANTES do horário agendado uma dose pode ser registrada sem o app
+ * perguntar se é isso mesmo — Issue #134.
+ *
+ * ── O buraco que isto tapa ───────────────────────────────────────────────
+ *
+ * Até 10/09/2026 esta rota fazia duas checagens de tempo, e **nenhuma
+ * comparava `takenAt` com `scheduledAt`**: só recusava `takenAt` no futuro
+ * (tolerância de relógio) e pedia justificativa para `takenAt` velho demais.
+ *
+ * Resultado medido pelo fundador: às 00:49 dava para marcar como tomada a
+ * dose agendada para as **23:00 do mesmo dia**. `takenAt` era *agora*, o
+ * futuro era zero, o passado era zero — e as ~22 horas de distância até o
+ * horário agendado não eram olhadas por ninguém.
+ *
+ * O dano é silencioso e é sobre remédio: a dose sai da lista de pendentes,
+ * o lembrete não dispara, e ninguém mais é avisado de que ela existe.
+ *
+ * ── Por que uma HORA, e por que é constante ──────────────────────────────
+ *
+ * Uma hora cobre com folga o caso real ("dei vinte minutos antes de sair") e
+ * é muito menor que o menor intervalo praticado entre duas doses do mesmo
+ * medicamento — ou seja, nunca faz uma dose ser confundida com a seguinte.
+ *
+ * **Não é configurável por família, de propósito.** Uma família que pudesse
+ * esticar isto para 24 h recriaria o defeito inteiro, e o precedente já
+ * existe: a #123 fixou o prazo dela em constante pelo mesmo motivo. O eixo
+ * retroativo é configurável (`retroactiveWindowHours`) porque lá a variação
+ * é legítima — cada família tem um ritmo de anotar o que já aconteceu.
+ * Antecipar é outra coisa: é o futuro, e o futuro não tem ritmo.
+ *
+ * ── O que ela NÃO faz ────────────────────────────────────────────────────
+ *
+ * Não bloqueia. Fora da janela a rota devolve `ANTECIPACAO_REQUERIDA`, e o
+ * mesmo pedido com `confirmarAntecipacao: true` passa. Quem realmente deu o
+ * remédio adiantado **precisa** conseguir registrar — registrar dose é o
+ * dado vital do produto, e já sobrevive a paywall e a pagamento atrasado
+ * (revisão da ZELO-38). O que não pode é ser um toque acidental.
+ */
+export const JANELA_DE_ANTECIPACAO_MS = 60 * 60_000;
+
+/**
+ * A dose já chegou perto o bastante para ser resolvida sem perguntar?
+ *
+ * Exportada porque **existem dois caminhos de registro**, e os dois precisam
+ * da mesma régua: esta rota (cuidador) e `POST /patient-access/taken` (o
+ * aparelho do próprio paciente, ZELO-40). O segundo é um `insert` separado —
+ * fechar só este deixaria aberta justamente a superfície mais frágil, a do
+ * botão gigante na frente de quem está sendo cuidado.
+ */
+export function doseJaChegou(scheduledAt: Date, quando: Date): boolean {
+  return scheduledAt.getTime() - quando.getTime() <= JANELA_DE_ANTECIPACAO_MS;
+}
+
 const ListQuery = z.object({
   from: z.string().optional(),
   to: z.string().optional(),
@@ -79,6 +133,16 @@ const CreateDoseRecordBody = z.object({
   // ("Dona Maria" em vez do cuidador logado no aparelho), nunca quem é o
   // caregiverId responsável de verdade (isso continua vindo do token).
   viaElderMode: z.boolean().optional(),
+  // Issue #134: "sim, é esta dose mesmo, e sei que ela é de mais tarde".
+  // Só é olhado quando a dose está além da janela de antecipação — dentro
+  // dela o campo é irrelevante e ninguém precisa mandá-lo.
+  //
+  // É um booleano e não um texto de propósito. No eixo retroativo a
+  // justificativa ACRESCENTA informação, porque o servidor não sabe quando a
+  // dose foi dada de verdade. Aqui ele sabe: é agora. O que falta é só a
+  // intenção, e pedir prosa para isso seria mandar o cuidador se explicar —
+  // o que este produto não faz (invariante 4).
+  confirmarAntecipacao: z.boolean().optional(),
 }).refine((b) => b.outcome !== "postponed" || !!b.postponedTo, {
   message: "postponedTo é obrigatório quando outcome é 'postponed'",
 });
@@ -157,6 +221,10 @@ router.post("/patients/:patientId/dose-records", requireAuth, requireCapability(
     .select({
       id: scheduledDosesTable.id, patientId: scheduledDosesTable.patientId,
       scheduledLocalTime: scheduledDosesTable.scheduledLocalTime,
+      // Issue #134: o instante agendado, para saber o quanto este registro
+      // está adiantado. `scheduledLocalTime` é só a etiqueta que a tela
+      // mostra ("23:00") e não serve para conta nenhuma.
+      scheduledAt: scheduledDosesTable.scheduledAt,
       medicationId: treatmentsTable.medicationId, medicationName: medicationsTable.name,
     })
     .from(scheduledDosesTable)
@@ -202,6 +270,39 @@ router.post("/patients/:patientId/dose-records", requireAuth, requireCapability(
     return;
   }
   if (futureMs > 0) takenAt = now;
+
+  // ── Issue #134: e a dose, é para agora? ─────────────────────────────────
+  //
+  // As duas checagens acima olham `takenAt` contra o relógio. Nenhuma delas
+  // olha a única coisa que importa aqui: **o quanto esta dose ainda vai
+  // demorar**. Sem este bloco, marcar às 00:49 a dose das 23:00 passava
+  // limpo — foi o defeito relatado.
+  //
+  // O 400 não é o fim do caminho: o mesmo pedido com `confirmarAntecipacao`
+  // entra. O que a recusa compra é que **um toque acidental não resolve uma
+  // dose que ainda vai demorar horas**.
+  //
+  // ── E a comparação é com AGORA, não com `takenAt` ──────────────────────
+  //
+  // Errei isto na primeira versão e o CI cobrou: comparar com `takenAt`
+  // fazia todo **registro retroativo** cair aqui. Registrar hoje, às 10h,
+  // uma dose que foi dada ontem às 9h dá uma distância de 25 h — e a rota
+  // respondia `ANTECIPACAO_REQUERIDA` para o que é exatamente o oposto de
+  // uma antecipação.
+  //
+  // A pergunta desta regra é *"esta dose já chegou?"*, e isso é sobre o
+  // agendamento contra o **presente**. O que o cuidador diz sobre a hora em
+  // que deu o remédio é assunto do eixo retroativo, logo abaixo.
+  if (!doseJaChegou(scheduled.scheduledAt, now) && !body.data.confirmarAntecipacao) {
+    res.status(400).json({
+      // O horário vem no fuso do PACIENTE, não no de quem registra — a
+      // armadilha da ZELO-19. `scheduledLocalTime` já é essa etiqueta.
+      error: `Esta dose é das ${scheduled.scheduledLocalTime}. Confirme que quer registrá-la agora.`,
+      code: "ANTECIPACAO_REQUERIDA",
+      scheduledLocalTime: scheduled.scheduledLocalTime,
+    });
+    return;
+  }
 
   // ZELO-24: fora da janela retroativa da família, exige justificativa —
   // dentro dela, só confirmar o horário real já basta.

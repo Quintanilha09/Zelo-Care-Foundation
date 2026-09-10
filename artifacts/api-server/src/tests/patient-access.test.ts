@@ -258,6 +258,46 @@ describe("Escopo do token do paciente — o coração da história", () => {
 });
 
 describe("Registrar a dose pelo aparelho do paciente", () => {
+  /**
+   * Issue #134 — o aparelho do paciente NÃO tem caminho de confirmação.
+   *
+   * A rota do cuidador devolve `ANTECIPACAO_REQUERIDA` e aceita o mesmo
+   * pedido com `confirmarAntecipacao: true`. Aqui não existe esse segundo
+   * pedido, e é de propósito: esta tela é a do ZELO-40 — tela única, letra
+   * grande, um botão. Pôr uma pergunta de confirmação na frente de quem está
+   * sendo cuidado contraria o desenho dela.
+   *
+   * Então a defesa aqui é mais simples e mais forte: **a dose que ainda não
+   * chegou não é registrável por este caminho.** É a superfície mais frágil
+   * que o produto tem, e era a que estava mais aberta — este `insert` é
+   * separado do de `dose-records.ts` e não tinha checagem de tempo nenhuma.
+   */
+  it("dose que ainda vai demorar horas nao e registravel, e nada e gravado", async () => {
+    const accessToken = await activateNewDevice();
+
+    const [treatment] = await db.insert(treatmentsTable).values({
+      patientId, medicationId, scheduleType: "times_per_day",
+      scheduleConfig: { scheduleType: "times_per_day", times: ["23:00"] },
+      startDate: Clock.todayInTimezone("America/Sao_Paulo"),
+    }).returning();
+    const [dose] = await db.insert(scheduledDosesTable).values({
+      treatmentId: treatment.id, patientId,
+      // 22 h à frente: o caso exato que o fundador mediu às 00:49.
+      scheduledAt: new Date(Clock.now().getTime() + 22 * 3_600_000),
+      scheduledLocalDate: Clock.todayInTimezone("America/Sao_Paulo"),
+      scheduledLocalTime: "23:00", status: "pending",
+    }).returning();
+
+    const res = await patientApi("POST", "/patient-access/taken", { scheduledDoseId: dose.id }, accessToken);
+    assert.equal(res.status, 400, JSON.stringify(res.body));
+    assert.equal((res.body as { code: string }).code, "ANTECIPACAO_REQUERIDA");
+
+    const [record] = await db.select().from(doseRecordsTable).where(eq(doseRecordsTable.scheduledDoseId, dose.id));
+    assert.equal(record, undefined, "nada pode ter sido gravado");
+
+    await db.delete(treatmentsTable).where(eq(treatmentsTable.id, treatment.id));
+  });
+
   it("registra, aparece com o nome do PACIENTE na tela do cuidador, e a auditoria guarda o cuidador real", async () => {
     const accessToken = await activateNewDevice();
 
@@ -273,8 +313,15 @@ describe("Registrar a dose pelo aparelho do paciente", () => {
     }).returning();
 
     const today = await patientApi("GET", "/patient-access/today", undefined, accessToken);
-    const next = (today.body as { nextDose: { id: number } | null }).nextDose;
+    const next = (today.body as { nextDose: { id: number; scheduledAt?: string } | null }).nextDose;
     assert.ok(next, "a dose pendente precisa aparecer pro paciente");
+    // Issue #134: é `scheduledAt` que faz o botão "Tomei" não aparecer antes
+    // da hora — `scheduledLocalTime` é só a etiqueta e não serve para conta.
+    //
+    // A asserção mora AQUI, e não no caso da dose distante, porque uma dose a
+    // 22 h de distância pode cair no dia seguinte no fuso do paciente e
+    // simplesmente não entrar em "hoje" — foi assim que o CI a derrubou.
+    assert.ok(next!.scheduledAt, "nextDose precisa trazer scheduledAt, nao so a etiqueta");
 
     const taken = await patientApi("POST", "/patient-access/taken", { scheduledDoseId: next!.id }, accessToken);
     assert.equal(taken.status, 201);

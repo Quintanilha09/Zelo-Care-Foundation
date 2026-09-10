@@ -42,6 +42,14 @@ import { BotaoRecado } from "@/components/botao-recado";
 interface ElderDose {
   id: number;
   scheduledLocalTime: string;
+  /**
+   * Issue #134 — o instante agendado, e nao a etiqueta.
+   *
+   * `scheduledLocalTime` e "13:00" para mostrar; so isto responde "ja
+   * chegou?". Sem ele a tela punha o botao gigante "Tomei" na frente de
+   * quem ainda tinha horas pela frente.
+   */
+  scheduledAt: string;
   status: "pending" | "taken" | "skipped" | "late";
   dose: string | null;
   medicationName: string;
@@ -65,7 +73,7 @@ async function fetchAsPatient(): Promise<ElderState> {
   if (!res.ok) throw new Error("Não foi possível carregar os remédios de hoje.");
   const data = (await res.json()) as {
     elderModeEnabled: boolean;
-    nextDose: { id: number; medicationName: string; dose: string | null; scheduledLocalTime: string } | null;
+    nextDose: { id: number; medicationName: string; dose: string | null; scheduledLocalTime: string; scheduledAt: string } | null;
   };
   return {
     elderModeEnabled: data.elderModeEnabled,
@@ -136,6 +144,28 @@ export default function ElderModePage({ patientId }: { patientId: number | null 
   });
 
   const nextDose = data?.nextDose ?? null;
+
+  /**
+   * Issue #134 — a dose já chegou?
+   *
+   * Esta tela mostrava a **próxima dose pendente do dia**, fosse ela daqui a
+   * dez minutos ou daqui a doze horas, sempre com o botão gigante "Tomei"
+   * embaixo. Era a mesma falha que o fundador achou na ficha do paciente,
+   * na superfície mais frágil que o produto tem: um toque, e o remédio da
+   * noite sai da lista sem ninguém ter tomado nada.
+   *
+   * Aqui a resposta **não** é uma pergunta de confirmação. O ZELO-40 é tela
+   * única, letra grande, um botão — pôr uma decisão a mais na frente de quem
+   * está sendo cuidado contraria o desenho inteiro. A resposta é não ter o
+   * que apertar antes da hora, e dizer que horas é.
+   *
+   * O `refetchInterval` de 30 s acima é o que faz o botão aparecer sozinho
+   * quando a hora chega: sem ele, esta conta ficaria congelada no instante
+   * em que a tela abriu.
+   */
+  const doseChegou = nextDose
+    ? new Date(nextDose.scheduledAt).getTime() <= Date.now()
+    : false;
 
   // SAÍDA DE EMERGÊNCIA REMOTA: o servidor é quem manda sobre este modo
   // estar permitido. Se o cuidador principal desligar o interruptor pelo
@@ -288,6 +318,22 @@ export default function ElderModePage({ patientId }: { patientId: number | null 
             <Check className="w-16 h-16 text-zelo-green-fg" strokeWidth={3} />
           </div>
           <p className="text-4xl font-semibold text-[#2D2D2B]">Tomado!</p>
+        </div>
+      ) : nextDose && !doseChegou ? (
+        /* Issue #134 — a espera calma.
+
+           Mesma letra grande, e nada para apertar. Quem olha entende que
+           está tudo certo e que ainda não é a hora: é o oposto de uma tela
+           de erro, e é de propósito (ZELO-40 — nada que gere ansiedade em
+           quem está sendo cuidado). Quando o horário chega, a atualização
+           de 30 s troca isto pela tela do botão, sozinha. */
+        <div className="flex flex-col items-center gap-6 w-full max-w-md text-center">
+          <p className="text-3xl text-[#6B6B6B]">O próximo remédio é às</p>
+          <p className="text-7xl font-bold text-[#2D2D2B] leading-none">
+            {nextDose.scheduledLocalTime}
+          </p>
+          <p className="text-3xl text-[#2D2D2B]">{nextDose.medicationName}</p>
+          {nextDose.dose && <p className="text-2xl text-[#6B6B6B]">{nextDose.dose}</p>}
         </div>
       ) : nextDose ? (
         <div className="flex flex-col items-center gap-8 w-full max-w-md">

@@ -21,6 +21,7 @@ import { generateAccessToken } from "../lib/tokens.ts";
 import { hashPassword } from "../lib/password.ts";
 import { boss } from "../lib/queue.ts";
 import { Clock } from "../lib/clock.ts";
+import { puxarDoseParaAgora } from "./apoio-doses.ts";
 import app from "../app.ts";
 
 let testPort: number;
@@ -154,6 +155,10 @@ describe("Registro de dose via modo idoso — atribuição na tela inicial", () 
     const beforeBody = before.body as { doses: Array<{ id: number; status: string }> };
     const pending = beforeBody.doses.find((d) => d.status === "pending");
     assert.ok(pending, "precisa haver ao menos uma dose pendente pra registrar");
+    // #134: a dose pendente aqui e quase sempre a das 23:59, e este teste e
+    // sobre ATRIBUICAO na tela, nao sobre a regra de antecipacao. Puxar para
+    // agora deixa o caso no caminho normal de registro.
+    await puxarDoseParaAgora(pending!.id);
 
     const register = await api("POST", `/patients/${patientId}/dose-records`, {
       scheduledDoseId: pending!.id,
@@ -195,6 +200,7 @@ describe("Registro de dose via modo idoso — atribuição na tela inicial", () 
     const beforeBody = before.body as { doses: Array<{ id: number; status: string }> };
     const pending = beforeBody.doses.find((d) => d.status === "pending");
     assert.ok(pending);
+    await puxarDoseParaAgora(pending!.id); // #134, mesmo motivo do caso acima
 
     await api("POST", `/patients/${patientId}/dose-records`, {
       scheduledDoseId: pending!.id,
@@ -273,6 +279,10 @@ describe("Relógio do cliente não pode derrubar um registro legítimo", () => {
     const home = await api("GET", `/patients/${patientId}/today-doses`);
     const dose = (home.body as { doses: Array<{ id: number; status: string }> }).doses.find((d) => d.status === "pending");
     assert.ok(dose, "precisa haver dose pendente pro teste");
+    // Issue #134: a geracao so cria dose do agora para a frente, entao esta
+    // dose e a das 23:59. Puxar para agora faz o fixture exercer o caminho
+    // NORMAL de registro, e nao o excepcional da dose adiantada.
+    await puxarDoseParaAgora(dose!.id);
     return { doseId: dose!.id, treatmentId };
   }
 

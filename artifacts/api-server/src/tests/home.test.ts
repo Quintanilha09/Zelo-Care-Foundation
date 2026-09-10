@@ -19,6 +19,7 @@ import { hashPassword } from "../lib/password.ts";
 import { boss } from "../lib/queue.ts";
 import { Clock } from "../lib/clock.ts";
 import app from "../app.ts";
+import { puxarDoseParaAgora } from "./apoio-doses.ts";
 
 let testPort: number;
 let closeServer: () => Promise<void>;
@@ -143,6 +144,10 @@ describe("GET /patients/:id/today-doses — enriquecido para a tela inicial", ()
     assert.ok(home.doses.length > 0);
     assert.equal(home.doses[0].medicationName, "Medicamento Fictício Home Teste");
     assert.equal(home.doses[0].registeredByCaregiverName, null, "ainda não registrada");
+
+    // #134: o fixture gera a dose das 23:59; puxar para agora mantem este
+    // teste no caminho normal de registro.
+    await puxarDoseParaAgora(home.doses[0].id);
 
     await api("POST", `/patients/${patientId}/dose-records`, {
       scheduledDoseId: home.doses[0].id, takenAt: Clock.now().toISOString(), outcome: "taken",
