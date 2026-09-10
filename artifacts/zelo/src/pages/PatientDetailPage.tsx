@@ -33,6 +33,7 @@ import {
   usePulsoDeDesfazer, ultimoPrazoDeDesfazer, podeDesfazer,
 } from "@/hooks/use-pode-desfazer";
 import { nomeCurto } from "@workspace/nomes";
+import { CorrigirDose, type DoseParaCorrigir } from "@/components/corrigir-dose";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -122,6 +123,14 @@ interface ScheduledDose {
    */
   recordId: number | null;
   desfazerAte: string | null;
+  /**
+   * Issue #136 — quando e por quem o registro foi emendado.
+   *
+   * Registro corrigido SEM marca visivel e pior que registro errado:
+   * quem le passa a confiar no que nao deve.
+   */
+  correctedAt: string | null;
+  correctedByName: string | null;
 }
 
 interface StockEntry {
@@ -279,6 +288,8 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
   // temporizador nem chega a nascer se não houver registro recente.
   const agora = usePulsoDeDesfazer(ultimoPrazoDeDesfazer(todayDoses ?? []));
   const [erroAoDesfazer, setErroAoDesfazer] = useState<string | null>(null);
+  /** Issue #136 — o registro que esta sendo emendado. */
+  const [aCorrigir, setACorrigir] = useState<DoseParaCorrigir | null>(null);
 
   const handleUndo = async (recordId: number) => {
     setErroAoDesfazer(null);
@@ -730,6 +741,44 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
                       </Button>
                     </div>
                   )}
+
+                  {/* ── Issue #136: depois do prazo, corrigir ──────────────
+
+                      O desfazer some aos 60 s; isto aparece no lugar dele.
+                      Nunca os dois ao mesmo tempo: são respostas para
+                      momentos diferentes, e oferecer as duas juntas faria a
+                      pessoa escolher entre "apagar" e "emendar" sem ter por
+                      que decidir isso.
+
+                      E a marca de que houve emenda fica na linha, ao lado —
+                      registro corrigido sem marca visível é pior que
+                      registro errado. */}
+                  {d.recordId !== null &&
+                    (d.status === "taken" || d.status === "skipped") &&
+                    !podeDesfazer(d.desfazerAte, agora) && (
+                      <div className="flex flex-wrap items-center gap-2 px-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="gap-1.5 text-muted-foreground h-auto py-1.5"
+                          onClick={() =>
+                            setACorrigir({
+                              recordId: d.recordId!,
+                              medicationName: med?.name ?? "Medicamento",
+                              outcome: d.status === "skipped" ? "skipped" : "taken",
+                              registeredAt: d.registeredAt,
+                            })
+                          }
+                        >
+                          <Pencil className="w-3.5 h-3.5" aria-hidden /> Corrigir
+                        </Button>
+                        {d.correctedAt && (
+                          <span className="text-xs text-muted-foreground">
+                            Corrigido{d.correctedByName ? ` por ${nomeCurto(d.correctedByName)}` : ""}
+                          </span>
+                        )}
+                      </div>
+                    )}
                 </div>
               );
             })}
@@ -840,6 +889,19 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
             </div>
           ))}
         </div>
+
+        {/* Issue #136 — a emenda. Fora do `map` das doses: um diálogo por
+            dose renderizado em laço é o mesmo diálogo várias vezes no DOM. */}
+        <CorrigirDose
+          patientId={params.id}
+          dose={aCorrigir}
+          onFechar={() => setACorrigir(null)}
+          onCorrigido={() => {
+            setACorrigir(null);
+            void queryClient.invalidateQueries({ queryKey: ["today-doses", params.id] });
+            void queryClient.invalidateQueries({ queryKey: ["stock", params.id] });
+          }}
+        />
 
         {/* ── Issue #134: a pergunta que o toque acidental não passa ──────
 
