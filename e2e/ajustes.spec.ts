@@ -22,6 +22,15 @@ import { criarConta, entrar, naoRolaNaHorizontal, type ContaDeTeste } from "./ap
  *   4. a lista fica ao lado do conteúdo no desktop, e vira índice no celular
  *   5. a seção aberta fica marcada na lista
  *   6. nada disso faz a página rolar de lado
+ *
+ * ── E, desde a Issue #133 ────────────────────────────────────────────────
+ *
+ *   7. "Seu perfil" vem antes de "Sua conta" na lista
+ *   8. o cartão de identidade do topo leva para "Seu perfil"
+ *
+ * Os dois saíram do mesmo relato: o fundador procurou a própria foto em
+ * "Sua conta", não achou (ela mora em "Seu perfil") e concluiu que ela não
+ * tinha sido salva.
  */
 
 const GRUPOS = ["Conta", "Família", "Seus dados", "Ajuda"];
@@ -88,6 +97,39 @@ test.describe("Tela de Ajustes", () => {
     await expect(principal.getByText(conta.nome, { exact: true })).toBeVisible();
     await expect(principal.getByText(conta.email, { exact: true })).toBeVisible();
     await expect(principal.getByText(conta.familia, { exact: true })).toBeVisible();
+  });
+
+  /**
+   * Issue #133 — achar a própria foto.
+   *
+   * O fundador foi procurá-la em "Sua conta", onde ela não mora, e concluiu
+   * que não tinha sido salva. Duas coisas o levaram até lá: "Sua conta" era
+   * o primeiro item da lista, e o cartão de identidade do topo — que já
+   * existia — mostrava um ícone genérico e não levava a lugar nenhum.
+   */
+  test('"Seu perfil" vem antes de "Sua conta" — e a ordem e o conserto', async ({ page }) => {
+    test.skip(!ehDesktop(page), "no celular a lista é o índice, e a ordem é a mesma");
+
+    const hrefs = await lista(page)
+      .locator("a[href^='/ajustes/'], a[href='/planos']")
+      .evaluateAll((as) => as.map((a) => a.getAttribute("href")));
+
+    const posPerfil = hrefs.indexOf("/ajustes/perfil");
+    const posConta = hrefs.indexOf("/ajustes/conta");
+    expect(posPerfil, "'/ajustes/perfil' precisa estar na lista").toBeGreaterThanOrEqual(0);
+    expect(
+      posPerfil,
+      "quem varre a lista de cima para baixo tem que achar o perfil antes de desistir em 'Sua conta'",
+    ).toBeLessThan(posConta);
+  });
+
+  test("o cartao do topo leva para Seu perfil", async ({ page }) => {
+    // Ele dizia quem você é sem oferecer o caminho para mexer nisso.
+    const principal = page.locator("main");
+    await principal.getByText(conta.nome, { exact: true }).click();
+
+    await expect(page).toHaveURL(/\/ajustes\/perfil$/, { timeout: 15_000 });
+    await expect(page.getByRole("heading", { name: "Seu perfil" })).toBeVisible();
   });
 
   test("a lista acompanha o conteúdo no desktop, e vira índice no celular", async ({ page }) => {
