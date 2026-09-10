@@ -21,6 +21,7 @@ import { generateAccessToken } from "../lib/tokens.ts";
 import { hashPassword } from "../lib/password.ts";
 import { boss } from "../lib/queue.ts";
 import { Clock } from "../lib/clock.ts";
+import { puxarDoseParaAgora } from "./apoio-doses.ts";
 import app from "../app.ts";
 
 let testPort: number;
@@ -273,6 +274,10 @@ describe("Relógio do cliente não pode derrubar um registro legítimo", () => {
     const home = await api("GET", `/patients/${patientId}/today-doses`);
     const dose = (home.body as { doses: Array<{ id: number; status: string }> }).doses.find((d) => d.status === "pending");
     assert.ok(dose, "precisa haver dose pendente pro teste");
+    // Issue #134: a geracao so cria dose do agora para a frente, entao esta
+    // dose e a das 23:59. Puxar para agora faz o fixture exercer o caminho
+    // NORMAL de registro, e nao o excepcional da dose adiantada.
+    await puxarDoseParaAgora(dose!.id);
     return { doseId: dose!.id, treatmentId };
   }
 

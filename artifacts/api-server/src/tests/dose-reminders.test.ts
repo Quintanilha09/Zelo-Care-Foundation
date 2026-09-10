@@ -30,6 +30,7 @@ import {
 } from "../lib/dose-reminders.ts";
 import { boss, QUEUE_DOSE_REMINDER } from "../lib/queue.ts";
 import { Clock } from "../lib/clock.ts";
+import { puxarDoseParaAgora } from "./apoio-doses.ts";
 import { subscribeToPatientEvents, type RealtimeEvent } from "../lib/realtime.ts";
 import app from "../app.ts";
 
@@ -85,6 +86,10 @@ async function createTreatmentWithDose(): Promise<{ doseId: number; treatmentId:
     .where(eq(scheduledDosesTable.treatmentId, treatmentId))
     .orderBy(scheduledDosesTable.scheduledAt)
     .limit(1);
+  // Issue #134: a geracao so cria dose do agora para a frente, entao esta
+  // dose e a das 23:59. Puxar para agora faz o fixture exercer o caminho
+  // NORMAL de registro, e nao o excepcional da dose adiantada.
+  await puxarDoseParaAgora(dose.id);
   return { doseId: dose.id, treatmentId };
 }
 

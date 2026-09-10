@@ -242,6 +242,15 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
   // ZELO-34: ajuste manual/reposição — um formulário mínimo por vez, não
   // uma tela própria (a lista de estoque já é curta o bastante pra caber
   // aqui direto na página do paciente).
+  /**
+   * Issue #134 — a dose que o servidor achou adiantada demais, esperando
+   * confirmação. `null` enquanto não há pergunta na tela.
+   */
+  const [antecipacao, setAntecipacao] = useState<{
+    doseId: number;
+    outcome: "taken" | "skipped";
+    horario: string;
+  } | null>(null);
   const [adjustingMedicationId, setAdjustingMedicationId] = useState<number | null>(null);
   const [adjustMode, setAdjustMode] = useState<"add" | "set">("add");
   const [adjustAmount, setAdjustAmount] = useState("");
@@ -273,16 +282,51 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
     setPushPromptTrigger((n) => n + 1);
   };
 
-  const handleRegister = async (doseId: number, outcome: "taken" | "skipped") => {
+  /**
+   * Issue #134 — o cliente NÃO sabe qual é a janela de antecipação, e é de
+   * propósito.
+   *
+   * A tentativa vai sem `confirmarAntecipacao`. Se a dose estiver longe
+   * demais, o servidor responde `ANTECIPACAO_REQUERIDA` e aí — só aí — a
+   * pergunta aparece, já com o horário que veio na resposta.
+   *
+   * Duplicar "uma hora" aqui criaria dois lugares para o mesmo número e um
+   * dia em que discordam. Assim existe **um** dono da regra, e a tela apenas
+   * reage ao que ele responde.
+   */
+  const handleRegister = async (
+    doseId: number,
+    outcome: "taken" | "skipped",
+    confirmarAntecipacao = false,
+  ) => {
     const res = await authFetch(`/api/patients/${params.id}/dose-records`, {
       method: "POST",
       // Sem `takenAt`: "agora" é o relógio do servidor (ver dose-records.ts).
-      body: JSON.stringify({ scheduledDoseId: doseId, outcome }),
+      body: JSON.stringify({
+        scheduledDoseId: doseId,
+        outcome,
+        ...(confirmarAntecipacao ? { confirmarAntecipacao: true } : {}),
+      }),
     });
-    if (res.ok) {
-      void queryClient.invalidateQueries({ queryKey: ["today-doses", params.id] });
-      void queryClient.invalidateQueries({ queryKey: ["stock", params.id] }); // decremento automático (ZELO-34) pode ter mudado dias restantes
+
+    if (!res.ok) {
+      const corpo = (await res.json().catch(() => ({}))) as {
+        code?: string;
+        scheduledLocalTime?: string;
+      };
+      if (corpo.code === "ANTECIPACAO_REQUERIDA") {
+        setAntecipacao({
+          doseId,
+          outcome,
+          horario: corpo.scheduledLocalTime ?? "",
+        });
+      }
+      return;
     }
+
+    setAntecipacao(null);
+    void queryClient.invalidateQueries({ queryKey: ["today-doses", params.id] });
+    void queryClient.invalidateQueries({ queryKey: ["stock", params.id] }); // decremento automático (ZELO-34) pode ter mudado dias restantes
   };
 
   const handleAdjustStock = async (medicationId: number) => {
@@ -583,15 +627,48 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
                     takenAt={horaDoRegistro(d.registeredAt, patient?.timezone)}
                     takenBy={d.registeredByCaregiverName}
                   />
+                  {/* ── Issue #134: dose que ainda vai demorar não ganha os
+                      botões grandes ───────────────────────────────────────
+
+                      Era aqui que o defeito morava. Esta tela oferecia
+                      "✓ Tomou" e "Pular" para TODA dose pendente, sem olhar
+                      o relógio — dava para resolver às 00:49 a dose das
+                      23:00 com um toque. A tela inicial já separava "Agora"
+                      de "Mais tarde" e não oferecia botão para as de mais
+                      tarde; **o comportamento certo já existia e nunca
+                      tinha chegado aqui**.
+
+                      O corte é `scheduledAt <= agora`, exatamente o mesmo
+                      que a `HomePage` usa. A janela de tolerância de quem
+                      dá o remédio pouco antes da hora é assunto do
+                      servidor, e ele responde por ela — ver `handleRegister`. */}
                   {d.status === "pending" && (
-                    <div className="flex gap-2 px-1">
-                      <Button size="sm" className="flex-1" onClick={() => void handleRegister(d.id, "taken")}>
-                        ✓ Tomou
-                      </Button>
-                      <Button size="sm" variant="secondary" className="flex-1" onClick={() => void handleRegister(d.id, "skipped")}>
-                        Pular
-                      </Button>
-                    </div>
+                    new Date(d.scheduledAt).getTime() <= Date.now() ? (
+                      <div className="flex gap-2 px-1">
+                        <Button size="sm" className="flex-1" onClick={() => void handleRegister(d.id, "taken")}>
+                          ✓ Tomou
+                        </Button>
+                        <Button size="sm" variant="secondary" className="flex-1" onClick={() => void handleRegister(d.id, "skipped")}>
+                          Pular
+                        </Button>
+                      </div>
+                    ) : (
+                      /* Discreto de propósito: difícil de acertar sem
+                         querer, fácil de achar de propósito. Quem realmente
+                         deu o remédio adiantado precisa conseguir
+                         registrar — o produto não bloqueia registro de
+                         dose, nunca. */
+                      <div className="px-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-muted-foreground h-auto py-1.5"
+                          onClick={() => void handleRegister(d.id, "taken")}
+                        >
+                          Já dei este remédio
+                        </Button>
+                      </div>
+                    )
                   )}
                 </div>
               );
@@ -697,6 +774,45 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
             </div>
           ))}
         </div>
+
+        {/* ── Issue #134: a pergunta que o toque acidental não passa ──────
+
+            Quem abre isto é o servidor, não a tela: ele respondeu
+            `ANTECIPACAO_REQUERIDA` e mandou junto o horário agendado. A tela
+            só repete o que ele disse.
+
+            O texto **não julga**. Não há "você não devia dar agora" — o app
+            registra, não interpreta (invariante 4). Ele diz a que horas a
+            dose é e pergunta se é isso mesmo, e a resposta "Sim, já dei" vai
+            em botão normal, não destrutivo: dar o remédio adiantado não é
+            um erro, é uma informação. */}
+        <AlertDialog
+          open={antecipacao !== null}
+          onOpenChange={(aberto) => { if (!aberto) setAntecipacao(null); }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                Esta dose é das {antecipacao?.horario}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                Ela ainda não chegou no horário. Se o remédio já foi dado, pode
+                registrar agora — o horário do registro fica sendo este.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Ainda não</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() =>
+                  antecipacao &&
+                  void handleRegister(antecipacao.doseId, antecipacao.outcome, true)
+                }
+              >
+                Sim, já dei
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* Excluir é a única ação do ciclo que não dá para desfazer — as
             outras três têm "Reativar" logo ali embaixo. Por isso é a única
