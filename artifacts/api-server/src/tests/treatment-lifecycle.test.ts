@@ -24,6 +24,7 @@ import {
   closeExpiredTreatments, sendEndingSoonNotices, sendContinuousReviewReminders, REVIEW_INTERVAL_DAYS,
 } from "../lib/treatment-lifecycle.ts";
 import app from "../app.ts";
+import { puxarDoseParaAgora } from "./apoio-doses.ts";
 
 let testPort: number;
 let closeServer: () => Promise<void>;
@@ -343,6 +344,7 @@ describe("Concluir, pausar e retomar pela rota — QUI-16", () => {
     // Uma dose registrada ANTES de concluir. É ela que prova que concluir
     // não é apagar: o histórico do que de fato aconteceu fica de pé.
     const pendente = antes.find((d) => d.status === "pending")!;
+    await puxarDoseParaAgora(pendente.id); // #134: o fixture gera dose das 23:59
     const registro = await api("POST", `/patients/${patientId}/dose-records`, {
       scheduledDoseId: pendente.id,
       outcome: "taken",
@@ -422,6 +424,7 @@ describe("DELETE /treatments/:id — QUI-16", () => {
 
     const doses = await db.select().from(scheduledDosesTable).where(eq(scheduledDosesTable.treatmentId, treatmentId));
     const pendente = doses.find((d) => d.status === "pending")!;
+    await puxarDoseParaAgora(pendente.id); // #134: o fixture gera dose das 23:59
     const registro = await api("POST", `/patients/${patientId}/dose-records`, {
       scheduledDoseId: pendente.id,
       outcome: "taken",
@@ -487,6 +490,7 @@ describe("DELETE /treatments/:id — QUI-16", () => {
 
     const doses = await db.select().from(scheduledDosesTable).where(eq(scheduledDosesTable.treatmentId, comRegistro));
     const pendente = doses.find((d) => d.status === "pending")!;
+    await puxarDoseParaAgora(pendente.id); // #134: o fixture gera dose das 23:59
     await api("POST", `/patients/${patientId}/dose-records`, { scheduledDoseId: pendente.id, outcome: "taken" });
 
     const lista = await api("GET", `/patients/${patientId}/treatments`);

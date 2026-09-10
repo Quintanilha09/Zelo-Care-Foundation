@@ -551,7 +551,20 @@ export async function registrarUmaDoseHoje(
 
   const registro = await request.post(`/api/patients/${alvo}/dose-records`, {
     headers: { Authorization: `Bearer ${token}` },
-    data: { scheduledDoseId: doseId, outcome: desfecho },
+    data: {
+      scheduledDoseId: doseId,
+      outcome: desfecho,
+      // Issue #134: `criarTratamentoHoje` só consegue gerar dose **do agora
+      // para a frente** (ver `lib/dose-generation.ts`), e na prática ela sai
+      // às 23:59. Ou seja, este helper sempre registra uma dose adiantada —
+      // o que a partir da #134 exige dizer que é de propósito.
+      //
+      // Não é contornar a regra: é declarar a intenção que o helper sempre
+      // teve, que é pôr uma dose **já resolvida** na tela. Um teste que
+      // precise provar a recusa manda o pedido sem esta linha — é o que o
+      // `dose-antecipada.spec.ts` faz.
+      confirmarAntecipacao: true,
+    },
   });
   expect(registro.ok(), `registrar dose falhou: ${await registro.text()}`).toBeTruthy();
 

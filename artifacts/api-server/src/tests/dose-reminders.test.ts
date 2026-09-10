@@ -85,6 +85,14 @@ async function createTreatmentWithDose(): Promise<{ doseId: number; treatmentId:
     .where(eq(scheduledDosesTable.treatmentId, treatmentId))
     .orderBy(scheduledDosesTable.scheduledAt)
     .limit(1);
+  // Issue #134: aqui NAO se puxa a dose para agora, ao contrario dos outros
+  // fixtures. Este arquivo afirma que o `startAfter` de cada job da cascata
+  // bate com o `scheduledAt` da linha — e os jobs sao enfileirados na
+  // CRIACAO. Mexer no `scheduledAt` depois desalinha os dois e quebra a
+  // assercao sem que nada de verdade esteja errado.
+  //
+  // Quem registra dose neste arquivo manda `confirmarAntecipacao`, porque a
+  // dose e mesmo a das 23:59 e a intencao e essa.
   return { doseId: dose.id, treatmentId };
 }
 
@@ -203,7 +211,7 @@ describe("sendDoseReminder — comportamento no disparo", () => {
     const { doseId, treatmentId } = await createTreatmentWithDose();
 
     await api("POST", `/patients/${patientId}/dose-records`, {
-      scheduledDoseId: doseId, takenAt: Clock.now().toISOString(), outcome: "taken",
+      scheduledDoseId: doseId, takenAt: Clock.now().toISOString(), outcome: "taken", confirmarAntecipacao: true,
     });
 
     await sendDoseReminder(doseId);
@@ -318,7 +326,7 @@ describe("Adiar 15 min (snooze) — ZELO-28", () => {
 
   it("dose já registrada não pode ser adiada (409)", async () => {
     const { doseId, treatmentId } = await createTreatmentWithDose();
-    await api("POST", `/patients/${patientId}/dose-records`, { scheduledDoseId: doseId, takenAt: Clock.now().toISOString(), outcome: "taken" });
+    await api("POST", `/patients/${patientId}/dose-records`, { scheduledDoseId: doseId, takenAt: Clock.now().toISOString(), outcome: "taken", confirmarAntecipacao: true });
 
     const res = await api("POST", `/patients/${patientId}/dose-records/${doseId}/snooze`);
     assert.equal(res.status, 409);
@@ -426,7 +434,7 @@ describe("Cascata completa e perfis — ZELO-30", () => {
     await sendDoseReminder(doseId, ESCALATION_LEVEL_FIRST); // nível 0 já disparou, "no minuto 0"
 
     await api("POST", `/patients/${patientId}/dose-records`, {
-      scheduledDoseId: doseId, takenAt: Clock.now().toISOString(), outcome: "taken",
+      scheduledDoseId: doseId, takenAt: Clock.now().toISOString(), outcome: "taken", confirmarAntecipacao: true,
     }); // registrada "no minuto 12" — antes do nível 1 (T+15) chegar a disparar
 
     await sendDoseReminder(doseId, ESCALATION_LEVEL_SNOOZE);

@@ -41,6 +41,10 @@ import { audit } from "../lib/audit";
 import { boss, QUEUE_DOSE_TAKEN, ensureQueueStarted } from "../lib/queue.ts";
 import { publishPatientEvent } from "../lib/realtime.ts";
 import { publicTokenLimiter } from "../lib/rate-limit";
+// Issue #134: um dono só para a régua de antecipação. Duplicar o número aqui
+// criaria dois lugares para a mesma regra e um dia em que discordam — e a
+// discordância seria justamente entre o aparelho do cuidador e o do paciente.
+import { doseJaChegou } from "./dose-records.ts";
 
 const router = Router();
 
@@ -279,6 +283,10 @@ router.get("/patient-access/today", requirePatientAccess, async (req, res): Prom
       medicationName: next.medicationName,
       dose: next.dose,
       scheduledLocalTime: next.scheduledLocalTime,
+      // Issue #134: a tela precisa saber se a dose já chegou, para não pôr
+      // o botão "Tomei" na frente de quem ainda tem horas pela frente.
+      // `scheduledLocalTime` é etiqueta ("13:00") e não serve para conta.
+      scheduledAt: next.scheduledAt,
     } : null,
   });
 });
@@ -299,6 +307,7 @@ router.post("/patient-access/taken", requirePatientAccess, async (req, res): Pro
       id: scheduledDosesTable.id,
       patientId: scheduledDosesTable.patientId,
       scheduledLocalTime: scheduledDosesTable.scheduledLocalTime,
+      scheduledAt: scheduledDosesTable.scheduledAt,
       medicationId: treatmentsTable.medicationId,
       medicationName: medicationsTable.name,
     })
@@ -317,6 +326,29 @@ router.post("/patient-access/taken", requirePatientAccess, async (req, res): Pro
   // relógio do aparelho do paciente é ainda menos confiável que o do
   // cuidador, e um registro legítimo nunca pode cair por causa disso.
   const now = Clock.now();
+
+  // ── Issue #134: e aqui NÃO existe caminho de confirmação ────────────────
+  //
+  // A rota do cuidador devolve `ANTECIPACAO_REQUERIDA` e aceita o mesmo
+  // pedido com `confirmarAntecipacao`. Aqui não: esta tela é a do ZELO-40 —
+  // tela única, letra grande, um botão. Pôr uma pergunta de confirmação na
+  // frente de quem está sendo cuidado contraria o desenho inteiro dela, e a
+  // régua da história é explícita sobre não gerar ansiedade.
+  //
+  // Então a defesa aqui é mais simples e mais forte: **a dose que ainda não
+  // chegou não é registrável por este caminho.** Quem deu o remédio
+  // adiantado registra pelo aparelho do cuidador, que tem como confirmar.
+  //
+  // Na prática isto quase nunca dispara: a tela deixou de mostrar o botão
+  // antes da hora, e ela se atualiza sozinha a cada 30 s. Isto é a rede
+  // embaixo dela — frontend não é fronteira de segurança.
+  if (!doseJaChegou(scheduled.scheduledAt, now)) {
+    res.status(400).json({
+      error: `Este remédio é das ${scheduled.scheduledLocalTime}.`,
+      code: "ANTECIPACAO_REQUERIDA",
+    });
+    return;
+  }
 
   // Mesma garantia de dose-records.ts: o primeiro registro vence, pelo
   // UNIQUE do banco. Se o cuidador registrou antes, isto vira no-op e a
