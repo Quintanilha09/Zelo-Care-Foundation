@@ -73,8 +73,16 @@ export interface FotoComprimida {
   altura: number;
 }
 
-/** Carrega a imagem já orientada, com caminho de reserva para navegador antigo. */
-async function carregarImagem(arquivo: File): Promise<{ fonte: CanvasImageSource; largura: number; altura: number; liberar: () => void }> {
+/**
+ * Carrega a imagem já orientada, com caminho de reserva para navegador antigo.
+ *
+ * Exportada a partir da Issue #137: o recorte precisa da **mesma** orientação
+ * que a compressão usa. Se os dois lados lessem o EXIF de formas diferentes, o
+ * quadrado escolhido na tela sairia de um lugar e o corte de outro — e o
+ * defeito só apareceria em foto tirada em pé, que é a maioria das fotos de
+ * rosto.
+ */
+export async function carregarImagem(arquivo: File): Promise<{ fonte: CanvasImageSource; largura: number; altura: number; liberar: () => void }> {
   if (typeof createImageBitmap === "function") {
     try {
       const bitmap = await createImageBitmap(arquivo, { imageOrientation: "from-image" });
