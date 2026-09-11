@@ -56,7 +56,7 @@ export default function ConsentPage({ onComplete }: ConsentPageProps) {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8F7F5] p-4 flex items-start justify-center pt-8">
+    <div className="min-h-screen bg-background p-4 flex items-start justify-center pt-8">
       <div className="w-full max-w-xl space-y-6">
         <div>
           <h1 className="text-2xl font-semibold">Dados de saúde do paciente</h1>
