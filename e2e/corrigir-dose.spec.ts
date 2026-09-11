@@ -40,6 +40,37 @@ async function cenarioComDoseRegistrada(page: Page, request: APIRequestContext) 
   await expect(page.getByRole("heading", { name: "Hoje" })).toBeVisible({ timeout: 15_000 });
 }
 
+/**
+ * Salva a correção respondendo a pergunta da antecipação, quando ela vier.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ISTO PRECISAVA SER UM HELPER, E O CI COBROU ATÉ FICAR CLARO.
+ *
+ * A dose gerada pelo fixture é quase sempre a das 23:59. Corrigir revalida a
+ * janela da #134, e o servidor pergunta **uma vez** — comportamento certo.
+ * Mas só quando ela está longe: nos primeiros segundos do dia a dose é a das
+ * 00:01, já dentro da janela, e aí ninguém pergunta nada.
+ *
+ * O caso da ficha do paciente já sabia disso, com o raciocínio escrito ao
+ * lado. O caso novo da tela inicial (#162) foi escrito sem ele, e o CI
+ * derrubou: o diálogo ficava aberto com a pergunta na tela, e a falha
+ * aparecia quinze segundos depois num `toBeHidden` que não dizia a causa.
+ *
+ * ── Por que `waitFor` e não `count()` ────────────────────────────────────
+ *
+ * Porque o clique dispara uma requisição, e perguntar `count()` no instante
+ * seguinte devolve **zero** enquanto a resposta ainda está no ar.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+async function responderSePerguntar(page: Page) {
+  const confirmar = page.getByRole("button", { name: "Sim, é esta dose" });
+  const perguntou = await confirmar
+    .waitFor({ state: "visible", timeout: 5_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (perguntou) await confirmar.click();
+}
+
 test.describe("Corrigir um registro de dose", () => {
   test("depois do prazo o caminho e CORRIGIR, e nao apagar", async ({ page, request }) => {
     await cenarioComDoseRegistrada(page, request);
@@ -98,12 +129,7 @@ test.describe("Corrigir um registro de dose", () => {
      * primeiros segundos do dia a dose gerada é a das 00:01, já dentro da
      * janela, e aí o servidor não pergunta nada.
      */
-    const confirmar = page.getByRole("button", { name: "Sim, é esta dose" });
-    const perguntou = await confirmar
-      .waitFor({ state: "visible", timeout: 5_000 })
-      .then(() => true)
-      .catch(() => false);
-    if (perguntou) await confirmar.click();
+    await responderSePerguntar(page);
 
     await expect(page.getByRole("dialog")).toBeHidden({ timeout: 15_000 });
     await expect(page.getByText("Pulado", { exact: true })).toBeVisible({ timeout: 15_000 });
@@ -170,10 +196,11 @@ test.describe("Corrigir pela tela inicial", () => {
 
     await dialogo.getByRole("button", { name: "Pulou" }).click();
     await dialogo.getByRole("button", { name: /Salvar correção/ }).click();
+    await responderSePerguntar(page);
 
     // A marca fica: registro emendado sem marca visível é pior que registro
     // errado, porque quem lê passa a confiar no que não deve.
-    await expect(dialogo).toBeHidden({ timeout: 15_000 });
+    await expect(page.getByRole("dialog")).toBeHidden({ timeout: 15_000 });
     await expect(page.getByText(/Corrigido/)).toBeVisible({ timeout: 15_000 });
   });
 });
