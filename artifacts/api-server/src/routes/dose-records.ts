@@ -539,4 +539,182 @@ router.post("/patients/:patientId/dose-records/:recordId/undo", requireAuth, req
   res.json({ scheduledDoseId: record.scheduledDoseId, status: "pending" });
 });
 
+/**
+ * ── Corrigir um registro, com rastro — Issue #136 ─────────────────────────
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ESTA ROTA NUNCA APAGA. É a diferença inteira entre ela e o `undo`.
+ *
+ * | | Desfazer (#135) | Corrigir (esta) |
+ * |---|---|---|
+ * | Quando | até 60 s | **depois** disso |
+ * | O que faz | apaga a linha | **emenda**, e marca que emendou |
+ * | Por quê | o toque errado ainda é o "agora" da pessoa | registro clínico não se apaga meia hora depois |
+ *
+ * Confundir as duas é o que travava a decisão. O fundador pediu as duas de
+ * uma vez — *"não há como editar a dose tomada ou reverter isso"* — e são
+ * respostas diferentes para momentos diferentes.
+ *
+ * ── O que ela NÃO faz ────────────────────────────────────────────────────
+ *
+ * Não pede justificativa obrigatória. O registro retroativo só exige quando o
+ * horário sai da janela, e a mesma neutralidade vale aqui: **o cuidador não é
+ * suspeito**. Ele diz o motivo se quiser.
+ *
+ * Não interpreta. O app não julga se a correção faz sentido clinicamente; ele
+ * registra que ela foi feita. Invariante 4.
+ *
+ * Não é bloqueada por plano, pelo mesmo motivo que registrar não é.
+ */
+
+const CorrigirDoseBody = z
+  .object({
+    outcome: z.enum(["taken", "skipped"]).optional(),
+    takenAt: z.string().optional(),
+    justification: z.string().trim().max(500).optional().nullable(),
+    // Mesmo campo da criação: fora da janela de antecipação, é ele que diz
+    // "sim, é esta dose mesmo". Ver `JANELA_DE_ANTECIPACAO_MS`.
+    confirmarAntecipacao: z.boolean().optional(),
+  })
+  // Corrigir sem mudar nada não é correção — seria só carimbar "corrigido"
+  // num registro intacto, e sujar o histórico com um evento que não houve.
+  .refine((b) => b.outcome !== undefined || b.takenAt !== undefined, {
+    message: "Diga o que mudou: o desfecho, o horário, ou os dois.",
+  });
+
+router.patch(
+  "/patients/:patientId/dose-records/:recordId",
+  requireAuth,
+  requireCapability("register_dose"),
+  async (req, res): Promise<void> => {
+    const patientId = Number(req.params.patientId);
+    const recordId = Number(req.params.recordId);
+    if (isNaN(patientId) || isNaN(recordId)) { res.status(400).json({ error: "ID inválido" }); return; }
+
+    const body = CorrigirDoseBody.safeParse(req.body);
+    if (!body.success) { res.status(400).json({ error: mensagemDeValidacao(body.error) }); return; }
+
+    const [patient] = await db
+      .select({ id: patientsTable.id })
+      .from(patientsTable)
+      .where(and(eq(patientsTable.id, patientId), eq(patientsTable.familyId, getAuth(req).familyId)))
+      .limit(1);
+    if (!patient) { res.status(404).json({ error: "Paciente não encontrado" }); return; }
+
+    const [record] = await db
+      .select()
+      .from(doseRecordsTable)
+      .where(and(eq(doseRecordsTable.id, recordId), eq(doseRecordsTable.patientId, patientId)))
+      .limit(1);
+    if (!record) { res.status(404).json({ error: "Registro não encontrado" }); return; }
+
+    const [scheduled] = await db
+      .select({
+        scheduledAt: scheduledDosesTable.scheduledAt,
+        scheduledLocalTime: scheduledDosesTable.scheduledLocalTime,
+        // Só para o evento de tempo real — quem está com o paciente aberto
+        // noutro aparelho vê a correção sem recarregar (ZELO-25).
+        medicationName: medicationsTable.name,
+      })
+      .from(scheduledDosesTable)
+      .innerJoin(treatmentsTable, eq(scheduledDosesTable.treatmentId, treatmentsTable.id))
+      .innerJoin(medicationsTable, eq(treatmentsTable.medicationId, medicationsTable.id))
+      .where(eq(scheduledDosesTable.id, record.scheduledDoseId))
+      .limit(1);
+    if (!scheduled) { res.status(404).json({ error: "Dose agendada não encontrada" }); return; }
+
+    const now = Clock.now();
+    const takenAt = body.data.takenAt ? new Date(body.data.takenAt) : record.takenAt;
+    if (Number.isNaN(takenAt.getTime())) { res.status(400).json({ error: "Horário inválido." }); return; }
+
+    // As MESMAS três regras de tempo da criação. Corrigir não pode ser a
+    // porta dos fundos por onde entra o que a criação recusa — senão a regra
+    // da #134 valeria só para quem acerta de primeira.
+    if (takenAt.getTime() - now.getTime() > CLOCK_SKEW_TOLERANCE_MS) {
+      res.status(400).json({ error: "Não é possível registrar uma dose no futuro." });
+      return;
+    }
+
+    if (!doseJaChegou(scheduled.scheduledAt, now) && !body.data.confirmarAntecipacao) {
+      res.status(400).json({
+        error: `Esta dose é das ${scheduled.scheduledLocalTime}. Confirme que quer registrá-la agora.`,
+        code: "ANTECIPACAO_REQUERIDA",
+        scheduledLocalTime: scheduled.scheduledLocalTime,
+      });
+      return;
+    }
+
+    const [family] = await db
+      .select({ retroactiveWindowHours: familiesTable.retroactiveWindowHours })
+      .from(familiesTable)
+      .where(eq(familiesTable.id, getAuth(req).familyId))
+      .limit(1);
+    const windowMs = (family?.retroactiveWindowHours ?? 24) * 3_600_000;
+    const justificativa = body.data.justification?.trim() || null;
+    if (now.getTime() - takenAt.getTime() > windowMs && !justificativa) {
+      res.status(400).json({
+        error: `Esse horário é de mais de ${family?.retroactiveWindowHours ?? 24}h atrás — adicione uma breve justificativa pra confirmar.`,
+        code: "JUSTIFICATION_REQUIRED",
+      });
+      return;
+    }
+
+    const outcome = body.data.outcome ?? record.outcome;
+
+    const [corrigido] = await db
+      .update(doseRecordsTable)
+      .set({
+        outcome,
+        takenAt,
+        // Justificativa nova substitui; ausente preserva a que havia. Uma
+        // correção que não fala do motivo não apaga o motivo antigo.
+        justification: justificativa ?? record.justification,
+        correctedAt: now,
+        correctedByCaregiverId: getAuth(req).caregiverId,
+      })
+      .where(eq(doseRecordsTable.id, recordId))
+      .returning();
+
+    // O estado da dose agendada acompanha o desfecho — senão a tela mostraria
+    // "Tomado" no cartão e `skipped` no relatório.
+    await db
+      .update(scheduledDosesTable)
+      .set({ status: outcome, updatedAt: now })
+      .where(eq(scheduledDosesTable.id, record.scheduledDoseId));
+
+    // O ANTES e o DEPOIS, no log que ninguém pode reescrever. É isto que
+    // torna a emenda uma emenda, e não uma troca silenciosa.
+    await audit({
+      familyId: getAuth(req).familyId,
+      entityType: "dose_record",
+      entityId: String(recordId),
+      action: "updated",
+      actorId: String(getAuth(req).caregiverId),
+      actorType: "caregiver",
+      ipAddress: req.ip,
+      diff: JSON.stringify({
+        antes: { outcome: record.outcome, takenAt: record.takenAt.toISOString() },
+        depois: { outcome, takenAt: takenAt.toISOString() },
+      }),
+    });
+
+    const [quemCorrigiu] = await db
+      .select({ name: caregiversTable.name })
+      .from(caregiversTable)
+      .where(eq(caregiversTable.id, getAuth(req).caregiverId))
+      .limit(1);
+
+    publishPatientEvent(patientId, {
+      type: "dose_registered",
+      scheduledDoseId: record.scheduledDoseId,
+      medicationName: scheduled.medicationName,
+      scheduledLocalTime: scheduled.scheduledLocalTime,
+      caregiverName: quemCorrigiu?.name ?? "Um cuidador",
+      status: outcome,
+    });
+
+    res.json(corrigido);
+  },
+);
+
 export default router;

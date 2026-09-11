@@ -53,6 +53,44 @@ export const doseRecordsTable = pgTable(
     // — Dona Maria" em vez do nome de quem estava logado no aparelho.
     registeredViaElderMode: boolean("registered_via_elder_mode").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+
+    /**
+     * ── Correção de um registro — Issue #136 ────────────────────────────
+     *
+     * ═══════════════════════════════════════════════════════════════════
+     * CORRIGIR NÃO É APAGAR, E A DIFERENÇA É O PRODUTO INTEIRO.
+     *
+     * Até 60 s depois de registrar existe o **desfazer** (#135): ele apaga
+     * a linha, porque o toque errado ainda é o "agora" da pessoa.
+     *
+     * Passado esse prazo, um registro de dose é **registro clínico**.
+     * Apagá-lo destrói informação — some quem registrou, some quando, some
+     * que houve um engano. O que se faz com registro clínico errado é
+     * **emendar deixando rastro**, e é para isso que estas duas colunas
+     * existem.
+     * ═══════════════════════════════════════════════════════════════════
+     *
+     * ── Por que duas colunas, se o audit_log já guarda tudo ─────────────
+     *
+     * O `audit_log` guarda o antes e o depois, e continua sendo a fonte
+     * completa. Mas ele é *append-only* e cresce sem parar: descobrir "esta
+     * linha foi corrigida?" por lá seria uma consulta por dose, em toda
+     * abertura da tela do dia.
+     *
+     * Estas duas respondem a pergunta barata. **Registro corrigido sem
+     * marca visível é pior que registro errado** — quem lê passa a confiar
+     * no que não deve —, e é a tela que precisa da resposta rápida.
+     */
+    correctedAt: timestamp("corrected_at", { withTimezone: true }),
+    /**
+     * Quem emendou. `set null` e não `cascade`: se a pessoa sair da
+     * família, o registro **não** pode sumir junto — ele é do paciente, não
+     * de quem digitou. Perde-se o nome, nunca a dose.
+     */
+    correctedByCaregiverId: integer("corrected_by_caregiver_id").references(
+      () => caregiversTable.id,
+      { onDelete: "set null" },
+    ),
   },
   (table) => ({
     // UNIQUE garante: apenas 1 registro por dose agendada — sem duplicidade

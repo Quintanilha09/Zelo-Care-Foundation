@@ -235,6 +235,15 @@ describe("Rotas dev/clock — proteção de produção", () => {
         `Em produção /api/dev/clock/reset deve ser 404, recebeu ${res.status}`);
     });
 
+    it("POST /api/dev/envelhecer-dose retorna 404 em produção", async () => {
+      // Issue #136 — segunda rota do mesmo módulo. Ela empurra o `created_at`
+      // de um registro de dose para trás: um atalho de teste que em produção
+      // seria falsificação de carimbo de auditoria.
+      const res = await httpRequest(port, "POST", "/api/dev/envelhecer-dose", { recordId: 1, segundos: 120 });
+      assert.equal(res.status, 404,
+        `Em produção /api/dev/envelhecer-dose deve ser 404, recebeu ${res.status}`);
+    });
+
     it("POST /api/dev/plano retorna 404 em produção — e 404 é o número certo", async () => {
       // **404, nunca 401.** 401 diria que a rota existe e só faltou credencial,
       // e uma rota que troca o plano de uma família não pode existir em

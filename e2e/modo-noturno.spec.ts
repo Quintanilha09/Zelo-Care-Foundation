@@ -85,20 +85,71 @@ test.describe("Modo noturno", () => {
     await page.emulateMedia({ colorScheme: "dark" });
     await entrar(page, conta);
 
-    // Invariante 5: âmbar é pendência, verde é tomada, e **vermelho nunca**
-    // é estado de dose. Aqui se prova que os tokens existem no escuro — sem
-    // eles, `--color-zelo-amber-bg` continuaria quase branco e o cartão de
-    // dose pendente viraria um retângulo claro no fundo escuro.
-    const tons = await page.evaluate(() => {
-      const s = getComputedStyle(document.documentElement);
-      return {
-        amberBg: s.getPropertyValue("--color-zelo-amber-bg").trim(),
-        greenBg: s.getPropertyValue("--color-zelo-green-bg").trim(),
-      };
-    });
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     * PERGUNTA AO NAVEGADOR QUE COR A CLASSE PINTA — Issue #148.
+     *
+     * Até 11/09/2026 este caso lia a variável `--color-zelo-amber-bg` do
+     * `:root` e conferia se ela dizia "20%". Ele passava. E o modo escuro
+     * estava **morto**: a variável valia 20%, e a classe `.bg-zelo-amber-bg`
+     * pintava `#fdf5e8` — creme — porque o `@theme inline` do Tailwind tinha
+     * congelado o valor claro dentro da regra.
+     *
+     * Variável certa, tela errada. Ler a variável não prova nada sobre o que
+     * o usuário vê; a única pergunta que vale é qual cor **sai pintada**.
+     *
+     * Por isso aqui se cria um elemento com a classe real, se lê o
+     * `backgroundColor` computado, e se mede a luminância. É a mesma pergunta
+     * que o fundador fez ao olhar a tela e ver o cartão branco.
+     * ═══════════════════════════════════════════════════════════════════════
+     */
+    const corDaClasse = async (classe: string) =>
+      page.evaluate((c) => {
+        const el = document.createElement("div");
+        el.className = c;
+        document.body.appendChild(el);
+        const cor = getComputedStyle(el).backgroundColor;
+        el.remove();
+        return cor;
+      }, classe);
 
-    // No claro estes são 95% e 95% de luminosidade; no escuro, 20%.
-    expect(tons.amberBg, "o âmbar de fundo precisa ser escuro no tema escuro").toContain("20%");
-    expect(tons.greenBg, "o verde de fundo precisa ser escuro no tema escuro").toContain("20%");
+    /** Luminância relativa de um `rgb(r, g, b)`, para dizer se é clara ou escura. */
+    const luminancia = (rgb: string): number => {
+      const [r, g, b] = (rgb.match(/\d+/g) ?? ["0", "0", "0"]).map((n) => Number(n) / 255);
+      const canal = (v: number) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+      return 0.2126 * canal(r!) + 0.7152 * canal(g!) + 0.0722 * canal(b!);
+    };
+
+    const amberEscuro = await corDaClasse("bg-zelo-amber-bg");
+    const greenEscuro = await corDaClasse("bg-zelo-green-bg");
+
+    // Invariante 5: âmbar é pendência, verde é tomada, e **vermelho nunca** é
+    // estado de dose. No claro estes dois são quase brancos (luminância acima
+    // de 0,8); no escuro precisam ser tons baixos.
+    expect(
+      luminancia(amberEscuro),
+      `o cartao de dose pendente ficou claro no tema escuro: ${amberEscuro}`,
+    ).toBeLessThan(0.2);
+    expect(
+      luminancia(greenEscuro),
+      `o cartao de dose tomada ficou claro no tema escuro: ${greenEscuro}`,
+    ).toBeLessThan(0.2);
+
+    // E a prova de que é a TROCA que muda a cor, e não um valor fixo: no
+    // claro a MESMA classe pinta um tom alto.
+    //
+    // Sem `reload`: com a escolha em "sistema" — o padrão — o app acompanha o
+    // aparelho ao vivo (`observarOAparelho` em `lib/tema.ts`). Esperar a
+    // classe sair do `<html>` é mais direto que recarregar, e de quebra prova
+    // essa troca ao vivo, que é o caso de quem usa o modo noturno agendado do
+    // celular com o app aberto.
+    await page.emulateMedia({ colorScheme: "light" });
+    await expect(page.locator("html")).not.toHaveClass(/dark/, { timeout: 15_000 });
+
+    const amberClaro = await corDaClasse("bg-zelo-amber-bg");
+    expect(
+      luminancia(amberClaro),
+      `no tema claro a mesma classe tem que ser clara, e veio ${amberClaro}`,
+    ).toBeGreaterThan(0.7);
   });
 });
