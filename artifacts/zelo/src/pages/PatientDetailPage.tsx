@@ -27,15 +27,16 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
 import { AreaCarregando, Esqueleto } from "@/components/esqueleto";
-import { ArrowLeft, Plus, Pill, Package, Trash2, Smartphone, Tablet, Pause, Play, CheckCircle2, Undo2 } from "lucide-react";
+import { ArrowLeft, Plus, Pill, Package, Trash2, Smartphone, Tablet, Pause, Play, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { estaAtrasada, textoDoAtraso } from "@/lib/atraso";
 import { usePulsoDeMinuto } from "@/hooks/use-pulso-de-minuto";
 import {
-  usePulsoDeDesfazer, ultimoPrazoDeDesfazer, podeDesfazer,
+  usePulsoDeDesfazer, ultimoPrazoDeDesfazer,
 } from "@/hooks/use-pode-desfazer";
 import { nomeCurto } from "@workspace/nomes";
-import { CorrigirDose, type DoseParaCorrigir } from "@/components/corrigir-dose";
+import { AcoesDaDose, DialogosDaDose } from "@/components/acoes-da-dose";
+import { useRegistrarDose } from "@/hooks/use-registrar-dose";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -271,11 +272,6 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
    * Issue #134 — a dose que o servidor achou adiantada demais, esperando
    * confirmação. `null` enquanto não há pergunta na tela.
    */
-  const [antecipacao, setAntecipacao] = useState<{
-    doseId: number;
-    outcome: "taken" | "skipped";
-    horario: string;
-  } | null>(null);
   const [adjustingMedicationId, setAdjustingMedicationId] = useState<number | null>(null);
   const [adjustMode, setAdjustMode] = useState<"add" | "set">("add");
   const [adjustAmount, setAdjustAmount] = useState("");
@@ -295,28 +291,20 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
   // sem isto a tela mostraria Pendente para sempre em quem deixou o app
   // aberto — que e justamente quem acompanha o horario chegar.
   const agoraEmMinutos = usePulsoDeMinuto();
-  const [erroAoDesfazer, setErroAoDesfazer] = useState<string | null>(null);
   /** Issue #136 — o registro que esta sendo emendado. */
-  const [aCorrigir, setACorrigir] = useState<DoseParaCorrigir | null>(null);
 
-  const handleUndo = async (recordId: number) => {
-    setErroAoDesfazer(null);
-    const res = await authFetch(
-      `/api/patients/${params.id}/dose-records/${recordId}/undo`,
-      { method: "POST" },
-    );
-    if (!res.ok) {
-      // O 409 de prazo vencido é o caso comum aqui, e a mensagem do servidor
-      // já diz o que fazer. Mostrar a dele, e não uma genérica: mascarar a
-      // mensagem real do servidor já escondeu um 403 por dias neste app.
-      const corpo = (await res.json().catch(() => ({}))) as { error?: string };
-      setErroAoDesfazer(corpo.error ?? "Não deu pra desfazer agora.");
+  // Issue #162 — um dono so para registrar dose. Esta tela tinha o seu
+  // proprio `handleRegister`, sem editor de horario, sem justificativa e
+  // engolindo todo erro que nao fosse antecipacao (#165).
+  const dose = useRegistrarDose({
+    patientId: params.id,
+    aoMudar: () => {
       void queryClient.invalidateQueries({ queryKey: ["today-doses", params.id] });
-      return;
-    }
-    void queryClient.invalidateQueries({ queryKey: ["today-doses", params.id] });
-    void queryClient.invalidateQueries({ queryKey: ["stock", params.id] });
-  };
+      // O decremento automatico de estoque (ZELO-34) pode ter mudado os
+      // dias restantes — a faixa de reposicao precisa acompanhar.
+      void queryClient.invalidateQueries({ queryKey: ["stock", params.id] });
+    },
+  });
 
   const medicationByTreatment = new Map((treatments ?? []).map((t) => [t.id, { name: t.medicationName, dose: t.dose }]));
 
@@ -350,40 +338,6 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
    * dia em que discordam. Assim existe **um** dono da regra, e a tela apenas
    * reage ao que ele responde.
    */
-  const handleRegister = async (
-    doseId: number,
-    outcome: "taken" | "skipped",
-    confirmarAntecipacao = false,
-  ) => {
-    const res = await authFetch(`/api/patients/${params.id}/dose-records`, {
-      method: "POST",
-      // Sem `takenAt`: "agora" é o relógio do servidor (ver dose-records.ts).
-      body: JSON.stringify({
-        scheduledDoseId: doseId,
-        outcome,
-        ...(confirmarAntecipacao ? { confirmarAntecipacao: true } : {}),
-      }),
-    });
-
-    if (!res.ok) {
-      const corpo = (await res.json().catch(() => ({}))) as {
-        code?: string;
-        scheduledLocalTime?: string;
-      };
-      if (corpo.code === "ANTECIPACAO_REQUERIDA") {
-        setAntecipacao({
-          doseId,
-          outcome,
-          horario: corpo.scheduledLocalTime ?? "",
-        });
-      }
-      return;
-    }
-
-    setAntecipacao(null);
-    void queryClient.invalidateQueries({ queryKey: ["today-doses", params.id] });
-    void queryClient.invalidateQueries({ queryKey: ["stock", params.id] }); // decremento automático (ZELO-34) pode ter mudado dias restantes
-  };
 
   const handleAdjustStock = async (medicationId: number) => {
     const amount = Number(adjustAmount);
@@ -690,118 +644,45 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
                     takenAt={horaDoRegistro(d.registeredAt, patient?.timezone)}
                     takenBy={d.registeredByCaregiverName}
                   />
-                  {/* ── Issue #134: dose que ainda vai demorar não ganha os
-                      botões grandes ───────────────────────────────────────
+                  {/* ── Issue #162: um so componente para as cinco respostas
 
-                      Era aqui que o defeito morava. Esta tela oferecia
-                      "✓ Tomou" e "Pular" para TODA dose pendente, sem olhar
-                      o relógio — dava para resolver às 00:49 a dose das
-                      23:00 com um toque. A tela inicial já separava "Agora"
-                      de "Mais tarde" e não oferecia botão para as de mais
-                      tarde; **o comportamento certo já existia e nunca
-                      tinha chegado aqui**.
+                      Esta tela tinha quatro blocos condicionais aqui — dose
+                      de agora, dose que ainda vem, desfazer, corrigir — e a
+                      tela inicial tinha OUTROS, diferentes. Nenhuma das duas
+                      tinha as cinco respostas.
 
-                      O corte é `scheduledAt <= agora`, exatamente o mesmo
-                      que a `HomePage` usa. A janela de tolerância de quem
-                      dá o remédio pouco antes da hora é assunto do
-                      servidor, e ele responde por ela — ver `handleRegister`. */}
-                  {d.status === "pending" && (
-                    new Date(d.scheduledAt).getTime() <= Date.now() ? (
-                      <div className="flex gap-2 px-1">
-                        <Button size="sm" className="flex-1" onClick={() => void handleRegister(d.id, "taken")}>
-                          ✓ Tomou
-                        </Button>
-                        <Button size="sm" variant="secondary" className="flex-1" onClick={() => void handleRegister(d.id, "skipped")}>
-                          Pular
-                        </Button>
-                      </div>
-                    ) : (
-                      /* Discreto de propósito: difícil de acertar sem
-                         querer, fácil de achar de propósito. Quem realmente
-                         deu o remédio adiantado precisa conseguir
-                         registrar — o produto não bloqueia registro de
-                         dose, nunca. */
-                      <div className="px-1">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-muted-foreground h-auto py-1.5"
-                          onClick={() => void handleRegister(d.id, "taken")}
-                        >
-                          Já dei este remédio
-                        </Button>
-                      </div>
-                    )
-                  )}
-
-                  {/* ── Issue #135: o desfazer que faltava nesta tela ──────
-
-                      Ele existia no servidor desde sempre e só a tela
-                      inicial o chamava. Aqui não havia nenhum — e foi aqui
-                      que o fundador registrou a dose por engano.
-
-                      Some sozinho quando o minuto acaba (o pulso lá em
-                      cima), sobrevive a recarregar a página (o prazo vem do
-                      servidor, não da memória da aba) e aparece para
-                      **qualquer** cuidador, não só para quem registrou. */}
-                  {d.recordId !== null && podeDesfazer(d.desfazerAte, agora) && (
-                    <div className="px-1">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="gap-1.5 text-muted-foreground h-auto py-1.5"
-                        onClick={() => void handleUndo(d.recordId!)}
-                      >
-                        <Undo2 className="w-3.5 h-3.5" aria-hidden /> Desfazer
-                      </Button>
-                    </div>
-                  )}
-
-                  {/* ── Issue #136: depois do prazo, corrigir ──────────────
-
-                      O desfazer some aos 60 s; isto aparece no lugar dele.
-                      Nunca os dois ao mesmo tempo: são respostas para
-                      momentos diferentes, e oferecer as duas juntas faria a
-                      pessoa escolher entre "apagar" e "emendar" sem ter por
-                      que decidir isso.
-
-                      E a marca de que houve emenda fica na linha, ao lado —
-                      registro corrigido sem marca visível é pior que
-                      registro errado. */}
-                  {d.recordId !== null &&
-                    (d.status === "taken" || d.status === "skipped") &&
-                    !podeDesfazer(d.desfazerAte, agora) && (
-                      <div className="flex flex-wrap items-center gap-2 px-1">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="gap-1.5 text-muted-foreground h-auto py-1.5"
-                          onClick={() =>
-                            setACorrigir({
-                              recordId: d.recordId!,
-                              medicationName: med?.name ?? "Medicamento",
-                              outcome: d.status === "skipped" ? "skipped" : "taken",
-                              registeredAt: d.registeredAt,
-                            })
-                          }
-                        >
-                          <Pencil className="w-3.5 h-3.5" aria-hidden /> Corrigir
-                        </Button>
-                        {d.correctedAt && (
-                          <span className="text-xs text-muted-foreground">
-                            Corrigido{d.correctedByName ? ` por ${nomeCurto(d.correctedByName)}` : ""}
-                          </span>
-                        )}
-                      </div>
+                      O que esta tela ganha: escolher o horario real
+                      ("Outro horario"), a justificativa quando o servidor
+                      pede, e erro visivel quando o registro falha (#165).
+                      O que ela mantem: o corte `scheduledAt <= agora`, a
+                      pergunta da #134 e a marca de correcao ao lado. */}
+                  <div className="px-1">
+                    <AcoesDaDose
+                      dose={d}
+                      controlador={dose}
+                      agora={agora}
+                      medicationName={med?.name ?? "Medicamento"}
+                      compacto
+                    />
+                    {d.correctedAt && (
+                      <span className="text-xs text-muted-foreground">
+                        Corrigido{d.correctedByName ? ` por ${nomeCurto(d.correctedByName)}` : ""}
+                      </span>
                     )}
+                  </div>
                 </div>
               );
             })}
 
-            {erroAoDesfazer && (
-              <Alert variant="destructive">
-                <AlertDescription>{erroAoDesfazer}</AlertDescription>
-              </Alert>
+            {/* #165: era so o erro do desfazer. Agora cobre toda falha de
+                registro — sem conexao, sessao vencida, 409 — que antes esta
+                tela engolia em silencio. Ambar e nao vermelho: o invariante 5
+                vale aqui, isto e contexto de dose. */}
+            {dose.aviso && (
+              <p className="text-sm text-muted-foreground px-1">{dose.aviso}</p>
+            )}
+            {dose.erro && (
+              <p className="text-sm text-zelo-amber-fg px-1">{dose.erro}</p>
             )}
           </div>
         )}
@@ -905,57 +786,10 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
           ))}
         </div>
 
-        {/* Issue #136 — a emenda. Fora do `map` das doses: um diálogo por
-            dose renderizado em laço é o mesmo diálogo várias vezes no DOM. */}
-        <CorrigirDose
-          patientId={params.id}
-          dose={aCorrigir}
-          onFechar={() => setACorrigir(null)}
-          onCorrigido={() => {
-            setACorrigir(null);
-            void queryClient.invalidateQueries({ queryKey: ["today-doses", params.id] });
-            void queryClient.invalidateQueries({ queryKey: ["stock", params.id] });
-          }}
-        />
-
-        {/* ── Issue #134: a pergunta que o toque acidental não passa ──────
-
-            Quem abre isto é o servidor, não a tela: ele respondeu
-            `ANTECIPACAO_REQUERIDA` e mandou junto o horário agendado. A tela
-            só repete o que ele disse.
-
-            O texto **não julga**. Não há "você não devia dar agora" — o app
-            registra, não interpreta (invariante 4). Ele diz a que horas a
-            dose é e pergunta se é isso mesmo, e a resposta "Sim, já dei" vai
-            em botão normal, não destrutivo: dar o remédio adiantado não é
-            um erro, é uma informação. */}
-        <AlertDialog
-          open={antecipacao !== null}
-          onOpenChange={(aberto) => { if (!aberto) setAntecipacao(null); }}
-        >
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>
-                Esta dose é das {antecipacao?.horario}
-              </AlertDialogTitle>
-              <AlertDialogDescription>
-                Ela ainda não chegou no horário. Se o remédio já foi dado, pode
-                registrar agora — o horário do registro fica sendo este.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Ainda não</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={() =>
-                  antecipacao &&
-                  void handleRegister(antecipacao.doseId, antecipacao.outcome, true)
-                }
-              >
-                Sim, já dei
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        {/* Issue #162 — os dois dialogos num componente so, e agora nas
+            DUAS telas. A pergunta da #134 e a correcao da #136 viviam so
+            aqui; a tela inicial nao tinha nenhuma das duas. */}
+        <DialogosDaDose controlador={dose} patientId={params.id} />
 
         {/* Excluir é a única ação do ciclo que não dá para desfazer — as
             outras três têm "Reativar" logo ali embaixo. Por isso é a única

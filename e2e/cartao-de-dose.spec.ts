@@ -146,7 +146,7 @@ test.describe("Dose pulada", () => {
     ).toHaveCount(0);
 
     // E não pode oferecer os botões de registrar de novo.
-    await expect(page.getByRole("button", { name: /Tomou/ })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^✓ Registrar/ })).toHaveCount(0); // #162: o rotulo do botao grande
     await expect(page.getByRole("button", { name: "Pular", exact: true })).toHaveCount(0);
   });
 });

@@ -65,7 +65,7 @@ test.describe("Dose antes da hora", () => {
   test("a dose que ainda vai demorar nao tem os botoes grandes", async ({ page }) => {
     // O defeito, dito ao contrário: se estes dois voltarem a aparecer para
     // uma dose distante, o toque acidental volta junto.
-    await expect(page.getByRole("button", { name: /Tomou/ })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^✓ Registrar/ })).toHaveCount(0); // #162: o rotulo do botao grande
     await expect(page.getByRole("button", { name: "Pular", exact: true })).toHaveCount(0);
 
     // E o caminho de propósito continua existindo — o produto nunca bloqueia
@@ -104,7 +104,7 @@ test.describe("Dose antes da hora", () => {
   test("confirmando, a dose entra — o caminho nunca fecha", async ({ page }) => {
     test.skip(!doseEstaLonge(), "a dose de hoje esta dentro da janela: o servidor nao pergunta");
     await page.getByRole("button", { name: "Já dei este remédio" }).click();
-    await page.getByRole("alertdialog").getByRole("button", { name: "Sim, já dei" }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "Sim, agora" }).click();
 
     // Primeira vez em toda a suíte que uma dose é registrada pela TELA.
     await expect(page.getByText("Tomado", { exact: true })).toBeVisible({ timeout: 15_000 });

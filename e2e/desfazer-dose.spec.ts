@@ -91,13 +91,18 @@ async function registrarPelaTela(page: Page) {
      * dose já entrou e o cartão diz "Tomado". Sem tempo morto em nenhum dos
      * dois caminhos, e sem supor qual deles vai acontecer.
      */
-    const confirmar = page.getByRole("alertdialog").getByRole("button", { name: "Sim, já dei" });
+    // Issue #162/#163: "Sim, já dei" virou "Sim, agora", e ganhou um irmão
+    // ("Dei em outro horário"). O texto antigo não dizia QUANDO, e era esse o
+    // buraco: quem deu às 18:40 e lembrou às 19:20 registrava 19:20.
+    const confirmar = page.getByRole("alertdialog").getByRole("button", { name: "Sim, agora" });
     const jaEntrou = page.getByText("Tomado", { exact: true });
     await expect(confirmar.or(jaEntrou).first()).toBeVisible({ timeout: 15_000 });
 
     if (await confirmar.isVisible()) await confirmar.click();
   } else {
-    await page.getByRole("button", { name: "✓ Tomou" }).first().click();
+    // Issue #162: a ficha do paciente passou a usar o mesmo componente da
+    // tela inicial, e com ele o mesmo rótulo — "✓ Registrar".
+    await page.getByRole("button", { name: "✓ Registrar" }).first().click();
   }
   await expect(page.getByText("Tomado", { exact: true })).toBeVisible({ timeout: 15_000 });
 }
