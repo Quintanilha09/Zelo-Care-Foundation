@@ -117,6 +117,13 @@ export interface ControladorDeDose {
   erro: string | null;
   /** Corrida perdida: informação, nunca erro. */
   aviso: string | null;
+  /**
+   * A dose que acabou de ser pulada e ainda nao tem motivo — Issue #166.
+   *
+   * Pular continua sendo UM toque: a dose e registrada na hora. Isto abre
+   * logo depois, como oferta, e some sozinho quando a pessoa segue em frente.
+   */
+  motivoPendente: DoseRegistravel | null;
 
   // ── ações ───────────────────────────────────────────────────────────────
   registrar: (dose: DoseRegistravel, desfecho: Desfecho, opcoes?: OpcoesDeRegistro) => Promise<void>;
@@ -124,6 +131,8 @@ export interface ControladorDeDose {
   abrirEditorDeHorario: (doseId: number, sugestao: Date) => void;
   fecharEditor: () => void;
   confirmarHorarioEscolhido: (dose: DoseRegistravel, desfecho: Desfecho) => Promise<void>;
+  darOMotivo: (texto: string) => Promise<void>;
+  dispensarOMotivo: () => void;
   abrirCorrecao: (dose: CorrecaoAberta) => void;
   fecharCorrecao: () => void;
   aoCorrigir: () => void;
@@ -159,6 +168,7 @@ export function useRegistrarDose({
   const [emVoo, setEmVoo] = useState<number | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
+  const [motivoPendente, setMotivoPendente] = useState<DoseRegistravel | null>(null);
 
   const registrar = async (dose: DoseRegistravel, desfecho: Desfecho, opcoes: OpcoesDeRegistro = {}) => {
     const doseId = dose.id;
@@ -229,6 +239,27 @@ export function useRegistrarDose({
     const ok = corpo as { wonRace: boolean; message?: string };
     if (ok && ok.wonRace === false) {
       setAviso(ok.message ?? "Essa dose já foi registrada por outra pessoa.");
+      return;
+    }
+
+    /**
+     * Issue #166 — a oferta do motivo, DEPOIS de a dose estar registrada.
+     *
+     * Uma dose pulada é informação para o médico, e o motivo é metade
+     * dela: "pulou porque estava vomitando" e "pulou porque acabou o
+     * remédio" são duas conversas diferentes na consulta, e hoje viram a
+     * mesma linha "Pulado".
+     *
+     * Só para PULAR: quem registra uma dose tomada não deve nada a
+     * ninguém, e perguntar ali seria transformar o caminho comum num
+     * interrogatório.
+     *
+     * E só quando a pessoa não disse nada ainda — se ela veio pelo editor
+     * de horário e escreveu uma justificativa, perguntar de novo seria não
+     * ter ouvido.
+     */
+    if (desfecho === "skipped" && !opcoes.justification?.trim()) {
+      setMotivoPendente(dose);
     }
   };
 
@@ -288,6 +319,34 @@ export function useRegistrarDose({
       });
     },
 
+    motivoPendente,
+    /**
+     * Acrescenta o motivo ao registro que acabou de ser feito.
+     *
+     * Rota própria, e não o PATCH de correção: acrescentar um motivo que
+     * faltava não emenda nada — o desfecho e o horário continuam os
+     * mesmos —, e usar o PATCH marcaria o registro como "corrigido". Uma
+     * marca de emenda onde não houve emenda é uma marca que mente.
+     */
+    darOMotivo: async (texto: string) => {
+      const dose = motivoPendente;
+      if (!dose || !dose.recordId || !texto.trim()) return;
+      setMotivoPendente(null);
+      const res = await authFetch(
+        `/api/patients/${dose.patientId}/dose-records/${dose.recordId}/motivo`,
+        { method: "POST", body: JSON.stringify({ justification: texto.trim() }) },
+      ).catch(() => null);
+      if (!res || !res.ok) {
+        // O motivo é uma oferta: se ele não sobe, a DOSE continua
+        // registrada, que é o que importa. Avisar, e não alarmar.
+        setAviso("Não deu para guardar o motivo agora. A dose está registrada.");
+        return;
+      }
+      aoMudar();
+    },
+    /** Seguir em frente sem dizer nada — e isso não é falha de ninguém. */
+    dispensarOMotivo: () => setMotivoPendente(null),
+
     abrirCorrecao: (dose) => { setErro(null); setACorrigir(dose); },
     fecharCorrecao: () => setACorrigir(null),
     aoCorrigir: () => { setACorrigir(null); aoMudar(); },
@@ -318,3 +377,30 @@ export function useRegistrarDose({
     setJustificativa,
   };
 }
+
+// ── O motivo de uma dose pulada — Issue #166 ────────────────────────────────
+
+/**
+ * Sugestões curtas de por que uma dose não foi dada.
+ *
+ * ── Elas descrevem o que ACONTECEU, nunca o que se deveria fazer ─────────
+ *
+ * Invariante 4: o ZELO registra, não orienta. "Estava passando mal" é um
+ * relato; "espere a pressão normalizar" seria conselho clínico, e não entra
+ * aqui nem como sugestão.
+ *
+ * ── Por que sugestões, e não um campo em branco ──────────────────────────
+ *
+ * Quem está com o remédio na mão não vai digitar. Um campo vazio recebe
+ * silêncio, e o relatório do médico continua dizendo só "Pulado" — que é o
+ * problema que a issue existe para resolver. Quatro toques possíveis cobrem
+ * a maior parte do que acontece de verdade.
+ *
+ * O campo livre continua existindo, para o que não cabe em nenhuma delas.
+ */
+export const MOTIVOS_SUGERIDOS = [
+  "Acabou o remédio",
+  "A pessoa recusou",
+  "Estava passando mal",
+  "O médico mandou suspender",
+] as const;

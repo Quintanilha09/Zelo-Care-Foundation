@@ -567,6 +567,107 @@ router.post("/patients/:patientId/dose-records/:recordId/undo", requireAuth, req
  * Não é bloqueada por plano, pelo mesmo motivo que registrar não é.
  */
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ACRESCENTAR O MOTIVO QUE FALTAVA NÃO É CORRIGIR — Issue #166.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * "Pular" era um toque e nada mais. O relatório do médico recebia "Pulado", e
+ * "pulou porque estava vomitando" e "pulou porque acabou o remédio" viravam a
+ * mesma linha — sendo duas conversas diferentes na consulta.
+ *
+ * ── Por que uma rota própria, e não o PATCH de correção ──────────────────
+ *
+ * A correção **marca o registro**, e essa marca existe para dizer *"o que
+ * aconteceu foi emendado"*. Acrescentar um motivo não emenda nada: o desfecho
+ * e o horário continuam os mesmos. Usar o PATCH aqui faria a marca mentir, e
+ * registro marcado sem emenda é tão ruim quanto emenda sem marca.
+ *
+ * O PATCH também exige, por contrato, que se diga **o que mudou** — e aqui
+ * nada muda. São duas operações diferentes, e ganharam dois nomes.
+ *
+ * ── Por que só quando não havia motivo ──────────────────────────────────
+ *
+ * Trocar um motivo existente **é** emendar o registro, e aí a marca tem de
+ * aparecer. Esta rota recusa com 409 e manda usar a correção.
+ *
+ * ── Por que isto deixa "Pular" continuar sendo UM toque ─────────────────
+ *
+ * A dose é registrada no toque, e persistida (invariante 1). O motivo vem
+ * depois, como oferta — quem está com pressa fecha a tela e nada se perde.
+ * Perguntar antes transformaria um toque em dois, e o cuidador com o remédio
+ * na mão é exatamente quem não tem esse tempo.
+ */
+const MotivoBody = z.object({
+  justification: z.string().trim().min(1).max(500),
+});
+
+router.post(
+  "/patients/:patientId/dose-records/:recordId/motivo",
+  requireAuth,
+  requireCapability("register_dose"),
+  async (req, res): Promise<void> => {
+    const patientId = Number(req.params.patientId);
+    const recordId = Number(req.params.recordId);
+    if (isNaN(patientId) || isNaN(recordId)) { res.status(400).json({ error: "ID inválido" }); return; }
+
+    const body = MotivoBody.safeParse(req.body);
+    if (!body.success) { res.status(400).json({ error: mensagemDeValidacao(body.error) }); return; }
+
+    // Invariante 2: o registro tem de ser de paciente da família de quem
+    // chamou, e recurso de outra família responde 404 — nunca 403.
+    const [record] = await db
+      .select({ id: doseRecordsTable.id, justification: doseRecordsTable.justification })
+      .from(doseRecordsTable)
+      .innerJoin(patientsTable, eq(doseRecordsTable.patientId, patientsTable.id))
+      .where(and(
+        eq(doseRecordsTable.id, recordId),
+        eq(doseRecordsTable.patientId, patientId),
+        eq(patientsTable.familyId, getAuth(req).familyId),
+      ))
+      .limit(1);
+    if (!record) { res.status(404).json({ error: "Registro não encontrado" }); return; }
+
+    if (record.justification) {
+      res.status(409).json({
+        error: "Este registro já tem um motivo. Para mudá-lo, use Corrigir.",
+        code: "MOTIVO_JA_EXISTE",
+      });
+      return;
+    }
+
+    const [atualizado] = await db
+      .update(doseRecordsTable)
+      // `correctedAt` NÃO é tocado, e é o ponto inteiro desta rota.
+      .set({ justification: body.data.justification })
+      .where(eq(doseRecordsTable.id, recordId))
+      .returning({ id: doseRecordsTable.id, justification: doseRecordsTable.justification });
+
+    /**
+     * Auditoria SEM o texto do motivo.
+     *
+     * O motivo fala de saúde — "estava vomitando", "a pressão estava baixa".
+     * Invariante 3: nada disso entra em log. Fica registrado que alguém
+     * acrescentou um motivo, e quem foi.
+     */
+    await audit({
+      familyId: getAuth(req).familyId,
+      entityType: "dose_record",
+      entityId: String(recordId),
+      action: "updated",
+      // O vocabulario do audit tem quatro verbos, e "acrescentou motivo" nao
+      // e um deles. O campo diff diz QUAL atualizacao foi — sem o texto, que
+      // fala de saude (invariante 3).
+      diff: JSON.stringify({ acrescentou: "justification" }),
+      actorId: String(getAuth(req).caregiverId),
+      actorType: "caregiver",
+      ipAddress: req.ip,
+    });
+
+    res.json(atualizado);
+  },
+);
+
 const CorrigirDoseBody = z
   .object({
     outcome: z.enum(["taken", "skipped"]).optional(),

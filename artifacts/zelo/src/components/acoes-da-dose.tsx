@@ -30,6 +30,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Clock as ClockIcon, Undo2, Pencil } from "lucide-react";
 import { podeDesfazer } from "@/hooks/use-pode-desfazer";
+import { useState } from "react";
+import { MOTIVOS_SUGERIDOS } from "@/hooks/use-registrar-dose";
 import type { ControladorDeDose, DoseRegistravel } from "@/hooks/use-registrar-dose";
 
 /**
@@ -244,9 +246,79 @@ export function AcoesDaDose({
  * São modais: existir um por cartão criaria dez instâncias da mesma caixa
  * esperando para abrir.
  */
+/**
+ * O motivo de uma dose pulada — Issue #166.
+ *
+ * ═══════════════════════════════════════════════════════════════════════
+ * APARECE DEPOIS DE A DOSE ESTAR REGISTRADA, E NUNCA ANTES.
+ *
+ * "Pular" continua sendo UM toque. Quem está com pressa fecha a tela e a
+ * dose está lá — o motivo é oferta, não pedágio. Perguntar antes
+ * transformaria um toque em dois, e o cuidador com o remédio na mão é
+ * exatamente quem não tem esse tempo.
+ * ═══════════════════════════════════════════════════════════════════════
+ *
+ * ── O que ele NÃO é ────────────────────────────────────────────────────
+ *
+ * Não é um modal: modal exige decisão, e aqui não há decisão nenhuma a
+ * tomar. É uma faixa que aparece e some, e ignorá-la é uma resposta
+ * legítima — a mais comum, provavelmente.
+ */
+function MotivoDeTerPulado({ controlador }: { controlador: ControladorDeDose }) {
+  const [texto, setTexto] = useState("");
+  const dose = controlador.motivoPendente;
+  if (!dose) return null;
+
+  return (
+    <div className="rounded-lg border border-dashed bg-muted/40 px-4 py-3 space-y-2">
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-[15px]">
+          Quer dizer por que a dose não foi dada?{" "}
+          <span className="text-muted-foreground">Ajuda o médico a entender.</span>
+        </p>
+        {/* Fechar é uma resposta, e por isso tem botão próprio em vez de
+            depender de a pessoa adivinhar que pode ignorar. */}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="shrink-0 text-muted-foreground h-auto py-1"
+          onClick={controlador.dispensarOMotivo}
+        >
+          Agora não
+        </Button>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {MOTIVOS_SUGERIDOS.map((m) => (
+          <Button
+            key={m}
+            variant="outline"
+            size="sm"
+            onClick={() => void controlador.darOMotivo(m)}
+          >
+            {m}
+          </Button>
+        ))}
+      </div>
+      <div className="flex items-center gap-2">
+        <Input
+          value={texto}
+          maxLength={500}
+          placeholder="Ou escreva o que houve"
+          onChange={(e) => setTexto(e.target.value)}
+        />
+        <Button size="sm" disabled={!texto.trim()} onClick={() => void controlador.darOMotivo(texto)}>
+          Guardar
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function DialogosDaDose({ controlador }: { controlador: ControladorDeDose }) {
   return (
     <>
+      <MotivoDeTerPulado controlador={controlador} />
+
       {/* ── Issue #134, agora nas duas telas ──────────────────────────────
 
           O ZELO registra, não interpreta (invariante 4). Ele diz a que horas
