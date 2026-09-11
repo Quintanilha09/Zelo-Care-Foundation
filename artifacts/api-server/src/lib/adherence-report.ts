@@ -93,7 +93,31 @@ export async function computeReportData(
     .select({
       medicationId: treatmentsTable.medicationId,
       medicationName: medicationsTable.name,
-      dose: treatmentsTable.dose,
+      /**
+       * A dose DAQUELA dose, e não a do tratamento hoje — Issue #170.
+       *
+       * ═══════════════════════════════════════════════════════════════════
+       * ERA `treatmentsTable.dose`, E ISSO REESCREVIA O PASSADO NO PDF.
+       *
+       * Num desmame — prednisona 40 → 20 → 10, ansiolítico sendo retirado,
+       * anticoagulante ajustado por exame — o tratamento tem UMA dose, a de
+       * agora. Lendo dali, o relatório de agosto imprimia a dose de
+       * setembro: **"Dose prescrita: 10mg"** para doses que foram de 40mg.
+       *
+       * O documento que vai ao médico é exatamente o que não pode mentir.
+       * ═══════════════════════════════════════════════════════════════════
+       *
+       * ── O valor certo já estava aqui ─────────────────────────────────
+       *
+       * `scheduled_doses.dose` é instantâneo desde a fundação — "cópia do
+       * treatment.dose no momento do agendamento", e é `dose-generation.ts`
+       * quem preenche. A consulta abaixo já parte desta tabela. Era só ler
+       * a coluna certa.
+       *
+       * Por isso a tela sempre mostrou o histórico correto (`dashboard.ts`
+       * lê `scheduledDosesTable.dose`) e só o PDF errava.
+       */
+      dose: scheduledDosesTable.dose,
       scheduledLocalTime: scheduledDosesTable.scheduledLocalTime,
       status: scheduledDosesTable.status,
       takenAt: doseRecordsTable.takenAt,
@@ -110,7 +134,19 @@ export async function computeReportData(
     ));
 
   const byMedication = new Map<number, {
-    medicationName: string; dose: string | null;
+    medicationName: string;
+    /**
+     * TODAS as doses que valeram no período — Issue #170.
+     *
+     * Era um campo só, preenchido pela primeira linha vista. Com a leitura
+     * certa (a dose de cada dose agendada), um desmame passa a trazer
+     * valores diferentes no mesmo período — e guardar só o primeiro
+     * esconderia os outros degraus do médico.
+     *
+     * Conjunto, e não lista: o caso comum é uma dose só, e aí a frase do
+     * PDF sai exatamente como sempre saiu.
+     */
+    doses: Set<string>;
     prescribedTimes: Set<string>;
     total: number; taken: number; skipped: number; unregistered: number;
     actualByPrescribedTime: Map<string, string[]>; // prescribedTime -> lista de horários reais (HH:mm, tomadas)
@@ -120,12 +156,13 @@ export async function computeReportData(
     let entry = byMedication.get(row.medicationId);
     if (!entry) {
       entry = {
-        medicationName: row.medicationName, dose: row.dose,
+        medicationName: row.medicationName, doses: new Set(),
         prescribedTimes: new Set(), total: 0, taken: 0, skipped: 0, unregistered: 0,
         actualByPrescribedTime: new Map(),
       };
       byMedication.set(row.medicationId, entry);
     }
+    if (row.dose) entry.doses.add(row.dose);
     entry.prescribedTimes.add(row.scheduledLocalTime);
     entry.total += 1;
 
@@ -160,7 +197,11 @@ export async function computeReportData(
       });
     }
     return {
-      medicationId, medicationName: e.medicationName, dose: e.dose,
+      medicationId, medicationName: e.medicationName,
+      // Ordenadas para o PDF não mudar de ordem entre duas gerações do
+      // mesmo período — um documento clínico que muda sozinho perde a
+      // confiança de quem o compara com o anterior.
+      dose: e.doses.size > 0 ? Array.from(e.doses).sort().join(", ") : null,
       prescribedTimes,
       totalScheduled: e.total, taken: e.taken, skipped: e.skipped, unregistered: e.unregistered,
       adherenceRate: e.total > 0 ? e.taken / e.total : null,

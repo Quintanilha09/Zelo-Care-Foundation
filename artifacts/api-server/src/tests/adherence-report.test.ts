@@ -97,12 +97,19 @@ async function setPlan(plan: "free" | "basic" | "premium" | null) {
   if (plan) await db.insert(subscriptionsTable).values({ familyId, plan, status: "active" });
 }
 
-async function insertDose(localDate: string, localTime: string, status: "pending" | "taken" | "skipped" | "late" | "postponed") {
+async function insertDose(
+  localDate: string,
+  localTime: string,
+  status: "pending" | "taken" | "skipped" | "late" | "postponed",
+  // Issue #170: a dose da DOSE. `scheduled_doses.dose` é instantâneo — é o
+  // que valia no dia —, e era justamente isso que o relatório ignorava.
+  doseDoDia = "1 comprimido",
+) {
   const [dose] = await db.insert(scheduledDosesTable).values({
     treatmentId, patientId,
     scheduledAt: new Date(`${localDate}T${localTime}:00-03:00`),
     scheduledLocalDate: localDate, scheduledLocalTime: localTime,
-    status, dose: "1 comprimido",
+    status, dose: doseDoDia,
   }).returning();
   return dose.id;
 }
@@ -334,5 +341,62 @@ describe("Isolamento entre famílias", () => {
     assert.equal(res.status, 404);
 
     await db.delete(familiesTable).where(eq(familiesTable.id, familyB.id));
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * A DOSE DO PERÍODO, E NÃO A DE HOJE — Issue #170.
+ *
+ * O relatório lia `treatments.dose`: um campo só, com o valor de AGORA. Num
+ * desmame, o PDF de um período passado imprimia a dose do fim para doses que
+ * foram do começo — e é o documento que vai ao médico.
+ *
+ * ── Por que nenhum teste pegou isto ──────────────────────────────────────
+ *
+ * Porque **nenhum caso mudava a dose depois de registrar**. Todos criavam o
+ * tratamento e o relatório no mesmo estado, e nesse estado os dois valores
+ * coincidem. O defeito só aparece quando o tempo passa entre uma coisa e
+ * outra — que é exatamente o que um desmame faz.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+describe("A dose que o relatorio imprime", () => {
+  it("e a que valia em cada dose, nao a do tratamento hoje", async () => {
+    // Um desmame: 40mg nos três primeiros dias, 10mg nos três seguintes.
+    for (const dia of ["2026-04-01", "2026-04-02", "2026-04-03"]) {
+      const id = await insertDose(dia, "08:00", "taken", "40mg");
+      await insertDoseRecord(id, "taken", `${dia}T08:05:00-03:00`);
+    }
+    for (const dia of ["2026-04-04", "2026-04-05", "2026-04-06"]) {
+      const id = await insertDose(dia, "08:00", "taken", "10mg");
+      await insertDoseRecord(id, "taken", `${dia}T08:05:00-03:00`);
+    }
+
+    // E o tratamento, HOJE, está numa terceira dose — o desmame terminou.
+    await db.update(treatmentsTable).set({ dose: "5mg" }).where(eq(treatmentsTable.id, treatmentId));
+
+    const data = await computeReportData(patientId, "2026-04-01", "2026-04-06");
+    const med = data.medications[0];
+
+    assert.ok(
+      med.dose?.includes("40mg"),
+      "a dose do começo do período tem que aparecer — foi ela que o paciente tomou",
+    );
+    assert.ok(med.dose?.includes("10mg"), "e a do fim do período também");
+    assert.ok(
+      !med.dose?.includes("5mg"),
+      "a dose de HOJE não pode aparecer num relatório de um período em que ela " +
+        "não valia. Era este o defeito da #170, e é o documento que vai ao médico.",
+    );
+  });
+
+  it("com uma dose so no periodo, a frase sai igual a de sempre", async () => {
+    const id = await insertDose("2026-05-10", "08:00", "taken", "1 comprimido");
+    await insertDoseRecord(id, "taken", "2026-05-10T08:05:00-03:00");
+
+    const data = await computeReportData(patientId, "2026-05-10", "2026-05-10");
+
+    // O caso comum é este, e ele não pode ter ganhado vírgula nem lista.
+    assert.equal(data.medications[0].dose, "1 comprimido");
   });
 });
