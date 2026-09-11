@@ -168,21 +168,18 @@ const NAO_HERDA_O_TEMA = ["ElderModePage.tsx", "PatientAccessActivationPage.tsx"
  * ══════════════════════════════════════════════════════════════════════════
  * ISTO NÃO É UMA EXCEÇÃO SILENCIOSA. É UMA DÍVIDA COM NÚMERO E DONO.
  *
- * `--zelo-green` é **a mesma cor** que `--primary`: o verde da marca, e o
- * fundo de toda ação primária do app. Branco sobre ele mede **3,25:1 no
- * claro** e **3,97:1 no escuro** — abaixo de AA nos dois.
+ * Um par entra aqui quando o conserto é decisão de produto, não de código —
+ * e entra **com o número atual como piso**: pode não melhorar, nunca piorar.
  *
- * Não é defeito desta issue nem da #148: é anterior a tudo isto, e some
- * apenas escurecendo o verde até L ≤ 41%, o que muda a identidade visual do
- * produto. Essa escolha é do fundador, e está na Issue #151.
+ * ── Está vazia, e isso é o estado certo ─────────────────────────────────
  *
- * Enquanto ela não vem, o teste **segura a linha**: o par não pode piorar.
- * Se alguém clarear o verde, este arquivo reprova.
+ * A única entrada que já existiu era `bg-zelo-green + text-white`, em
+ * **3,25:1**. A decisão era do fundador porque o conserto mexe na identidade
+ * visual; ele decidiu escurecer, e a **#151** pagou a dívida. O mecanismo
+ * fica: o próximo par nesta situação precisa de piso, não de silêncio.
  * ══════════════════════════════════════════════════════════════════════════
  */
-const DIVIDA_CONHECIDA: Array<{ par: string; naoPodeFicarAbaixoDe: number; issue: string }> = [
-  { par: "bg-zelo-green + text-white", naoPodeFicarAbaixoDe: 3.2, issue: "#151" },
-];
+const DIVIDA_CONHECIDA: Array<{ par: string; naoPodeFicarAbaixoDe: number; issue: string }> = [];
 
 function arquivosTsx(dir: string): string[] {
   const saida: string[] = [];
@@ -370,6 +367,86 @@ describe("Contraste dos pares que as telas usam", () => {
         0,
         `pares abaixo do piso AA de ${AA}:1 no tema ${nomeDoTema}:\n${falhas.join("\n")}\n` +
           "O público deste produto é idoso. Ajuste o VALOR do token, nunca o piso.",
+      );
+    });
+  }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   * O BOTÃO DE AÇÃO — Issue #151.
+   *
+   * A varredura acima só enxerga classes `bg-zelo-*`. O botão primário usa
+   * `bg-primary text-primary-foreground`, e por isso **o par mais usado do
+   * app nunca foi medido** — a dívida da #151 só apareceu por um proxy
+   * (`bg-zelo-green + text-white`, num único arquivo).
+   *
+   * Aqui ele é medido direto, e nas TRÊS relações que precisam valer juntas:
+   *
+   *   1. o rótulo contra o botão  (texto: piso AA)
+   *   2. o botão contra a página  (componente: piso 3:1, WCAG 1.4.11)
+   *   3. o botão contra o cartão  (idem — botão dentro de cartão é o comum)
+   *
+   * ── Por que as três, e não só a primeira ───────────────────────────────
+   *
+   * Porque elas **puxam para lados opostos**, e foi isso que a #151
+   * descobriu. No tema escuro, escurecer o verde até o branco passar em (1)
+   * derrubava (3) para 2,77:1: rótulo legível dentro de um botão que some no
+   * fundo. A saída foi clarear o verde e escurecer a tinta — o inverso do
+   * tema claro, mesma regra.
+   *
+   * Um teste só de (1) teria aprovado aquele beco.
+   * ═══════════════════════════════════════════════════════════════════════
+   */
+  for (const escuro of [false, true]) {
+    const nomeDoTema = escuro ? "escuro" : "claro";
+
+    it(`o botao de acao se le e se ve no tema ${nomeDoTema}`, () => {
+      const trecho = trechoDoTema(escuro);
+      const pegar = (nome: string) => {
+        const v = token(trecho, nome);
+        assert.ok(v, `${nome} precisa existir no tema ${nomeDoTema}`);
+        return paraRgb(v);
+      };
+
+      const botao = pegar("--primary");
+      const rotulo = pegar("--primary-foreground");
+      const pagina = pegar("--background");
+      const cartao = pegar("--card");
+
+      const medidas = [
+        { o: "o rótulo sobre o botão", valor: contraste(rotulo, botao), piso: AA },
+        { o: "o botão contra a página", valor: contraste(botao, pagina), piso: AA_GRANDE },
+        { o: "o botão contra o cartão", valor: contraste(botao, cartao), piso: AA_GRANDE },
+      ];
+
+      const abaixo = medidas
+        .filter((m) => m.valor < m.piso)
+        .map((m) => `  ${m.o}: ${m.valor.toFixed(2)}:1, piso ${m.piso}:1`);
+
+      assert.deepEqual(
+        abaixo,
+        [],
+        `o botão primário do tema ${nomeDoTema} não fecha:\n${abaixo.join("\n")}\n` +
+          "As três medidas puxam para lados opostos. Se escurecer o botão " +
+          "para o rótulo passar derrubar a separação do cartão, a saída é a " +
+          "outra ponta: clarear o botão e escurecer o rótulo (ver o tema " +
+          "escuro). Ajuste o VALOR do token, nunca o piso.",
+      );
+    });
+
+    /**
+     * `--zelo-green` **é** o verde da marca, e `--primary` também. Já
+     * divergiram uma vez — entre a #138 e a #149 —, e o mesmo verde passou a
+     * ter dois valores conforme a classe. Isto trava os dois juntos.
+     */
+    it(`o verde da marca e um so no tema ${nomeDoTema}`, () => {
+      const trecho = trechoDoTema(escuro);
+      assert.deepEqual(
+        token(trecho, "--zelo-green"),
+        token(trecho, "--primary"),
+        `no tema ${nomeDoTema}, --zelo-green e --primary precisam ser o mesmo ` +
+          "valor: são a mesma cor de marca, e separá-los faz o botão de " +
+          "compartilhar e o botão primário ficarem em verdes diferentes",
       );
     });
   }

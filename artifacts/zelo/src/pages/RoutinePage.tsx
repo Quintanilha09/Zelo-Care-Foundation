@@ -246,7 +246,16 @@ export default function RoutinePage({ params }: { params: { id: string } }) {
                   <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} domain={["auto", "auto"]} />
                   <Tooltip />
-                  <Line type="monotone" dataKey="value" stroke="var(--zelo-green, #659A76)" dot strokeWidth={2} />
+                  {/* Issue #151 — a linha estava sem cor desde a #148.
+
+                      Era `var(--zelo-green, #659A76)`. Até a #148 `--zelo-green`
+                      não existia em `:root` (só o `--color-zelo-green` do
+                      `@theme`), então o navegador caía no hex e a linha saía
+                      verde. A #148 criou a variável com o valor CRU — `140 21%
+                      40%` —, o fallback deixou de valer, e `stroke` passou a
+                      receber um valor que não é cor. Falha silenciosa: sem
+                      erro no console, sem linha no gráfico. */}
+                  <Line type="monotone" dataKey="value" stroke="hsl(var(--zelo-green))" dot strokeWidth={2} />
                 </LineChart>
               </ResponsiveContainer>
             </div>

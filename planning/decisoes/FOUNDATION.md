@@ -136,7 +136,7 @@ receber `403 PLAN_READ_ONLY` ao apertar "Tomei".
 
 | Contexto | Cor | Hex |
 |---|---|---|
-| Dose tomada | Verde calmo | `#659A76` |
+| Dose tomada | Verde calmo | `#517B5F` |
 | Dose pendente / atrasada | Âmbar | `#E9AD51` |
 | Qualquer alerta de dose | Âmbar | `#E9AD51` |
 | Vermelho em contexto de dose | **PROIBIDO** | — |

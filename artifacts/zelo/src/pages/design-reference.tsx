@@ -47,7 +47,7 @@ export default function DesignReference() {
           </div>
           
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-            <ColorChip name="Calm Green" varName="bg-zelo-green" hex="#659A76" usage="Tudo em dia, doses tomadas" />
+            <ColorChip name="Calm Green" varName="bg-zelo-green" hex="#517B5F" usage="Tudo em dia, doses tomadas" />
             <ColorChip name="Calm Amber" varName="bg-zelo-amber" hex="#E9AD51" usage="Doses pendentes, aguardando" />
             <ColorChip name="Background" varName="bg-background" hex="#F8F7F5" usage="Fundo principal quente" border />
             <ColorChip name="Surface" varName="bg-card" hex="#FFFFFF" usage="Cards e modais" border />

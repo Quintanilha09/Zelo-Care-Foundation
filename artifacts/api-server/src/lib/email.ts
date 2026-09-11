@@ -72,7 +72,7 @@ const REMETENTE = process.env.EMAIL_FROM ?? "ZELO <contato@zelocuida.com.br>";
 const COR_TEXTO = "#2D2D2B";
 const COR_TEXTO_SUAVE = "#6B6B6B";
 const COR_FUNDO = "#F8F7F5";
-const COR_VERDE = "#659A76";
+const COR_VERDE = "#517B5F"; // Issue #151: era #659A76 (3,25:1 com o branco do botao). Agora 4,81:1.
 const COR_BORDA = "#EDEBE7";
 
 /**
