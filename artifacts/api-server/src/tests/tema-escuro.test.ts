@@ -34,16 +34,22 @@ import { fileURLToPath } from "node:url";
 const raiz = new URL("../../../../", import.meta.url);
 const css = readFileSync(fileURLToPath(new URL("artifacts/zelo/src/index.css", raiz)), "utf8");
 
-/** Os tokens que carregam SIGNIFICADO — verde é dose tomada, âmbar é pendente. */
+/**
+ * Os tokens que carregam SIGNIFICADO — verde é dose tomada, âmbar é pendente.
+ *
+ * Desde a #148 estes são os nomes da **camada de baixo**: o `@theme inline`
+ * expõe `--color-zelo-*` como `hsl(var(--zelo-*))`, e é o valor de baixo que
+ * o `.dark` troca. Ver o caso `nenhum token de dose pode ter valor literal`.
+ */
 const TOKENS_COM_SIGNIFICADO = [
-  "--color-zelo-green",
-  "--color-zelo-green-fg",
-  "--color-zelo-green-bg",
-  "--color-zelo-amber",
-  "--color-zelo-amber-fg",
-  "--color-zelo-amber-bg",
-  "--color-zelo-measure",
-  "--color-zelo-measure-bg",
+  "--zelo-green",
+  "--zelo-green-fg",
+  "--zelo-green-bg",
+  "--zelo-amber",
+  "--zelo-amber-fg",
+  "--zelo-amber-bg",
+  "--zelo-measure",
+  "--zelo-measure-bg",
 ];
 
 /** O bloco `.dark { … }` inteiro, para saber o que ele redefine. */
@@ -53,13 +59,6 @@ function blocoEscuro(): string {
   const fim = css.indexOf("\n}", i);
   assert.ok(fim > i, "o bloco .dark não fecha");
   return css.slice(i, fim);
-}
-
-/** Lê `hsl(H S% L%)` de uma declaração dentro do trecho dado. */
-function hsl(trecho: string, token: string): [number, number, number] {
-  const m = trecho.match(new RegExp(`${token}:\\s*hsl\\(([\\d.]+)\\s+([\\d.]+)%\\s+([\\d.]+)%\\)`));
-  assert.ok(m, `não achei ${token} com valor hsl() no trecho`);
-  return [Number(m![1]), Number(m![2]), Number(m![3])];
 }
 
 // ── Contraste WCAG. A conta é curta, e o número precisa ser reprodutível. ──
@@ -94,6 +93,51 @@ function baseHsl(trecho: string, token: string): [number, number, number] {
 const AA = 4.5;
 
 describe("Tema escuro", () => {
+  /**
+   * ═════════════════════════════════════════════════════════════════════════
+   * O CASO QUE FALTAVA, E QUE TERIA POUPADO A #148.
+   *
+   * Os outros cinco casos deste arquivo passaram verdes enquanto o modo
+   * escuro estava **inteiramente morto** nas cores de dose. Eles liam a
+   * INTENÇÃO — "o `.dark` define os oito tokens", "os pares passam AA" — e
+   * as duas coisas eram verdade na fonte.
+   *
+   * O que nenhum deles verificava era se o `.dark` **chega ao navegador**.
+   *
+   * A causa era o `@theme inline`: ele escreve o valor direto na regra, e um
+   * token declarado com literal sai compilado como `background-color:#fdf5e8`.
+   * Cor congelada, `.dark` ignorado, 21 utilitários e 131 usos com a cor do
+   * tema claro — e o fundador vendo o cartão de dose branco num app escuro.
+   *
+   * Este caso verifica a **causa mecânica**, não a intenção: nenhum token de
+   * cor dentro do `@theme inline` pode ter valor literal. Enquanto essa regra
+   * valer, o override necessariamente chega.
+   * ═════════════════════════════════════════════════════════════════════════
+   */
+  it("nenhum token de cor pode ter valor literal dentro do @theme inline", () => {
+    const i = css.indexOf("@theme inline {");
+    assert.ok(i >= 0, "o bloco @theme inline sumiu do index.css");
+    const bloco = css.slice(i, css.indexOf("\n}", i));
+
+    const literais: string[] = [];
+    for (const linha of bloco.split("\n")) {
+      const m = linha.match(/^\s*(--color-[a-z0-9-]+):\s*(.+?);/);
+      if (!m) continue;
+      // O que salva um token é haver uma variável DENTRO dele: é ela que o
+      // `.dark` troca depois. Sem `var(`, o valor está congelado no build.
+      if (!m[2]!.includes("var(")) literais.push(`${m[1]} = ${m[2]}`);
+    }
+
+    assert.deepEqual(
+      literais,
+      [],
+      "token de cor com valor literal dentro de `@theme inline` — o Tailwind vai inliná-lo, " +
+        "e nenhuma troca de tema o alcança. Declare como `hsl(var(--x))` e ponha o valor " +
+        "no `:root` e no `.dark`, como todo o resto do arquivo faz. Foi assim que o modo " +
+        "escuro do ZELO ficou morto entre a #138 e a #148.",
+    );
+  });
+
   it("todo token de SIGNIFICADO tem valor proprio no escuro", () => {
     const escuro = blocoEscuro();
     const faltando = TOKENS_COM_SIGNIFICADO.filter((t) => !escuro.includes(`${t}:`));
@@ -111,13 +155,13 @@ describe("Tema escuro", () => {
     const cartao = baseHsl(escuro, "--card");
 
     const pares: Array<[string, [number, number, number], [number, number, number]]> = [
-      ["amber-fg sobre amber-bg", hsl(escuro, "--color-zelo-amber-fg"), hsl(escuro, "--color-zelo-amber-bg")],
-      ["green-fg sobre green-bg", hsl(escuro, "--color-zelo-green-fg"), hsl(escuro, "--color-zelo-green-bg")],
-      ["measure sobre measure-bg", hsl(escuro, "--color-zelo-measure"), hsl(escuro, "--color-zelo-measure-bg")],
-      ["amber-fg sobre o fundo", hsl(escuro, "--color-zelo-amber-fg"), fundo],
-      ["green-fg sobre o fundo", hsl(escuro, "--color-zelo-green-fg"), fundo],
-      ["amber-fg sobre o cartão", hsl(escuro, "--color-zelo-amber-fg"), cartao],
-      ["green-fg sobre o cartão", hsl(escuro, "--color-zelo-green-fg"), cartao],
+      ["amber-fg sobre amber-bg", baseHsl(escuro, "--zelo-amber-fg"), baseHsl(escuro, "--zelo-amber-bg")],
+      ["green-fg sobre green-bg", baseHsl(escuro, "--zelo-green-fg"), baseHsl(escuro, "--zelo-green-bg")],
+      ["measure sobre measure-bg", baseHsl(escuro, "--zelo-measure"), baseHsl(escuro, "--zelo-measure-bg")],
+      ["amber-fg sobre o fundo", baseHsl(escuro, "--zelo-amber-fg"), fundo],
+      ["green-fg sobre o fundo", baseHsl(escuro, "--zelo-green-fg"), fundo],
+      ["amber-fg sobre o cartão", baseHsl(escuro, "--zelo-amber-fg"), cartao],
+      ["green-fg sobre o cartão", baseHsl(escuro, "--zelo-green-fg"), cartao],
     ];
 
     for (const [nome, texto, atras] of pares) {
@@ -133,8 +177,11 @@ describe("Tema escuro", () => {
     // Medido ao derivar o escuro: `amber-fg` a 35% dava 4,1:1 sobre o
     // `amber-bg`, **abaixo do piso**, e ninguém tinha medido. Corrigido para
     // 32%. Este caso impede a volta.
-    const tema = css.slice(0, css.indexOf(".dark {"));
-    const c = contraste(hsl(tema, "--color-zelo-amber-fg"), hsl(tema, "--color-zelo-amber-bg"));
+// O trecho do `:root`, que e onde os valores do tema claro moram desde a
+// #148 — antes eles estavam no `@theme`, e era justamente isso que os
+// congelava.
+    const tema = css.slice(css.indexOf(":root {"), css.indexOf(".dark {"));
+    const c = contraste(baseHsl(tema, "--zelo-amber-fg"), baseHsl(tema, "--zelo-amber-bg"));
     assert.ok(c >= AA, `amber-fg sobre amber-bg no claro: ${c.toFixed(2)}:1 — abaixo de ${AA}:1`);
   });
 
