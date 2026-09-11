@@ -86,12 +86,24 @@ test.describe("Corrigir um registro de dose", () => {
      * comportamento certo — e foi o CI que mostrou que a tela não tinha
      * saída para ele: o diálogo ficava aberto para sempre.
      *
-     * `count()` em vez de esperar: nos primeiros segundos do dia a dose é a
-     * das 00:01, já dentro da janela, e aí a pergunta não aparece. Os dois
-     * caminhos ficam cobertos sem o teste depender da hora do CI.
+     * ── E por que NÃO dá para usar `count()` aqui ───────────────────────
+     *
+     * Porque o clique dispara uma requisição, e perguntar `count()` no
+     * instante seguinte devolve **zero** enquanto a resposta está no ar. O
+     * teste seguia adiante, o diálogo continuava aberto, e a falha aparecia
+     * quinze segundos depois num `toBeHidden` que não dizia a causa. Foi a
+     * segunda coisa que o CI cobrou neste arquivo.
+     *
+     * Esperar explicitamente resolve, e o `catch` cobre o outro caminho: nos
+     * primeiros segundos do dia a dose gerada é a das 00:01, já dentro da
+     * janela, e aí o servidor não pergunta nada.
      */
     const confirmar = page.getByRole("button", { name: "Sim, é esta dose" });
-    if (await confirmar.count()) await confirmar.click();
+    const perguntou = await confirmar
+      .waitFor({ state: "visible", timeout: 5_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (perguntou) await confirmar.click();
 
     await expect(page.getByRole("dialog")).toBeHidden({ timeout: 15_000 });
     await expect(page.getByText("Pulado", { exact: true })).toBeVisible({ timeout: 15_000 });

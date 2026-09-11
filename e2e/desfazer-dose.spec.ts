@@ -78,8 +78,24 @@ async function registrarPelaTela(page: Page) {
      * Aqui não importa por qual caminho a dose foi registrada; importa que
      * ela esteja registrada no fim.
      */
+    /**
+     * ── E `count()` aqui seria cedo demais ──────────────────────────────
+     *
+     * O CI cobrou isto **depois** do conserto acima, e a lição é a mesma de
+     * outro ângulo: o clique dispara uma requisição, e perguntar `count()`
+     * no instante seguinte devolve **zero** porque a resposta ainda está no
+     * ar. O teste seguia como se não houvesse pergunta — a dose ficava sem
+     * registrar e o diálogo, aberto.
+     *
+     * `.or()` espera **o que vier primeiro**: ou a pergunta aparece, ou a
+     * dose já entrou e o cartão diz "Tomado". Sem tempo morto em nenhum dos
+     * dois caminhos, e sem supor qual deles vai acontecer.
+     */
     const confirmar = page.getByRole("alertdialog").getByRole("button", { name: "Sim, já dei" });
-    if (await confirmar.count()) await confirmar.click();
+    const jaEntrou = page.getByText("Tomado", { exact: true });
+    await expect(confirmar.or(jaEntrou).first()).toBeVisible({ timeout: 15_000 });
+
+    if (await confirmar.isVisible()) await confirmar.click();
   } else {
     await page.getByRole("button", { name: "✓ Tomou" }).first().click();
   }
