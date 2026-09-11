@@ -14,7 +14,21 @@ import { scheduledDosesTable } from "./scheduled-doses";
 import { patientsTable } from "./patients";
 import { caregiversTable } from "./caregivers";
 
-export const doseOutcomeEnum = pgEnum("dose_outcome", ["taken", "skipped", "postponed"]);
+/**
+ * O que aconteceu com a dose.
+ *
+ * `partial` — "tomou em parte" — entrou na Issue #175. Em idoso com
+ * dificuldade de engolir (disfagia, demência avançada, náusea de
+ * quimioterapia), cuspir metade do comprimido ou vomitar dez minutos depois é
+ * rotina — e o cuidador tinha de escolher entre duas respostas erradas:
+ * marcar tomada, e o médico achar que a dose entrou; ou pular, e o médico
+ * achar que nem se tentou.
+ *
+ * **O app não sabe quanto foi absorvido, e não vai fingir que sabe**
+ * (invariante 4). `partial` diz que houve tentativa e que ela não foi
+ * inteira; o quanto fica na justificativa, em palavras de gente.
+ */
+export const doseOutcomeEnum = pgEnum("dose_outcome", ["taken", "skipped", "postponed", "partial"]);
 
 // REGRA DE INTEGRIDADE CRÍTICA #2:
 // É estruturalmente impossível existir mais de um registro de resultado

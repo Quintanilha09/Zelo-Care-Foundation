@@ -52,7 +52,7 @@ export interface DoseDoDia {
   patientName: string;
   scheduledAt: Date;
   scheduledLocalTime: string;
-  status: "pending" | "taken" | "skipped" | "late" | "postponed";
+  status: "pending" | "taken" | "skipped" | "late" | "postponed" | "partial";
   dose: string | null;
   medicationName: string;
   registeredAt: Date | null;

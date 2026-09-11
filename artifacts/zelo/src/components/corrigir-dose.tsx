@@ -33,7 +33,12 @@ export interface DoseParaCorrigir {
   recordId: number;
   medicationName: string;
   /** O desfecho de agora, para o formulário abrir no estado real. */
-  outcome: "taken" | "skipped";
+  /**
+   * Issue #175: "em parte" também se corrige — e é justamente o desfecho
+   * que mais se descobre DEPOIS. Vomitar dez minutos depois de tomar
+   * acontece quando o registro já foi feito.
+   */
+  outcome: "taken" | "skipped" | "partial";
   /** ISO do `takenAt` atual. */
   registeredAt: string | null;
 }
@@ -58,7 +63,7 @@ export function CorrigirDose({
   onFechar: () => void;
   onCorrigido: () => void;
 }) {
-  const [desfecho, setDesfecho] = useState<"taken" | "skipped">("taken");
+  const [desfecho, setDesfecho] = useState<"taken" | "skipped" | "partial">("taken");
   const [horario, setHorario] = useState("");
   const [motivo, setMotivo] = useState("");
   const [precisaDeMotivo, setPrecisaDeMotivo] = useState(false);
@@ -158,25 +163,25 @@ export function CorrigirDose({
           <Label>O que aconteceu de verdade</Label>
           {/* Dois botões, e não uma lista: são dois estados possíveis, e uma
               lista de dois itens é mais toque para a mesma decisão. */}
+          {/* Issue #175: três estados, e não dois. Uma lista continuaria
+              sendo mais toque para a mesma decisão. */}
           <div className="flex gap-2">
-            <Button
-              type="button"
-              variant={desfecho === "taken" ? "default" : "outline"}
-              className="flex-1"
-              aria-pressed={desfecho === "taken"}
-              onClick={() => setDesfecho("taken")}
-            >
-              Tomou
-            </Button>
-            <Button
-              type="button"
-              variant={desfecho === "skipped" ? "default" : "outline"}
-              className="flex-1"
-              aria-pressed={desfecho === "skipped"}
-              onClick={() => setDesfecho("skipped")}
-            >
-              Pulou
-            </Button>
+            {([
+              ["taken", "Tomou"],
+              ["partial", "Em parte"],
+              ["skipped", "Pulou"],
+            ] as const).map(([valor, rotulo]) => (
+              <Button
+                key={valor}
+                type="button"
+                variant={desfecho === valor ? "default" : "outline"}
+                className="flex-1"
+                aria-pressed={desfecho === valor}
+                onClick={() => setDesfecho(valor)}
+              >
+                {rotulo}
+              </Button>
+            ))}
           </div>
         </div>
 

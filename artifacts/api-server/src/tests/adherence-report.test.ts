@@ -100,7 +100,7 @@ async function setPlan(plan: "free" | "basic" | "premium" | null) {
 async function insertDose(
   localDate: string,
   localTime: string,
-  status: "pending" | "taken" | "skipped" | "late" | "postponed",
+  status: "pending" | "taken" | "skipped" | "late" | "postponed" | "partial",
   // Issue #170: a dose da DOSE. `scheduled_doses.dose` é instantâneo — é o
   // que valia no dia —, e era justamente isso que o relatório ignorava.
   doseDoDia = "1 comprimido",
@@ -113,7 +113,7 @@ async function insertDose(
   }).returning();
   return dose.id;
 }
-async function insertDoseRecord(scheduledDoseId: number, outcome: "taken" | "skipped" | "postponed", takenAtLocal: string) {
+async function insertDoseRecord(scheduledDoseId: number, outcome: "taken" | "skipped" | "postponed" | "partial", takenAtLocal: string) {
   await db.insert(doseRecordsTable).values({ scheduledDoseId, patientId, caregiverId: primaryCaregiverId, takenAt: new Date(takenAtLocal), outcome });
 }
 
@@ -398,5 +398,52 @@ describe("A dose que o relatorio imprime", () => {
 
     // O caso comum é este, e ele não pode ter ganhado vírgula nem lista.
     assert.equal(data.medications[0].dose, "1 comprimido");
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * "TOMOU EM PARTE" NÃO SOMA COM NENHUM DOS DOIS — Issue #175.
+ *
+ * Em idoso com dificuldade de engolir — disfagia, demência avançada, náusea
+ * de quimioterapia — cuspir metade do comprimido ou vomitar dez minutos
+ * depois é rotina. O cuidador escolhia entre duas respostas erradas: marcar
+ * tomada, e o médico achar que a dose entrou; ou pular, e ele achar que nem
+ * se tentou.
+ *
+ * O app **não sabe** quanto foi absorvido, e somar em qualquer dos dois lados
+ * seria ele decidindo isso (invariante 4). Balde próprio, número próprio, e a
+ * frase do cuidador ao lado.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+describe("A dose tomada em parte", () => {
+  it("conta em balde proprio, sem somar em tomada nem em pulada", async () => {
+    const tomada = await insertDose("2026-06-01", "08:00", "taken");
+    await insertDoseRecord(tomada, "taken", "2026-06-01T08:05:00-03:00");
+    const pulada = await insertDose("2026-06-02", "08:00", "skipped");
+    await insertDoseRecord(pulada, "skipped", "2026-06-02T08:05:00-03:00");
+    const parcial = await insertDose("2026-06-03", "08:00", "partial");
+    await insertDoseRecord(parcial, "partial", "2026-06-03T08:05:00-03:00");
+
+    const data = await computeReportData(patientId, "2026-06-01", "2026-06-03");
+    const med = data.medications[0];
+
+    assert.equal(med.partial, 1, "a parcial precisa aparecer, e com nome próprio");
+    assert.equal(med.taken, 1, "somar a parcial em tomada diria ao médico que a dose entrou");
+    assert.equal(med.skipped, 1, "somar em pulada diria que nem se tentou");
+    assert.equal(med.totalScheduled, 3);
+  });
+
+  it("a parcial NAO entra no percentual de adesao", async () => {
+    const parcial = await insertDose("2026-07-01", "08:00", "partial");
+    await insertDoseRecord(parcial, "partial", "2026-07-01T08:05:00-03:00");
+    const tomada = await insertDose("2026-07-02", "08:00", "taken");
+    await insertDoseRecord(tomada, "taken", "2026-07-02T08:05:00-03:00");
+
+    const data = await computeReportData(patientId, "2026-07-01", "2026-07-02");
+
+    // Adesão é `taken / total`. Contar a parcial ali seria o app afirmando
+    // que a dose foi tomada — que é exatamente o que ele não sabe.
+    assert.equal(data.medications[0].adherenceRate, 1 / 2);
   });
 });

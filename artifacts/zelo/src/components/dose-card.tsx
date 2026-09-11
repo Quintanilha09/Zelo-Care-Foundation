@@ -29,10 +29,14 @@
  * não é erro nenhum — é alguém decidindo, e registrando a decisão.
  */
 import { cn } from "@/lib/utils";
-import { Check, Clock, MinusCircle, User, AlertCircle } from "lucide-react";
+import { Check, Clock, MinusCircle, User, AlertCircle, CircleDashed } from "lucide-react";
 import { motion } from "framer-motion";
 
-export type EstadoDaDose = "pending" | "taken" | "skipped";
+/**
+ * Issue #175: "em parte" é um quarto estado, e não um meio-termo entre
+ * dois. A dose foi tentada e não entrou inteira — nem tomada, nem pulada.
+ */
+export type EstadoDaDose = "pending" | "taken" | "skipped" | "partial";
 
 interface DoseCardProps {
   medicationName: string;
@@ -84,7 +88,8 @@ export function frasePartida(quando?: string | null, quem?: string | null): stri
 export function DoseCard({ medicationName, dosage, time, status, takenBy, takenAt, atrasada = false, atrasadaHa, paciente }: DoseCardProps) {
   const tomada = status === "taken";
   const pulada = status === "skipped";
-  const resolvida = tomada || pulada;
+  const emParte = status === "partial";
+  const resolvida = tomada || pulada || emParte;
 
   return (
     <motion.div
@@ -93,6 +98,18 @@ export function DoseCard({ medicationName, dosage, time, status, takenBy, takenA
       className={cn(
         "p-5 rounded-xl border flex flex-col gap-3 min-h-[64px] shadow-sm transition-colors",
         tomada && "bg-zelo-green-bg border-zelo-green/20",
+        /* ── Issue #175: verde ATENUADO, e não uma quarta cor ───────────
+
+           A linguagem de cor do ZELO é pequena de propósito: âmbar pede
+           você, verde resolveu bem, neutro resolveu sem dose. Inventar
+           uma quarta matiz para "em parte" diluiria as três que o
+           produto inteiro usa para significar coisa séria.
+
+           O que separa este estado de "Tomado" é o mesmo verde com
+           MENOS presença — fundo mais fraco, borda tracejada — mais um
+           ícone e uma palavra próprios. Alguma coisa foi tomada; só não
+           foi tudo, e é exatamente isso que a atenuação diz. */
+        emParte && "bg-zelo-green-bg/40 border-dashed border-zelo-green/30",
         pulada && "bg-muted/40 border-border",
         // #153: mesma COR, mais presenca. Vermelho e proibido em dose
         // (invariante 5) — a urgencia se faz com peso, nao com outra cor.
@@ -108,6 +125,7 @@ export function DoseCard({ medicationName, dosage, time, status, takenBy, takenA
         <div className={cn(
           "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[17px] font-medium border shrink-0",
           tomada && "bg-zelo-green/10 text-zelo-green-fg border-zelo-green/20",
+          emParte && "bg-zelo-green/5 text-zelo-green-fg border-dashed border-zelo-green/30",
           pulada && "bg-muted text-muted-foreground border-border",
           !resolvida && !atrasada && "bg-zelo-amber/20 text-zelo-amber-fg border-zelo-amber/20",
           // #153 — o preenchimento NAO muda, e o motivo esta medido.
@@ -127,6 +145,7 @@ export function DoseCard({ medicationName, dosage, time, status, takenBy, takenA
           !resolvida && atrasada && "bg-zelo-amber/20 text-zelo-amber-fg border-zelo-amber font-semibold"
         )}>
           {tomada && <Check className="w-4 h-4" />}
+          {emParte && <CircleDashed className="w-4 h-4" />}
           {pulada && <MinusCircle className="w-4 h-4" />}
           {!resolvida && !atrasada && <Clock className="w-4 h-4" />}
           {/* Issue #160 — o UNICO vermelho de todo o contexto de dose.
@@ -140,7 +159,7 @@ export function DoseCard({ medicationName, dosage, time, status, takenBy, takenA
               `text-zelo-atraso`, e nao `text-destructive`: destrutivo e
               apagar e cancelar. Dose atrasada nao e nenhum dos dois. */}
           {!resolvida && atrasada && <AlertCircle className="w-4 h-4 text-zelo-atraso" />}
-          <span>{tomada ? "Tomado" : pulada ? "Pulado" : atrasada ? "Atrasado" : "Pendente"}</span>
+          <span>{tomada ? "Tomado" : emParte ? "Em parte" : pulada ? "Pulado" : atrasada ? "Atrasado" : "Pendente"}</span>
         </div>
       </div>
 
@@ -150,9 +169,9 @@ export function DoseCard({ medicationName, dosage, time, status, takenBy, takenA
             <div className="flex -space-x-1">
               <div className={cn(
                 "w-6 h-6 rounded-full flex items-center justify-center border border-white",
-                tomada ? "bg-zelo-green/20" : "bg-muted"
+                tomada || emParte ? "bg-zelo-green/20" : "bg-muted"
               )}>
-                <User className={cn("w-3.5 h-3.5", tomada ? "text-zelo-green-fg" : "text-muted-foreground")} />
+                <User className={cn("w-3.5 h-3.5", tomada || emParte ? "text-zelo-green-fg" : "text-muted-foreground")} />
               </div>
             </div>
             {/* O selo acima já diz o QUE aconteceu ("Tomado" / "Pulado").

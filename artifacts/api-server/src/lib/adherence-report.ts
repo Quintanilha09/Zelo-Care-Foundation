@@ -39,6 +39,19 @@ export interface MedicationReportRow {
   totalScheduled: number;
   taken: number;
   skipped: number; // inclui "postponed" — ver nota no topo do arquivo
+  /**
+   * "Tomou em parte" — Issue #175.
+   *
+   * ══════════════════════════════════════════════════════════════════
+   * NÃO SOMA COM TOMADA NEM COM PULADA, E ISSO É O PONTO.
+   *
+   * O app não sabe quanto de um comprimido cuspido foi absorvido — e
+   * somar em qualquer dos dois lados seria ele decidindo uma coisa que
+   * não sabe (invariante 4). O médico é quem interpreta; o relatório
+   * mostra o número e a frase do cuidador, separados.
+   * ══════════════════════════════════════════════════════════════════
+   */
+  partial: number;
   unregistered: number;
   adherenceRate: number | null;
   actualVsPrescribed: ActualVsPrescribed[];
@@ -148,7 +161,7 @@ export async function computeReportData(
      */
     doses: Set<string>;
     prescribedTimes: Set<string>;
-    total: number; taken: number; skipped: number; unregistered: number;
+    total: number; taken: number; skipped: number; partial: number; unregistered: number;
     actualByPrescribedTime: Map<string, string[]>; // prescribedTime -> lista de horários reais (HH:mm, tomadas)
   }>();
 
@@ -157,7 +170,7 @@ export async function computeReportData(
     if (!entry) {
       entry = {
         medicationName: row.medicationName, doses: new Set(),
-        prescribedTimes: new Set(), total: 0, taken: 0, skipped: 0, unregistered: 0,
+        prescribedTimes: new Set(), total: 0, taken: 0, skipped: 0, partial: 0, unregistered: 0,
         actualByPrescribedTime: new Map(),
       };
       byMedication.set(row.medicationId, entry);
@@ -174,6 +187,9 @@ export async function computeReportData(
         list.push(localTime);
         entry.actualByPrescribedTime.set(row.scheduledLocalTime, list);
       }
+    } else if (row.status === "partial") {
+      // Conta como TENTATIVA registrada, em balde próprio.
+      entry.partial += 1;
     } else if (row.status === "skipped" || row.status === "postponed") {
       entry.skipped += 1;
     } else {
@@ -203,7 +219,8 @@ export async function computeReportData(
       // confiança de quem o compara com o anterior.
       dose: e.doses.size > 0 ? Array.from(e.doses).sort().join(", ") : null,
       prescribedTimes,
-      totalScheduled: e.total, taken: e.taken, skipped: e.skipped, unregistered: e.unregistered,
+      totalScheduled: e.total, taken: e.taken, skipped: e.skipped,
+      partial: e.partial, unregistered: e.unregistered,
       adherenceRate: e.total > 0 ? e.taken / e.total : null,
       actualVsPrescribed,
     };
@@ -275,7 +292,10 @@ export function generateReportPdf(data: AdherenceReportData): Promise<Buffer> {
       if (med.prescribedTimes.length > 0) doc.text(`Horários prescritos: ${med.prescribedTimes.join(", ")}`);
       const pct = med.adherenceRate !== null ? `${Math.round(med.adherenceRate * 100)}%` : "—";
       doc.text(`Adesão no período: ${pct}`);
-      doc.text(`Tomadas: ${med.taken}  ·  Puladas: ${med.skipped}  ·  Sem registro: ${med.unregistered}  ·  Total agendado: ${med.totalScheduled}`);
+      // Issue #175: as parciais em coluna propria, e so quando existem — uma
+      // linha dizendo "Em parte: 0" em todo relatorio seria ruido.
+      const emParte = med.partial > 0 ? `  ·  Em parte: ${med.partial}` : "";
+      doc.text(`Tomadas: ${med.taken}  ·  Puladas: ${med.skipped}${emParte}  ·  Sem registro: ${med.unregistered}  ·  Total agendado: ${med.totalScheduled}`);
       if (med.actualVsPrescribed.length > 0) {
         doc.font("Helvetica-Bold").text("Padrão de horário — prescrito vs. registrado:");
         doc.font("Helvetica");

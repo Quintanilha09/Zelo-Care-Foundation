@@ -114,7 +114,7 @@ interface ScheduledDose {
   patientId: number;
   scheduledAt: string;
   scheduledLocalTime: string;
-  status: "pending" | "taken" | "skipped" | "late";
+  status: "pending" | "taken" | "skipped" | "late" | "partial";
   dose: string | null;
   // Issue #26 — a API sempre devolveu estes dois; era o TIPO que os omitia,
   // e por isso não dava para passá-los ao cartão sem erro de compilação. O
@@ -645,7 +645,9 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
                     // não sai), mas ele apagava a diferença entre "ainda vai
                     // acontecer" e "já devia ter acontecido". O estado do
                     // cartão continua `pending`; o ATRASO vai à parte.
-                    status={d.status === "taken" ? "taken" : d.status === "skipped" ? "skipped" : "pending"}
+                    // Issue #175: parcial tem selo proprio — mapeada para "pending"
+                    // ela apareceria como se ainda faltasse acontecer.
+                    status={d.status === "taken" ? "taken" : d.status === "skipped" ? "skipped" : d.status === "partial" ? "partial" : "pending"}
                     atrasada={estaAtrasada(d.atrasadaApartirDe, agoraEmMinutos)}
                     atrasadaHa={textoDoAtraso(d.scheduledAt, agoraEmMinutos)}
                     takenAt={horaDoRegistro(d.registeredAt, patient?.timezone)}
