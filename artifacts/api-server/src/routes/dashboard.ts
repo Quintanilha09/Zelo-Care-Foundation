@@ -12,7 +12,7 @@ import {
 } from "@workspace/db";
 import { requireAuth } from "../middleware/require-auth";
 import { Clock } from "../lib/clock";
-import { localDayBoundsUtc, toLocalDateTime } from "@workspace/scheduling";
+import { localDayBoundsUtc, toLocalDateTime, tomorrowInTimezone } from "@workspace/scheduling";
 import { computeDaysRemaining, loadActiveTreatmentSchedule } from "../lib/stock.ts";
 import { getPlanLimits } from "../lib/plan-limits.ts";
 // Issue #135: um dono só para o prazo de desfazer. Quem recusa o 409 é
@@ -226,6 +226,51 @@ router.get("/patients/:patientId/today-doses", requireAuth, async (req, res): Pr
   // delimita o dia civil corretamente, independente do TZ do servidor.
   const { start: todayStart, end: todayEnd } = localDayBoundsUtc(todayInPatientTz, patient.timezone);
 
+  /**
+   * ── A madrugada seguinte — Issue #154 ────────────────────────────────────
+   *
+   * O fundador perguntou: *"e se eu tiver que tomar um remédio de madrugada?
+   * Essa pendência será listada? Pois se não for, é capaz que eu esqueça."*
+   *
+   * Não era. A tela recorta pelo dia civil, então **às 22:00 a dose das 03:00
+   * de amanhã não aparecia em lugar nenhum**. Quem ia dormir não sabia que
+   * precisava acordar, e de manhã ela surgia como "Perdida" — descoberta
+   * depois do fato, que é o que este produto existe para evitar.
+   *
+   * ── Não é sobre o aviso, é sobre poder se PLANEJAR ──────────────────────
+   *
+   * O lembrete de madrugada **já funciona**: o silêncio noturno só cala o
+   * broadcast de nível 2, nunca o primeiro aviso a quem é responsável (ver
+   * `lib/dose-reminders.ts`). Ninguém deixa de ser acordado.
+   *
+   * O que faltava era saber **antes**: ajustar o despertador, combinar quem
+   * acorda, deixar o remédio separado. Por isso a janela aparece à noite, e
+   * não é alarme nenhum.
+   *
+   * ── Por que o SERVIDOR decide a hora, e não a tela ──────────────────────
+   *
+   * "Depois das 18:00" tem de ser 18:00 **no relógio do paciente**. Um filho
+   * em Portugal olhando a mãe em São Paulo tem outro relógio no navegador —
+   * deixar a tela decidir mostraria a madrugada na hora errada para ele. É a
+   * mesma regra do ZELO-19, e o servidor é quem sabe o fuso.
+   */
+  const HORA_DE_MOSTRAR_A_MADRUGADA = 18;
+  const FIM_DA_MADRUGADA = 6;
+
+  const amanhaNoFusoDoPaciente = tomorrowInTimezone(Clock.now(), patient.timezone);
+  const { start: amanhaComeca } = localDayBoundsUtc(amanhaNoFusoDoPaciente, patient.timezone);
+  const fimDaMadrugada = new Date(amanhaComeca.getTime() + FIM_DA_MADRUGADA * 3_600_000);
+
+  const horaAgoraNoFusoDoPaciente = Number(
+    toLocalDateTime(Clock.now(), patient.timezone).localTime.slice(0, 2),
+  );
+  const ehNoite = horaAgoraNoFusoDoPaciente >= HORA_DE_MOSTRAR_A_MADRUGADA;
+
+  // Durante o dia a consulta continua sendo a de sempre: a tela responde
+  // "está tudo em dia hoje?", e trazer amanhã sem mostrar seria carregar
+  // dado para descartar.
+  const fimDaBusca = ehNoite ? fimDaMadrugada : todayEnd;
+
   // ZELO-22 (tela inicial): junta o nome do medicamento (via treatment) e,
   // pra doses já registradas, quem registrou — "✓ Losartana 08:00 — Ana" é
   // o diferencial do produto, não dá pra montar isso com 3 chamadas separadas.
@@ -267,7 +312,7 @@ router.get("/patients/:patientId/today-doses", requireAuth, async (req, res): Pr
     .where(and(
       eq(scheduledDosesTable.patientId, patientId),
       gte(scheduledDosesTable.scheduledAt, todayStart),
-      lte(scheduledDosesTable.scheduledAt, todayEnd)
+      lte(scheduledDosesTable.scheduledAt, fimDaBusca)
     ))
     .orderBy(scheduledDosesTable.scheduledAt);
 
@@ -333,6 +378,12 @@ router.get("/patients/:patientId/today-doses", requireAuth, async (req, res): Pr
     ).toISOString(),
   }));
 
+  // Issue #154: duas listas, e o corte e o fim do dia civil do paciente.
+  // O que vem depois e madrugada de amanha — so existe aqui quando ja e
+  // noite, porque so entao a consulta foi buscar tao longe.
+  const doDia = dosesWithDisplayName.filter((d) => d.scheduledAt <= todayEnd);
+  const daMadrugada = dosesWithDisplayName.filter((d) => d.scheduledAt > todayEnd);
+
   // ZELO-34: "baixo" é dias restantes (a partir da posologia prescrita),
   // não uma quantidade absoluta — a mesma definição usada em GET /stock e
   // no worker de decremento (lib/stock.ts), nunca reimplementada aqui.
@@ -374,11 +425,32 @@ router.get("/patients/:patientId/today-doses", requireAuth, async (req, res): Pr
     date: todayInPatientTz,
     patientTimezone: patient.timezone,
     elderModeEnabled: patient.elderModeEnabled,
-    totalDoses: doses.length,
-    takenDoses: doses.filter((d) => d.status === "taken").length,
-    pendingDoses: doses.filter((d) => d.status === "pending").length,
-    lateDoses: doses.filter((d) => d.status === "late").length,
-    doses: dosesWithDisplayName,
+    // Issue #154 — as contagens são do DIA, e por isso saem de `doDia`.
+    //
+    // Antes saíam de `doses`, o resultado cru da consulta. Depois que ela
+    // passou a buscar até as 06:00 de amanhã nas noites com dose de
+    // madrugada, usar o cru faria `pendingDoses` contar amanhã junto — e a
+    // faixa "Tudo em dia hoje" deixaria de aparecer numa noite em que o dia
+    // ESTÁ em dia, só porque há remédio às 03:00.
+    totalDoses: doDia.length,
+    takenDoses: doDia.filter((d) => d.status === "taken").length,
+    pendingDoses: doDia.filter((d) => d.status === "pending").length,
+    lateDoses: doDia.filter((d) => d.status === "late").length,
+    doses: doDia,
+    /**
+     * As doses da madrugada seguinte — Issue #154.
+     *
+     * Vazio durante o dia e sempre que não houver nenhuma. À noite traz as de
+     * amanhã até as 06:00, para quem está se organizando para dormir poder se
+     * planejar: ajustar o despertador, combinar quem acorda, separar o
+     * remédio.
+     *
+     * **Lista à parte, e não misturada em `doses`.** A tela responde "está
+     * tudo em dia hoje?", e uma dose de amanhã no meio das de hoje mudaria a
+     * pergunta — além de entrar nas contas de `pendingDoses` e `lateDoses`,
+     * que são sobre o dia de hoje.
+     */
+    madrugada: daMadrugada,
     lowStockItems: lowStockItems.map(({ medicationId, medicationName, quantityRemaining, unit, effectiveDaysRemaining }) => ({
       medicationId, medicationName, quantityRemaining, unit, effectiveDaysRemaining,
     })),

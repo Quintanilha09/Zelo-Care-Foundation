@@ -265,7 +265,18 @@ export async function tokenDaConta(
 export async function criarPaciente(
   request: APIRequestContext,
   conta: ContaDeTeste,
-  nome = "Dona Maria Teste"
+  nome = "Dona Maria Teste",
+  /**
+   * O fuso do paciente — Issue #154.
+   *
+   * Quase todo spec daqui usa o padrão. O parâmetro existe porque a seção de
+   * madrugada só aparece depois das 18:00 **no relógio do paciente**, e
+   * congelar o relógio do servidor no e2e está descartado por escrito logo
+   * abaixo (`esperarAViradaDoDiaSePreciso`): é estado global de um processo
+   * que 100+ testes compartilham. Escolher o fuso do paciente move a hora
+   * local sem mexer em nada compartilhado.
+   */
+  fuso = "America/Sao_Paulo"
 ): Promise<number> {
   const accessToken = await tokenDaConta(request, conta);
 
@@ -273,7 +284,7 @@ export async function criarPaciente(
     headers: { Authorization: `Bearer ${accessToken}` },
     data: {
       name: nome,
-      timezone: "America/Sao_Paulo",
+      timezone: fuso,
       healthConsent: { givenBy: "legal_representative", version: "v1.0" },
     },
   });
