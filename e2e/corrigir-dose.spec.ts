@@ -128,3 +128,52 @@ test.describe("Corrigir um registro de dose", () => {
     await expect(page.getByText(/^Corrigido/)).toHaveCount(0);
   });
 });
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * O PERCURSO QUE O FUNDADOR TRAVOU — Issue #162 e #164.
+ *
+ * Tudo acima acontece na **ficha do paciente**. Mas o app abre na tela
+ * inicial, e era lá que ele registrava — e lá "Corrigir" não existia: a
+ * linha em "Já foi" mostrava só o nome de quem registrou.
+ *
+ * Para emendar era preciso saber que existe outra tela e ir até ela. Este
+ * caso anda o caminho inteiro **sem sair da tela inicial**; se alguém
+ * desfizer a unificação da #162, ele reprova aqui e não na ficha.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+test.describe("Corrigir pela tela inicial", () => {
+  test("o caminho inteiro sem sair da tela inicial", async ({ page, request }) => {
+    const conta = await criarConta(request);
+    const pacienteId = await criarPaciente(request, conta);
+    const { recordId } = await registrarUmaDoseHoje(request, conta, pacienteId, "taken");
+    await envelhecerRegistroDeDose(request, conta, recordId);
+
+    await entrar(page, conta);
+    await page.goto("/");
+
+    // A dose registrada aparece em "Já foi".
+    await expect(page.getByText("Já foi")).toBeVisible({ timeout: 15_000 });
+
+    // Passado o minuto: desfazer não, corrigir sim. A mesma regra da ficha,
+    // porque agora é literalmente o mesmo componente.
+    await expect(page.getByRole("button", { name: "Desfazer" })).toHaveCount(0);
+    const corrigir = page.getByRole("button", { name: "Corrigir" });
+    await expect(
+      corrigir,
+      "esta era a lacuna da #164: depois de 60 s a tela inicial não deixava corrigir nada",
+    ).toBeVisible({ timeout: 15_000 });
+
+    await corrigir.click();
+    const dialogo = page.getByRole("dialog");
+    await expect(dialogo).toContainText("Corrigir o registro");
+
+    await dialogo.getByRole("button", { name: "Pulou" }).click();
+    await dialogo.getByRole("button", { name: /Salvar correção/ }).click();
+
+    // A marca fica: registro emendado sem marca visível é pior que registro
+    // errado, porque quem lê passa a confiar no que não deve.
+    await expect(dialogo).toBeHidden({ timeout: 15_000 });
+    await expect(page.getByText(/Corrigido/)).toBeVisible({ timeout: 15_000 });
+  });
+});
