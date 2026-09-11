@@ -126,9 +126,14 @@
   --zelo-green-fg: 140 21% 30%;
   --zelo-green-bg: 140 21% 95%;
   --zelo-amber: 38 82% 55%;
-  /* Era 35%, que dava 4,1:1 sobre o `amber-bg` — abaixo do piso AA de 4,5.
-     Corrigido na #138: com 32% sao 4,76:1, e o tom nao muda a olho. */
-  --zelo-amber-fg: 38 82% 32%;
+  /* Era 35%, virou 32% na #138, e 30% na #149.
+     A #138 mediu contra o `amber-bg` cheio e achou 4,76:1 — suficiente.
+     A #149 mediu contra o par que a TELA usa de verdade: `bg-zelo-amber/20`
+     composto sobre o cartao, que e a etiqueta "Pendente" do cartao de dose.
+     Ali eram **4,46:1** — abaixo do piso por 0,04, e ninguem tinha medido
+     porque esse par nao estava na lista escrita a mao. Com 30% sao 4,94:1,
+     e o tom continua o mesmo a olho. */
+  --zelo-amber-fg: 38 82% 30%;
   --zelo-amber-bg: 38 82% 95%;
   /* Azul calmo, exclusivo das MEDICOES na tela de rotina. Verde e ambar ja
      significam estado de dose (invariante 5); reusa-los aqui misturaria
@@ -218,7 +223,17 @@
      (`border-zelo-amber/20`). Aqui a separação é um pouco maior que no
      claro, não menor.
      ══════════════════════════════════════════════════════════════════════ */
-  --zelo-green: 140 30% 55%;
+  /* Issue #149 — igual ao `--primary` do escuro, como no claro os dois já são
+     iguais (140 21% 50%).
+
+     A #138 pôs 140 30% 55% aqui pensando em pontinho e borda, e não em texto
+     branco por cima. Mas `bg-zelo-green` é fundo de botão — o "Compartilhar
+     no WhatsApp", por exemplo — e branco sobre 55% media **2,61:1**, pior
+     que o próprio botão primário do app no mesmo tema (3,97:1).
+
+     `--zelo-green` **é** o verde da marca. Deixá-lo divergir do `--primary`
+     no escuro fazia o mesmo verde ter dois valores conforme a classe usada. */
+  --zelo-green: 140 20% 45%;
   --zelo-green-fg: 140 40% 70%;
   --zelo-green-bg: 140 18% 20%;
   --zelo-amber: 38 70% 58%;

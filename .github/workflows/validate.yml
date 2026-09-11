@@ -180,21 +180,29 @@ jobs:
   ponta-a-ponta:
     name: Testes de tela (Playwright)
     runs-on: ubuntu-latest
-    # 20 min. O numero foi medido, e ja foi inflado uma vez sem medicao.
+    # 25 min, e o numero saiu de duas execucoes verdes medidas.
     #
-    # Em 11/09/2026 eu subi este teto para 30 alegando que a suite tinha
-    # crescido demais. A alegacao era FALSA: a execucao que citei como verde
-    # tinha 20 falhas, e cada falha repete automaticamente. O que estourava o
-    # teto era a repeticao, nao o tamanho.
+    # A historia importa porque este teto ja foi mexido errado. Em 11/09/2026
+    # eu o subi para 30 alegando que a suite tinha crescido - e a execucao que
+    # citei como verde tinha 20 falhas, cuja repeticao automatica era o que
+    # estourava o tempo. Alegacao falsa, revertido para 20.
     #
-    # O numero real, da ultima execucao verde: 338 testes em 1087s = 18,1 min,
-    # com 9% de folga. A suite de hoje tem 354, o que projeta ~19 min.
+    # A reversao tambem estava errada, e so a medicao seguinte mostrou:
     #
-    # A folga e apertada, e subir pode vir a ser certo - mas com este numero
-    # na mao, e nao para deixar de ver teste falhando. O teto existe
-    # justamente para pegar o que nao termina: nesta leva ele pegou pg-boss
-    # sem stop e teste em laco de repeticao.
-    timeout-minutes: 20
+    #   10/09, 338 testes em 1087s  = 3,22 s/teste
+    #   11/09, 345 testes em 1200s+ = 3,48 s/teste, CORTADA com ZERO falhas
+    #
+    # Cresceram as duas coisas: a quantidade (+4,7%) e o custo por teste
+    # (+8,4%) - os casos da #136 criam conta, paciente e tratamento, registram
+    # a dose e ainda a envelhecem. Projecao para os 354 atuais: 20,5 min.
+    #
+    # 25 da 22% de folga. Nao 30, que seria folga demais para um teto cuja
+    # funcao e justamente pegar o que nao termina: nesta leva ele pegou
+    # pg-boss sem stop e teste em laco de repeticao.
+    #
+    # Se voltar a apertar, o caminho nao e subir de novo: e paralelizar, hoje
+    # impedido pelo banco compartilhado (workers: 1 no playwright.config.ts).
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:16-alpine
