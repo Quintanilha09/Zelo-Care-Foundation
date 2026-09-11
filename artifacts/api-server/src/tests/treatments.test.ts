@@ -9,11 +9,12 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
-import { eq } from "drizzle-orm";
+import { eq, and, gte } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { usersTable, caregiversTable, familiesTable, patientsTable, medicationsTable, treatmentsTable } from "@workspace/db";
+import { usersTable, caregiversTable, familiesTable, patientsTable, medicationsTable, treatmentsTable, scheduledDosesTable } from "@workspace/db";
 import { generateAccessToken } from "../lib/tokens.ts";
 import { hashPassword } from "../lib/password.ts";
+import { Clock } from "../lib/clock.ts";
 import { boss } from "../lib/queue.ts";
 import app from "../app.ts";
 
@@ -202,5 +203,95 @@ describe("Edição de tratamento", () => {
     assert.deepEqual(body.scheduleConfig.times, ["09:00", "21:00"]);
 
     await db.delete(treatmentsTable).where(eq(treatmentsTable.id, id));
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * O AVISO ANTES DE SALVAR — Issue #174.
+ *
+ * Editar horário ou data apaga as doses pendentes e gera outras. A tela não
+ * dizia isso: quem trocou "08:00 e 20:00" por "09:00 e 21:00" às 19:00 não
+ * descobria que a dose das 20:00 de hoje tinha deixado de existir.
+ *
+ * O número precisa sair da MESMA regra que o PATCH usa para apagar
+ * (`clearFuturePendingDoses`: pendentes daquele tratamento, de agora em
+ * diante). Um aviso que diz um número enquanto o banco faz outro é pior que
+ * nenhum aviso — por isso quem conta é o servidor, e não a tela.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+describe("O aviso de quantas doses a edicao cancela", () => {
+  it("na criacao nao ha o que cancelar, e o campo vem nulo", async () => {
+    const res = await api("POST", `/patients/${patientId}/treatments/preview`, {
+      scheduleConfig: { scheduleType: "times_per_day", times: ["08:00"] },
+      startDate: "2026-01-01",
+    });
+
+    assert.equal(res.status, 200);
+    const body = res.body as { dosesQueSeraoCanceladas: number | null };
+    assert.equal(
+      body.dosesQueSeraoCanceladas,
+      null,
+      "sem `treatmentId` não existe tratamento para cancelar doses de — e " +
+        "zero diria outra coisa: diria que há um, e que ele não tem pendentes",
+    );
+  });
+
+  it("na edicao, conta as pendentes que o PATCH apagaria", async () => {
+    const criado = await api("POST", `/patients/${patientId}/treatments`, {
+      medicationId,
+      scheduleConfig: { scheduleType: "times_per_day", times: ["08:00", "20:00"] },
+      startDate: Clock.todayInTimezone("America/Sao_Paulo"),
+    });
+    const { id } = criado.body as { id: number };
+
+    // A criação já gerou a janela de doses. Quantas estão pendentes daqui
+    // para frente é exatamente o que o aviso tem que dizer.
+    const esperadas = await db
+      .select({ id: scheduledDosesTable.id })
+      .from(scheduledDosesTable)
+      .where(and(
+        eq(scheduledDosesTable.treatmentId, id),
+        eq(scheduledDosesTable.status, "pending"),
+        gte(scheduledDosesTable.scheduledAt, Clock.now()),
+      ));
+
+    const res = await api("POST", `/patients/${patientId}/treatments/preview`, {
+      scheduleConfig: { scheduleType: "times_per_day", times: ["09:00", "21:00"] },
+      startDate: Clock.todayInTimezone("America/Sao_Paulo"),
+      treatmentId: id,
+    });
+
+    assert.equal(res.status, 200);
+    const body = res.body as { dosesQueSeraoCanceladas: number | null };
+    assert.ok(esperadas.length > 0, "o tratamento recém-criado precisa ter doses pendentes");
+    assert.equal(
+      body.dosesQueSeraoCanceladas,
+      esperadas.length,
+      "o aviso tem que dizer o MESMO número que o banco vai apagar",
+    );
+
+    await db.delete(treatmentsTable).where(eq(treatmentsTable.id, id));
+  });
+
+  it("o tratamento de outra familia nao vaza contagem", async () => {
+    // Invariante 2. Um `treatmentId` que não é deste paciente não pode
+    // devolver a contagem dele — nem 404 aqui, que confirmaria a existência:
+    // a contagem simplesmente é zero, porque não há dose DESTE paciente
+    // naquele tratamento.
+    const deOutro = await db
+      .select({ id: treatmentsTable.id })
+      .from(treatmentsTable)
+      .where(eq(treatmentsTable.patientId, patientId));
+
+    const idInexistente = Math.max(0, ...deOutro.map((t) => t.id)) + 10_000;
+    const res = await api("POST", `/patients/${patientId}/treatments/preview`, {
+      scheduleConfig: { scheduleType: "times_per_day", times: ["08:00"] },
+      startDate: "2026-01-01",
+      treatmentId: idInexistente,
+    });
+
+    assert.equal(res.status, 200);
+    assert.equal((res.body as { dosesQueSeraoCanceladas: number | null }).dosesQueSeraoCanceladas, 0);
   });
 });

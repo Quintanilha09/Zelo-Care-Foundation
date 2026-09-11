@@ -14,6 +14,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select";
 import { authFetch } from "@/lib/auth-client";
@@ -176,6 +180,13 @@ export function TreatmentForm({ patientId, onCreated, onCancel, tratamento }: Tr
 
   const [preview, setPreview] = useState<string[] | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  /**
+   * O aviso da Issue #174, aberto entre apertar Salvar e salvar de verdade.
+   *
+   * `null` = nada a avisar, e aí o salvamento segue direto. É o caso da
+   * criação e o de toda edição que não mexe na agenda.
+   */
+  const [aviso, setAviso] = useState<{ canceladas: number; proximas: string[] } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -290,7 +301,13 @@ export function TreatmentForm({ patientId, onCreated, onCancel, tratamento }: Tr
     try {
       const res = await authFetch(`/api/patients/${patientId}/treatments/preview`, {
         method: "POST",
-        body: JSON.stringify({ scheduleConfig: buildScheduleConfig(), startDate, endDate: endDate || undefined }),
+        body: JSON.stringify({
+          scheduleConfig: buildScheduleConfig(),
+          startDate,
+          endDate: endDate || undefined,
+          // #174: só na edição existe algo para cancelar.
+          ...(editando ? { treatmentId: tratamento.id } : {}),
+        }),
       });
       if (!res.ok) {
         const data = (await res.json()) as { error?: string };
@@ -305,6 +322,61 @@ export function TreatmentForm({ patientId, onCreated, onCancel, tratamento }: Tr
     }
   };
 
+  /**
+   * A edição mexeu na agenda? — Issue #174.
+   *
+   * Só a posologia e as datas fazem o servidor apagar e regerar doses (ver
+   * o `scheduleChanged` do PATCH em `routes/treatments.ts`). Mudar
+   * instruções, dose ou perfil de escalonamento não mexe em dose nenhuma —
+   * e avisar ali seria assustar à toa.
+   */
+  const mexeuNaAgenda = (): boolean => {
+    if (!editando) return false;
+    const antes = JSON.stringify(tratamento.scheduleConfig ?? {});
+    const agora = JSON.stringify(buildScheduleConfig());
+    return (
+      antes !== agora ||
+      startDate !== tratamento.startDate ||
+      (endDate || null) !== (tratamento.endDate || null)
+    );
+  };
+
+  /**
+   * Pergunta ao servidor o que a mudança vai fazer, e abre o aviso.
+   *
+   * Quem conta é o servidor, com a MESMA consulta que o PATCH usa para
+   * apagar. Contar aqui, no navegador, criaria dois donos do mesmo número —
+   * e um dia eles discordariam, com o aviso dizendo um e o banco fazendo
+   * outro. Aviso errado é pior que nenhum aviso.
+   */
+  const pedirOAviso = async (): Promise<boolean> => {
+    try {
+      const res = await authFetch(`/api/patients/${patientId}/treatments/preview`, {
+        method: "POST",
+        body: JSON.stringify({
+          scheduleConfig: buildScheduleConfig(),
+          startDate,
+          endDate: endDate || undefined,
+          treatmentId: tratamento!.id,
+        }),
+      });
+      if (!res.ok) return false;
+      const dados = (await res.json()) as {
+        inPortuguese: string[];
+        dosesQueSeraoCanceladas: number | null;
+      };
+      // Nada pendente para apagar: não há o que avisar, e uma caixa dizendo
+      // "isto cancela 0 doses" só atrasaria quem está salvando.
+      if (!dados.dosesQueSeraoCanceladas) return false;
+      setAviso({ canceladas: dados.dosesQueSeraoCanceladas, proximas: dados.inPortuguese });
+      return true;
+    } catch {
+      // Sem rede, o aviso não sai — mas salvar continua possível. Bloquear a
+      // edição por causa de um aviso seria trocar um incômodo por um bloqueio.
+      return false;
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!medicationName.trim()) {
@@ -313,6 +385,16 @@ export function TreatmentForm({ patientId, onCreated, onCancel, tratamento }: Tr
       setError("Informe o nome do medicamento.");
       return;
     }
+    // #174: na edição que mexe na agenda, o aviso vem ANTES de salvar. Uma
+    // vez só — com o aviso já aberto, apertar "Salvar assim" cai direto no
+    // salvamento.
+    if (editando && aviso === null && mexeuNaAgenda()) {
+      setLoading(true);
+      const perguntou = await pedirOAviso();
+      setLoading(false);
+      if (perguntou) return;
+    }
+
     setLoading(true);
     setError("");
     try {
@@ -631,6 +713,58 @@ export function TreatmentForm({ patientId, onCreated, onCancel, tratamento }: Tr
           </div>
         )}
       </div>
+
+      {/* ── Issue #174: o que esta mudança vai fazer ─────────────────────
+
+          Editar horário ou data apaga as doses pendentes e gera outras. O
+          comportamento é o certo; o que faltava era dizer.
+
+          Âmbar, e não vermelho: é contexto de dose (invariante 5), e nada
+          aqui é destrutivo de verdade — o histórico não é tocado, e a frase
+          diz isso com todas as letras, porque é a primeira coisa que quem
+          lê "cancela 3 doses" teme. */}
+      <AlertDialog open={aviso !== null} onOpenChange={(aberto) => { if (!aberto) setAviso(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>O que esta mudança faz</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-left">
+                <p>
+                  Isto cancela{" "}
+                  <strong>
+                    {aviso?.canceladas === 1
+                      ? "1 dose que ainda não chegou"
+                      : `${aviso?.canceladas} doses que ainda não chegaram`}
+                  </strong>{" "}
+                  e cria outras no lugar.
+                </p>
+                {aviso && aviso.proximas.length > 0 && (
+                  <p>As próximas passam a ser: {aviso.proximas.join(", ")}.</p>
+                )}
+                <p className="text-zelo-amber-fg font-medium">
+                  As doses já registradas não mudam.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Voltar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                // `handleSubmit` aqui é o desta renderização, e ele fecha
+                // sobre o `aviso` AINDA preenchido — por isso a guarda de
+                // duas etapas deixa passar e o salvamento acontece. O
+                // `setAviso(null)` é só para a caixa sumir junto, e não
+                // ficar por cima de um erro se o salvamento falhar.
+                setAviso(null);
+                void handleSubmit(e as unknown as React.FormEvent);
+              }}
+            >
+              Salvar assim
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {error && (
         <Alert variant="destructive">

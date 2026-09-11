@@ -7,7 +7,7 @@ import { getAuth } from "../lib/auth-types.ts";
  * o que o médico prescreveu, nunca opina.
  */
 import { Router } from "express";
-import { eq, and } from "drizzle-orm";
+import { eq, and, gte } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { treatmentsTable, patientsTable, medicationsTable, stockEntriesTable, scheduledDosesTable, doseRecordsTable } from "@workspace/db";
 import { z } from "zod";
@@ -59,6 +59,13 @@ const PreviewBody = z.object({
   scheduleConfig: ScheduleConfigBody,
   startDate: z.string(),
   endDate: z.string().optional().nullable(),
+  /**
+   * O tratamento sendo EDITADO — Issue #174.
+   *
+   * Ausente na criação, e aí não há nada para cancelar. Presente na edição,
+   * é ele que responde "quantas doses pendentes esta mudança apaga?".
+   */
+  treatmentId: z.number().int().positive().optional(),
 });
 
 async function loadPatientInFamily(patientId: number, familyId: number) {
@@ -174,9 +181,50 @@ router.post("/patients/:patientId/treatments/preview", requireAuth, async (req, 
     windowEnd
   ).slice(0, 5);
 
+  /**
+   * Quantas doses pendentes esta mudança vai apagar — Issue #174.
+   *
+   * ═══════════════════════════════════════════════════════════════════════
+   * A TELA NÃO DIZIA O QUE IA ACONTECER.
+   *
+   * Editar horário ou data **cancela as pendentes e gera outras** — o
+   * comportamento certo, e as já registradas ficam intactas. Mas quem
+   * trocou "08:00 e 20:00" por "09:00 e 21:00" às 19:00 não descobria que
+   * a dose das 20:00 de hoje tinha deixado de existir.
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * ── A contagem tem que ser a MESMA consulta do PATCH ──────────────────
+   *
+   * Quem apaga é `clearFuturePendingDoses`: pendentes daquele tratamento
+   * com `scheduledAt >= agora`. Se a contagem aqui usasse outro critério,
+   * o aviso diria um número e o banco faria outro — e aviso errado é pior
+   * que nenhum aviso.
+   *
+   * `windowStart` acima é o mesmo `Clock.now()`: as duas contas partem do
+   * mesmo instante.
+   */
+  let dosesQueSeraoCanceladas: number | null = null;
+  if (body.data.treatmentId !== undefined) {
+    // Invariante 2: o tratamento tem que ser DESTE paciente, e o paciente já
+    // foi validado contra a família de quem chamou. Sem o join, um id de
+    // outra família devolveria a contagem dela.
+    const pendentes = await db
+      .select({ id: scheduledDosesTable.id })
+      .from(scheduledDosesTable)
+      .innerJoin(treatmentsTable, eq(scheduledDosesTable.treatmentId, treatmentsTable.id))
+      .where(and(
+        eq(scheduledDosesTable.treatmentId, body.data.treatmentId),
+        eq(treatmentsTable.patientId, patientId),
+        eq(scheduledDosesTable.status, "pending"),
+        gte(scheduledDosesTable.scheduledAt, windowStart),
+      ));
+    dosesQueSeraoCanceladas = pendentes.length;
+  }
+
   res.json({
     nextDoses: dates.map((d) => d.toISOString()),
     inPortuguese: describeInPortuguese(dates, patient.timezone),
+    dosesQueSeraoCanceladas,
   });
 });
 
