@@ -31,21 +31,69 @@ export function usePendingDoseActions(enabled: boolean): void {
 
       try {
         if (action.kind === "register") {
-          const res = await authFetch(`/api/patients/${action.patientId}/dose-records`, {
-            method: "POST",
-            body: JSON.stringify({
-              // Sem `takenAt`: o servidor ancora no relógio dele. Mesmo
-              // comportamento efetivo de antes (o instante da sincronização),
-              // sem o risco de o relógio deste aparelho estar fora de sincronia.
-              // Melhoria conhecida, fora do escopo aqui: usar o `queuedAt` da
-              // fila quando a ação ficou offline por muito tempo — hoje o
-              // tipo PendingAction descarta esse campo de propósito.
-              scheduledDoseId: action.scheduledDoseId,
-              outcome: action.outcome ?? "taken",
-            }),
+          const enviar = (justification?: string) =>
+            authFetch(`/api/patients/${action.patientId}/dose-records`, {
+              method: "POST",
+              body: JSON.stringify({
+                scheduledDoseId: action.scheduledDoseId,
+                outcome: action.outcome ?? "taken",
+                /**
+                 * Issue #167 — o horário do TOQUE, quando ele existe.
+                 *
+                 * A ação vinda da notificação continua sem ele: ela sobe
+                 * em segundos, e o relógio do servidor é mais confiável
+                 * que o do aparelho. O registro feito pela tela sem
+                 * internet manda — porque entre o toque e a subida podem
+                 * passar horas, e o horário é o dado que vai ao médico.
+                 */
+                takenAt: action.takenAt,
+                justification: justification ?? action.justification,
+                // A dose pode ter ficado longe da hora enquanto esperava
+                // na fila. Quem registrou já confirmou no toque; pedir de
+                // novo agora seria perguntar a uma tela que ninguém está
+                // olhando.
+                ...(action.takenAt ? { confirmarAntecipacao: true } : {}),
+              }),
+            });
+
+          let res = await enviar();
+
+          if (!res.ok) {
+            const corpo = (await res.json().catch(() => ({}))) as { code?: string };
+
+            /**
+             * O registro esperou tempo demais na fila e caiu fora da
+             * janela retroativa da família.
+             *
+             * A justificativa existe para uma pessoa explicar um registro
+             * antigo. Aqui o app SABE o que houve, e o que ele escreve é
+             * um fato, não uma desculpa inventada: a dose foi registrada
+             * sem internet, e só agora chegou. Perder a dose por falta de
+             * uma frase seria o pior desfecho possível.
+             */
+            if (corpo.code === "JUSTIFICATION_REQUIRED" && action.takenAt) {
+              const quando = new Date(action.takenAt);
+              const hora = Number.isNaN(quando.getTime())
+                ? ""
+                : ` às ${quando.getHours().toString().padStart(2, "0")}:${quando.getMinutes().toString().padStart(2, "0")}`;
+              res = await enviar(`Registrado sem internet${hora}; sincronizado depois.`);
+            }
+          }
+
+          if (!res.ok) {
+            // 409 é o caso bom disfarçado de erro: outra pessoa registrou
+            // primeiro, e a dose ESTÁ registrada — que era o objetivo.
+            if (res.status === 409) {
+              toast({ description: "Essa dose já tinha sido registrada por outra pessoa." });
+              return "ok";
+            }
+            return "rejected";
+          }
+          toast({
+            description: action.takenAt
+              ? "A dose que você registrou sem internet acabou de subir."
+              : "Dose registrada pela notificação.",
           });
-          if (!res.ok) return "rejected";
-          toast({ description: "Dose registrada pela notificação." });
         } else {
           const res = await authFetch(`/api/patients/${action.patientId}/dose-records/${action.scheduledDoseId}/snooze`, {
             method: "POST",
@@ -53,8 +101,11 @@ export function usePendingDoseActions(enabled: boolean): void {
           if (!res.ok) return "rejected";
           toast({ description: "Vamos lembrar de novo em 15 minutos." });
         }
+        // Issue #178 renomeou a chave da tela inicial, e esta linha ficou
+        // para trás: a fila subia a dose e a tela não se atualizava. A
+        // antiga ("home") sumiu do app; a da ficha continua.
         void queryClient.invalidateQueries({ queryKey: ["today-doses"] });
-        void queryClient.invalidateQueries({ queryKey: ["home"] });
+        void queryClient.invalidateQueries({ queryKey: ["o-dia"] });
         return "ok";
       } catch {
         // TypeError de fetch (sem rede) — não é rejeição da API, é falta de
