@@ -75,13 +75,16 @@ test.describe("O pior nome que a validação aceita", () => {
   });
 
   /**
-   * As sete telas que mostram nome de paciente. Roda também no projeto
-   * "celular" (Pixel 7), que é onde o defeito apareceu.
+   * As telas que mostram nome de paciente. Roda também no projeto "celular"
+   * (Pixel 7), que é onde o defeito apareceu.
+   *
+   * Issue #178: "/hoje" saiu da lista — ela virou redirecionamento para a
+   * "/", e mantê-la aqui seria medir a tela inicial duas vezes achando que
+   * são duas telas.
    */
   for (const tela of [
     { rotulo: "lista de pacientes", caminho: () => "/pacientes" },
     { rotulo: "tela inicial", caminho: () => "/" },
-    { rotulo: "resumo de hoje", caminho: () => "/hoje" },
     { rotulo: "cuidadores", caminho: () => "/cuidadores" },
     { rotulo: "ficha do paciente", caminho: (id: number) => `/pacientes/${id}` },
     { rotulo: "histórico", caminho: (id: number) => `/pacientes/${id}/historico` },

@@ -4,7 +4,7 @@ import { getAuth } from "../lib/auth-types.ts";
  * familyId vem do token JWT.
  */
 import { Router } from "express";
-import { eq, and, count, gte, lte } from "drizzle-orm";
+import { eq, and, count, gte, lte, inArray } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   patientsTable, caregiversTable, scheduledDosesTable, appointmentsTable, stockEntriesTable,
@@ -236,7 +236,93 @@ router.get("/dashboard/today-summary", requireAuth, async (req, res): Promise<vo
   });
   daMadrugada.sort((a, b) => a.scheduledAt.getTime() - b.scheduledAt.getTime());
 
-  res.json({ patients: summaries, doses: doDia, madrugada: daMadrugada });
+  /**
+   * ── O estoque acabando e a próxima consulta, de TODOS ──────────────────
+   *
+   * Estavam só no `today-doses`, de um paciente. A tela inicial passou a ser
+   * de todos, e deixá-los para trás seria trocar um defeito por outro: o
+   * cuidador veria o dia inteiro e perderia o aviso de que a Losartana do
+   * José está acabando.
+   *
+   * O nome do paciente vai junto, pelo mesmo motivo das doses: numa lista de
+   * várias pessoas, "Losartana — 3 dias" sem dizer de quem não serve.
+   */
+  const planLimits = await getPlanLimits(familyId);
+  const nomePorPaciente = new Map(patients.map((p) => [p.id, p.name]));
+  const fusoPorPaciente = new Map(patients.map((p) => [p.id, p.timezone]));
+
+  const stockRows = await db
+    .select({
+      patientId: stockEntriesTable.patientId,
+      medicationId: stockEntriesTable.medicationId,
+      medicationName: medicationsTable.name,
+      quantityRemaining: stockEntriesTable.quantityRemaining,
+      unit: stockEntriesTable.unit,
+      prescriptionExpiresAt: stockEntriesTable.prescriptionExpiresAt,
+    })
+    .from(stockEntriesTable)
+    .innerJoin(medicationsTable, eq(stockEntriesTable.medicationId, medicationsTable.id))
+    .where(inArray(stockEntriesTable.patientId, patients.map((p) => p.id)));
+
+  /**
+   * ZELO-38: o ALERTA de estoque baixo é do plano Família; o controle em si
+   * (registrar e ajustar quantidade) continua liberado no gratuito. Calcular
+   * sempre e filtrar a resposta evita reimplementar a conta em dois lugares.
+   */
+  const lowStockItems = planLimits.stockLowAlert
+    ? (
+        await Promise.all(
+          stockRows.map(async (item) => {
+            const tratamento = await loadActiveTreatmentSchedule(item.patientId, item.medicationId);
+            const dias = computeDaysRemaining(
+              item,
+              tratamento,
+              fusoPorPaciente.get(item.patientId) ?? "America/Sao_Paulo",
+            );
+            return { ...item, ...dias, patientName: nomePorPaciente.get(item.patientId) ?? "" };
+          }),
+        )
+      )
+        .filter((item) => item.isLow)
+        .map(({ patientId, patientName, medicationId, medicationName, quantityRemaining, unit, effectiveDaysRemaining }) => ({
+          patientId, patientName, medicationId, medicationName, quantityRemaining, unit, effectiveDaysRemaining,
+        }))
+    : [];
+
+  // A próxima consulta da família inteira — uma só, a mais próxima. A lista
+  // completa é da tela de consultas; aqui é lembrete, não agenda.
+  const [nextAppointment] = await db
+    .select({
+      patientId: appointmentsTable.patientId,
+      specialty: appointmentsTable.specialty,
+      doctorName: appointmentsTable.doctorName,
+      scheduledAt: appointmentsTable.scheduledAt,
+    })
+    .from(appointmentsTable)
+    .where(and(
+      inArray(appointmentsTable.patientId, patients.map((p) => p.id)),
+      eq(appointmentsTable.status, "scheduled"),
+      gte(appointmentsTable.scheduledAt, agora),
+    ))
+    .orderBy(appointmentsTable.scheduledAt)
+    .limit(1);
+
+  res.json({
+    patients: summaries,
+    doses: doDia,
+    madrugada: daMadrugada,
+    lowStockItems,
+    nextAppointment: nextAppointment
+      ? {
+          ...nextAppointment,
+          patientName: nomePorPaciente.get(nextAppointment.patientId) ?? "",
+          ...toLocalDateTime(
+            nextAppointment.scheduledAt,
+            fusoPorPaciente.get(nextAppointment.patientId) ?? "America/Sao_Paulo",
+          ),
+        }
+      : null,
+  });
 });
 
 router.get("/patients/:patientId/today-doses", requireAuth, async (req, res): Promise<void> => {

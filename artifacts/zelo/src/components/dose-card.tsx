@@ -52,6 +52,17 @@ interface DoseCardProps {
   atrasada?: boolean;
   /** "há 58 minutos". So aparece quando `atrasada`. */
   atrasadaHa?: string | null;
+  /**
+   * De quem e esta dose — Issue #178.
+   *
+   * So vem preenchido quando a tela mostra MAIS DE UMA pessoa. Com um
+   * paciente so, repetir o nome em todo cartao e ruido: a tela inteira ja e
+   * dele, e ruido faz parar de ler.
+   *
+   * Vai na linha de baixo, junto do horario, e nao no titulo: o titulo e o
+   * REMEDIO, que e o que a pessoa procura com os olhos.
+   */
+  paciente?: string | null;
 }
 
 /**
@@ -70,7 +81,7 @@ export function frasePartida(quando?: string | null, quem?: string | null): stri
   return "Registrado";
 }
 
-export function DoseCard({ medicationName, dosage, time, status, takenBy, takenAt, atrasada = false, atrasadaHa }: DoseCardProps) {
+export function DoseCard({ medicationName, dosage, time, status, takenBy, takenAt, atrasada = false, atrasadaHa, paciente }: DoseCardProps) {
   const tomada = status === "taken";
   const pulada = status === "skipped";
   const resolvida = tomada || pulada;
@@ -148,15 +159,19 @@ export function DoseCard({ medicationName, dosage, time, status, takenBy, takenA
                 Esta linha diz quando e quem — repetir o verbo aqui daria
                 "Pulado Registrado" quando faltasse hora e nome. */}
             <span className="text-muted-foreground">
+              {paciente && <><strong className="font-semibold text-foreground">{paciente}</strong> · </>}
               <strong className="font-medium text-foreground">{frasePartida(takenAt, takenBy)}</strong>
             </span>
           </>
         ) : (
           <span className="text-zelo-amber-fg font-medium">
+            {/* #178: o nome de quem e a dose vem antes do horario, e so
+                quando a tela mostra mais de uma pessoa. */}
+            {paciente && <><span className="font-semibold">{paciente}</span> · </>}
             {/* #153: o horario continua sendo o que a pessoa combinou com o
                 medico. O atraso entra DEPOIS dele, e nao no lugar — trocar o
                 horario pelo tempo decorrido esconderia o dado clinico. */}
-            Agendado para {time}
+            {paciente ? "agendado para " : "Agendado para "}{time}
             {atrasada && atrasadaHa && (
               <span className="font-semibold"> — {atrasadaHa}</span>
             )}

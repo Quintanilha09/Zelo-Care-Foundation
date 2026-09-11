@@ -58,6 +58,15 @@ export type Desfecho = "taken" | "skipped";
  */
 export interface DoseRegistravel {
   id: number;
+  /**
+   * De quem é esta dose — Issue #178.
+   *
+   * Antes o paciente vinha do hook, um só para a tela inteira. A tela
+   * inicial passou a mostrar as doses de **todos** os pacientes de uma vez,
+   * e aí o paciente deixou de ser propriedade da tela: ele é propriedade da
+   * dose, e sempre foi.
+   */
+  patientId: number;
   scheduledAt: string;
   scheduledLocalTime: string;
   status: "pending" | "taken" | "skipped" | "late";
@@ -86,6 +95,11 @@ interface Antecipacao {
   horario: string;
 }
 
+/** A dose que a correção está editando, mais de quem ela é. */
+export interface CorrecaoAberta extends DoseParaCorrigir {
+  patientId: number;
+}
+
 export interface ControladorDeDose {
   // ── estado que a interface desenha ──────────────────────────────────────
   /** Não-nulo enquanto a pergunta da #134 está aberta. */
@@ -95,7 +109,7 @@ export interface ControladorDeDose {
   /** A dose para a qual o servidor exigiu justificativa. */
   precisaJustificar: number | null;
   /** A dose cuja correção está aberta (#136). */
-  aCorrigir: DoseParaCorrigir | null;
+  aCorrigir: CorrecaoAberta | null;
   horario: string;
   justificativa: string;
   /** A dose com requisição em voo — trava o botão e evita registro duplo. */
@@ -105,12 +119,12 @@ export interface ControladorDeDose {
   aviso: string | null;
 
   // ── ações ───────────────────────────────────────────────────────────────
-  registrar: (doseId: number, desfecho: Desfecho, opcoes?: OpcoesDeRegistro) => Promise<void>;
-  desfazer: (recordId: number) => Promise<void>;
+  registrar: (dose: DoseRegistravel, desfecho: Desfecho, opcoes?: OpcoesDeRegistro) => Promise<void>;
+  desfazer: (dose: DoseRegistravel) => Promise<void>;
   abrirEditorDeHorario: (doseId: number, sugestao: Date) => void;
   fecharEditor: () => void;
-  confirmarHorarioEscolhido: (doseId: number, desfecho: Desfecho) => Promise<void>;
-  abrirCorrecao: (dose: DoseParaCorrigir) => void;
+  confirmarHorarioEscolhido: (dose: DoseRegistravel, desfecho: Desfecho) => Promise<void>;
+  abrirCorrecao: (dose: CorrecaoAberta) => void;
   fecharCorrecao: () => void;
   aoCorrigir: () => void;
   responderAntecipacao: (sim: boolean, comHorario?: boolean) => void;
@@ -125,11 +139,9 @@ export function paraCampoDeHorario(d: Date): string {
 }
 
 export function useRegistrarDose({
-  patientId,
   aoMudar,
   otimista,
 }: {
-  patientId: number | string;
   /** Chamado depois de toda mudança — as telas invalidam as queries delas. */
   aoMudar: () => void;
   /**
@@ -138,17 +150,18 @@ export function useRegistrarDose({
    */
   otimista?: (doseId: number, desfecho: Desfecho) => void;
 }): ControladorDeDose {
-  const [antecipacao, setAntecipacao] = useState<Antecipacao | null>(null);
+  const [antecipacao, setAntecipacao] = useState<(Antecipacao & { dose: DoseRegistravel }) | null>(null);
   const [editandoHorarioDe, setEditandoHorarioDe] = useState<number | null>(null);
   const [precisaJustificar, setPrecisaJustificar] = useState<number | null>(null);
-  const [aCorrigir, setACorrigir] = useState<DoseParaCorrigir | null>(null);
+  const [aCorrigir, setACorrigir] = useState<CorrecaoAberta | null>(null);
   const [horario, setHorario] = useState("");
   const [justificativa, setJustificativa] = useState("");
   const [emVoo, setEmVoo] = useState<number | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
 
-  const registrar = async (doseId: number, desfecho: Desfecho, opcoes: OpcoesDeRegistro = {}) => {
+  const registrar = async (dose: DoseRegistravel, desfecho: Desfecho, opcoes: OpcoesDeRegistro = {}) => {
+    const doseId = dose.id;
     setErro(null);
     setAviso(null);
     setEmVoo(doseId);
@@ -156,7 +169,7 @@ export function useRegistrarDose({
 
     let res: Response;
     try {
-      res = await authFetch(`/api/patients/${patientId}/dose-records`, {
+      res = await authFetch(`/api/patients/${dose.patientId}/dose-records`, {
         method: "POST",
         body: JSON.stringify({
           scheduledDoseId: doseId,
@@ -195,7 +208,7 @@ export function useRegistrarDose({
       const err = corpo as { error?: string; code?: string; scheduledLocalTime?: string } | null;
 
       if (err?.code === "ANTECIPACAO_REQUERIDA") {
-        setAntecipacao({ doseId, desfecho, horario: err.scheduledLocalTime ?? "" });
+        setAntecipacao({ doseId, desfecho, horario: err.scheduledLocalTime ?? "", dose });
         return;
       }
       if (err?.code === "JUSTIFICATION_REQUIRED") {
@@ -219,12 +232,13 @@ export function useRegistrarDose({
     }
   };
 
-  const desfazer = async (recordId: number) => {
+  const desfazer = async (dose: DoseRegistravel) => {
     setErro(null);
     setAviso(null);
-    const res = await authFetch(`/api/patients/${patientId}/dose-records/${recordId}/undo`, {
-      method: "POST",
-    }).catch(() => null);
+    const res = await authFetch(
+      `/api/patients/${dose.patientId}/dose-records/${dose.recordId}/undo`,
+      { method: "POST" },
+    ).catch(() => null);
 
     if (!res || !res.ok) {
       const corpo = res ? ((await res.json().catch(() => ({}))) as { error?: string }) : {};
@@ -262,13 +276,13 @@ export function useRegistrarDose({
       setPrecisaJustificar(null);
       setErro(null);
     },
-    confirmarHorarioEscolhido: async (doseId, desfecho) => {
+    confirmarHorarioEscolhido: async (dose, desfecho) => {
       const quando = new Date(horario);
       if (Number.isNaN(quando.getTime())) {
         setErro("Escolha um horário válido.");
         return;
       }
-      await registrar(doseId, desfecho, {
+      await registrar(dose, desfecho, {
         takenAt: quando.toISOString(),
         justification: justificativa,
       });
@@ -297,7 +311,7 @@ export function useRegistrarDose({
         setEditandoHorarioDe(pedido.doseId);
         return;
       }
-      void registrar(pedido.doseId, pedido.desfecho, { confirmarAntecipacao: true });
+      void registrar(pedido.dose, pedido.desfecho, { confirmarAntecipacao: true });
     },
 
     setHorario,

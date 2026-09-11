@@ -10,7 +10,6 @@ import { AtivacaoDoSegundoFator } from '@/components/ativacao-do-segundo-fator';
 import ConsentPage from '@/pages/ConsentPage';
 import HomePage from '@/pages/HomePage';
 import PatientsPage from '@/pages/PatientsPage';
-import TodaySummaryPage from '@/pages/TodaySummaryPage';
 import PatientDetailPage from '@/pages/PatientDetailPage';
 import AdherenceCalendarPage from '@/pages/AdherenceCalendarPage';
 import AppointmentsPage from '@/pages/AppointmentsPage';
@@ -41,6 +40,7 @@ import { getElderModePatientId } from '@/lib/elder-mode';
 import { getPatientAccessToken } from '@/lib/patient-access';
 import { usePendingDoseActions } from '@/hooks/use-pending-dose-actions';
 import {
+  Redirect,
   Route,
   Switch,
   useLocation,
@@ -213,7 +213,16 @@ function Router() {
       <RoutedErrorBoundary>
         <Switch>
           <Route path="/" component={HomePage} />
-          <Route path="/hoje" component={TodaySummaryPage} />
+          {/* Issue #178 — "/hoje" virou a "/".
+
+              Ela existia para consertar a tela inicial, que era de UM
+              paciente: "ver o dia de todos os N pacientes". A inicial passou
+              a ser de todos, e duas telas respondendo a mesma pergunta era
+              metade da confusão que o fundador relatou.
+
+              Continua como redirecionamento porque notificação antiga e link
+              salvo ainda apontam para cá. */}
+          <Route path="/hoje"><Redirect to="/" /></Route>
           <Route path="/pacientes" component={PatientsPage} />
           <Route path="/pacientes/:id/historico" component={AdherenceCalendarPage} />
           <Route path="/pacientes/:id/consultas" component={AppointmentsPage} />
