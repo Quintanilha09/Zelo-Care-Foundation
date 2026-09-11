@@ -48,22 +48,37 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
 
-  --color-zelo-green: hsl(140 21% 50%);
-  --color-zelo-green-fg: hsl(140 21% 30%);
-  --color-zelo-green-bg: hsl(140 21% 95%);
-  --color-zelo-amber: hsl(38 82% 55%);
-  /* Issue #138 — era 35%, que dava **4,1:1** sobre o `amber-bg`: abaixo do
-     piso AA de 4,5. Medido ao derivar o tema escuro, e corrigido aqui porque
-     o público deste produto é idoso e âmbar é a cor de dose pendente — a que
-     mais precisa ser lida. Com 32% são 4,76:1, e o tom não muda a olho. */
-  --color-zelo-amber-fg: hsl(38 82% 32%);
-
-  /* Azul calmo, exclusivo das MEDIÇÕES na tela de rotina. Verde e âmbar já
-     significam estado de dose (invariante 5 do FOUNDATION.md); reusá-los aqui
-     misturaria dois assuntos. Uma medição é um número anotado, não um estado. */
-  --color-zelo-measure: hsl(205 30% 52%);
-  --color-zelo-measure-bg: hsl(205 40% 96%);
-  --color-zelo-amber-bg: hsl(38 82% 95%);
+  /**
+   * As cores que SIGNIFICAM alguma coisa — Issue #148.
+   *
+   * ══════════════════════════════════════════════════════════════════════
+   * DUAS CAMADAS, E NAO UMA. O MOTIVO E O `inline` LA EM CIMA.
+   *
+   * Com `@theme inline`, o Tailwind escreve o valor DIRETO na regra em vez
+   * de deixar uma referencia. Ate a #148 estes oito eram os unicos tokens
+   * do arquivo declarados com valor literal, e o resultado compilado era:
+   *
+   *     .bg-zelo-amber-bg{background-color:#fdf5e8}
+   *
+   * Cor congelada. O `.dark` redefinia os oito corretamente e **nada
+   * chegava a tela**: o modo escuro do ZELO ficou com a linguagem de cor
+   * de dose inteira no tema claro, em 131 usos e 27 arquivos.
+   *
+   * Com a indireção, compila para `hsl(var(--zelo-amber-bg))` — e ai sim o
+   * `.dark` troca o valor de baixo.
+   *
+   * **Nao volte a por literal aqui.** Ha teste que compila o CSS e falha
+   * se algum utilitario `zelo-*` sair com cor fixa.
+   * ══════════════════════════════════════════════════════════════════════
+   */
+  --color-zelo-green: hsl(var(--zelo-green));
+  --color-zelo-green-fg: hsl(var(--zelo-green-fg));
+  --color-zelo-green-bg: hsl(var(--zelo-green-bg));
+  --color-zelo-amber: hsl(var(--zelo-amber));
+  --color-zelo-amber-fg: hsl(var(--zelo-amber-fg));
+  --color-zelo-amber-bg: hsl(var(--zelo-amber-bg));
+  --color-zelo-measure: hsl(var(--zelo-measure));
+  --color-zelo-measure-bg: hsl(var(--zelo-measure-bg));
 }
 
 :root {
@@ -102,6 +117,24 @@
   --ring: 140 21% 50%;
   
   --radius: 0.75rem;
+
+  /* Issue #148 — os valores do tema claro. Sem `hsl()` de proposito: quem
+     embrulha e o `@theme inline`, igual a todos os outros tokens deste
+     arquivo. Nenhuma cor mudou de aparencia aqui; o que mudou foi passar a
+     existir uma camada que o `.dark` consegue trocar. */
+  --zelo-green: 140 21% 50%;
+  --zelo-green-fg: 140 21% 30%;
+  --zelo-green-bg: 140 21% 95%;
+  --zelo-amber: 38 82% 55%;
+  /* Era 35%, que dava 4,1:1 sobre o `amber-bg` — abaixo do piso AA de 4,5.
+     Corrigido na #138: com 32% sao 4,76:1, e o tom nao muda a olho. */
+  --zelo-amber-fg: 38 82% 32%;
+  --zelo-amber-bg: 38 82% 95%;
+  /* Azul calmo, exclusivo das MEDICOES na tela de rotina. Verde e ambar ja
+     significam estado de dose (invariante 5); reusa-los aqui misturaria
+     dois assuntos. Uma medicao e um numero anotado, nao um estado. */
+  --zelo-measure: 205 30% 52%;
+  --zelo-measure-bg: 205 40% 96%;
 }
 
 .dark {
@@ -185,14 +218,14 @@
      (`border-zelo-amber/20`). Aqui a separação é um pouco maior que no
      claro, não menor.
      ══════════════════════════════════════════════════════════════════════ */
-  --color-zelo-green: hsl(140 30% 55%);
-  --color-zelo-green-fg: hsl(140 40% 70%);
-  --color-zelo-green-bg: hsl(140 18% 20%);
-  --color-zelo-amber: hsl(38 70% 58%);
-  --color-zelo-amber-fg: hsl(38 85% 68%);
-  --color-zelo-amber-bg: hsl(38 30% 20%);
-  --color-zelo-measure: hsl(205 45% 65%);
-  --color-zelo-measure-bg: hsl(205 25% 19%);
+  --zelo-green: 140 30% 55%;
+  --zelo-green-fg: 140 40% 70%;
+  --zelo-green-bg: 140 18% 20%;
+  --zelo-amber: 38 70% 58%;
+  --zelo-amber-fg: 38 85% 68%;
+  --zelo-amber-bg: 38 30% 20%;
+  --zelo-measure: 205 45% 65%;
+  --zelo-measure-bg: 205 25% 19%;
 }
 
 @layer base {
