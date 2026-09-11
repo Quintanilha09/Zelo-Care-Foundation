@@ -18,6 +18,26 @@ export interface QueuedDoseAction {
   scheduledDoseId: number;
   patientId?: number;
   outcome?: string;
+  /**
+   * O instante em que a pessoa TOCOU — Issue #167.
+   *
+   * ═════════════════════════════════════════════════════════════════
+   * SEM ISTO, UMA DOSE DADA NO PORÃO ÀS 20:00 ENTRA COMO 23:00.
+   * ═════════════════════════════════════════════════════════════════
+   *
+   * Para a ação vinda da notificação, deixar o servidor ancorar em
+   * `Clock.now()` é o certo: ela sincroniza em segundos, e o relógio
+   * deste aparelho pode estar fora de sincronia.
+   *
+   * Para o registro feito PELA TELA sem internet, não: entre o toque e
+   * a sincronização podem passar horas, e o horário da dose é o dado
+   * clínico que vai ao médico. Aqui o relógio do aparelho é a única
+   * fonte que existe — e é a fonte certa, porque foi ele que estava na
+   * mão de quem deu o remédio.
+   */
+  takenAt?: string;
+  /** Vai junto quando o servidor exigir — ver o drain. */
+  justification?: string;
   queuedAt: number;
 }
 

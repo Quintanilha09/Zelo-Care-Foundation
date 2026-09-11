@@ -45,6 +45,7 @@
  */
 import { useState } from "react";
 import { authFetch } from "@/lib/auth-client";
+import { enqueueAction } from "@/lib/offline-queue";
 import type { DoseParaCorrigir } from "@/components/corrigir-dose";
 
 export type Desfecho = "taken" | "skipped";
@@ -190,18 +191,59 @@ export function useRegistrarDose({
         }),
       });
     } catch (e) {
-      // Duas coisas chegam aqui, e elas pedem frases diferentes: o `fetch`
-      // rejeitando por falta de rede, e o `authFetch` lançando "Sessão
-      // expirada" quando o refresh falha.
-      //
-      // A versão anterior desta lógica na ficha do paciente deixava a exceção
-      // subir — o botão voltava ao normal e a tela não dizia nada. Falha
-      // silenciosa é a pior classe de defeito neste produto: não parece
-      // defeito, parece que a pessoa errou.
       setEmVoo(null);
+
+      /**
+       * ═══════════════════════════════════════════════════════════════════
+       * SEM INTERNET, A DOSE VAI PARA A FILA — Issue #167.
+       *
+       * A fila existia e funcionava, mas só recebia os botões da
+       * NOTIFICAÇÃO. Pelo app, offline, o toque se perdia — e a tela
+       * inicial chegava a mostrar "Sem conexão" enquanto oferecia o botão
+       * que ia falhar.
+       *
+       * O momento de dar remédio é, com frequência, o pior momento de
+       * sinal: quarto nos fundos, elevador, hospital, casa de campo. A
+       * promessa do produto — *a ação do cuidador nunca se perde* — valia
+       * para a notificação e não valia para a tela.
+       * ═══════════════════════════════════════════════════════════════════
+       *
+       * ── Sessão vencida NÃO entra na fila ──────────────────────────────
+       *
+       * `authFetch` lança em dois casos: rede caída e refresh recusado.
+       * Enfileirar o segundo guardaria uma ação que vai ser recusada de
+       * novo, e a pessoa acharia que registrou. Só a falta de rede vira
+       * fila; o resto vira mensagem.
+       */
+      const semRede = !(e instanceof Error) || !e.message || !navigator.onLine;
+      if (semRede) {
+        await enqueueAction({
+          kind: "register",
+          scheduledDoseId: doseId,
+          patientId: dose.patientId,
+          outcome: desfecho,
+          /**
+           * O relógio DESTE aparelho, e aqui ele é a fonte certa.
+           *
+           * A regra do projeto — "o relógio do cliente não é fonte de
+           * verdade" — existe para o caminho comum, em que o servidor
+           * está a um pedido de distância e sabe melhor. Offline não há
+           * servidor, e o horário do toque é a única coisa verdadeira que
+           * existe sobre quando o remédio foi dado.
+           */
+          takenAt: opcoes.takenAt ?? new Date().toISOString(),
+          justification: opcoes.justification?.trim() || undefined,
+        }).catch(() => { /* IndexedDB indisponível: cai na mensagem abaixo */ });
+
+        otimista?.(doseId, desfecho);
+        // Honestidade: nem fingir que subiu, nem fingir que falhou. Quem
+        // acha que subiu não confere depois.
+        setAviso("Registrado. Vai subir quando a internet voltar.");
+        return;
+      }
+
       aoMudar();
-      const motivo = e instanceof Error && e.message ? e.message : null;
-      setErro(motivo ?? "Sem conexão agora. A dose não foi registrada — tente de novo em instantes.");
+      setErro(e instanceof Error ? e.message : "Não foi possível registrar essa dose.");
       return;
     }
 
