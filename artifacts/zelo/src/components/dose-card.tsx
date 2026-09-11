@@ -29,7 +29,7 @@
  * não é erro nenhum — é alguém decidindo, e registrando a decisão.
  */
 import { cn } from "@/lib/utils";
-import { Check, Clock, MinusCircle, User } from "lucide-react";
+import { Check, Clock, MinusCircle, User, AlertCircle } from "lucide-react";
 import { motion } from "framer-motion";
 
 export type EstadoDaDose = "pending" | "taken" | "skipped";
@@ -43,6 +43,15 @@ interface DoseCardProps {
   takenBy?: string | null;
   /** Hora do registro, já formatada no fuso do paciente ("08:14"). */
   takenAt?: string | null;
+  /**
+   * A dose passou da hora — Issue #153.
+   *
+   * Vem calculado de fora porque quem sabe QUE HORAS SAO e a pagina, que
+   * tem o pulso de minuto. O cartao so exibe.
+   */
+  atrasada?: boolean;
+  /** "há 58 minutos". So aparece quando `atrasada`. */
+  atrasadaHa?: string | null;
 }
 
 /**
@@ -61,7 +70,7 @@ export function frasePartida(quando?: string | null, quem?: string | null): stri
   return "Registrado";
 }
 
-export function DoseCard({ medicationName, dosage, time, status, takenBy, takenAt }: DoseCardProps) {
+export function DoseCard({ medicationName, dosage, time, status, takenBy, takenAt, atrasada = false, atrasadaHa }: DoseCardProps) {
   const tomada = status === "taken";
   const pulada = status === "skipped";
   const resolvida = tomada || pulada;
@@ -74,7 +83,10 @@ export function DoseCard({ medicationName, dosage, time, status, takenBy, takenA
         "p-5 rounded-xl border flex flex-col gap-3 min-h-[64px] shadow-sm transition-colors",
         tomada && "bg-zelo-green-bg border-zelo-green/20",
         pulada && "bg-muted/40 border-border",
-        !resolvida && "bg-zelo-amber-bg border-zelo-amber/20"
+        // #153: mesma COR, mais presenca. Vermelho e proibido em dose
+        // (invariante 5) — a urgencia se faz com peso, nao com outra cor.
+        !resolvida && !atrasada && "bg-zelo-amber-bg border-zelo-amber/20",
+        !resolvida && atrasada && "bg-zelo-amber-bg border-zelo-amber"
       )}
     >
       <div className="flex justify-between items-start gap-4">
@@ -86,12 +98,14 @@ export function DoseCard({ medicationName, dosage, time, status, takenBy, takenA
           "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[17px] font-medium border shrink-0",
           tomada && "bg-zelo-green/10 text-zelo-green-fg border-zelo-green/20",
           pulada && "bg-muted text-muted-foreground border-border",
-          !resolvida && "bg-zelo-amber/20 text-zelo-amber-fg border-zelo-amber/20"
+          !resolvida && !atrasada && "bg-zelo-amber/20 text-zelo-amber-fg border-zelo-amber/20",
+          !resolvida && atrasada && "bg-zelo-amber text-white border-zelo-amber font-semibold"
         )}>
           {tomada && <Check className="w-4 h-4" />}
           {pulada && <MinusCircle className="w-4 h-4" />}
-          {!resolvida && <Clock className="w-4 h-4" />}
-          <span>{tomada ? "Tomado" : pulada ? "Pulado" : "Pendente"}</span>
+          {!resolvida && !atrasada && <Clock className="w-4 h-4" />}
+          {!resolvida && atrasada && <AlertCircle className="w-4 h-4" />}
+          <span>{tomada ? "Tomado" : pulada ? "Pulado" : atrasada ? "Atrasado" : "Pendente"}</span>
         </div>
       </div>
 
@@ -114,7 +128,15 @@ export function DoseCard({ medicationName, dosage, time, status, takenBy, takenA
             </span>
           </>
         ) : (
-          <span className="text-zelo-amber-fg font-medium">Agendado para {time}</span>
+          <span className="text-zelo-amber-fg font-medium">
+            {/* #153: o horario continua sendo o que a pessoa combinou com o
+                medico. O atraso entra DEPOIS dele, e nao no lugar — trocar o
+                horario pelo tempo decorrido esconderia o dado clinico. */}
+            Agendado para {time}
+            {atrasada && atrasadaHa && (
+              <span className="font-semibold"> — {atrasadaHa}</span>
+            )}
+          </span>
         )}
       </div>
     </motion.div>
