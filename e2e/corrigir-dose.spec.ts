@@ -1,6 +1,8 @@
 import { test, expect } from "@playwright/test";
 import type { Page, APIRequestContext } from "@playwright/test";
-import { criarConta, criarPaciente, registrarUmaDoseHoje, entrar } from "./apoio";
+import {
+  criarConta, criarPaciente, registrarUmaDoseHoje, envelhecerRegistroDeDose, entrar,
+} from "./apoio";
 
 /**
  * Corrigir um registro de dose — Issue #136.
@@ -18,11 +20,20 @@ import { criarConta, criarPaciente, registrarUmaDoseHoje, entrar } from "./apoio
  * motivo do `cartao-de-dose.spec.ts`.
  */
 
-/** Cria conta, paciente e uma dose JÁ registrada, e abre a ficha. */
+/**
+ * Cria conta, paciente e uma dose já registrada **e fora do prazo de
+ * desfazer**, e abre a ficha.
+ *
+ * O envelhecimento é o que torna este caminho alcançável. Sem ele o registro
+ * tem segundos de idade, o botão que aparece é "Desfazer" — corretamente — e
+ * "Corrigir" nem existe na tela. Foi assim que o CI derrubou a primeira
+ * versão deste arquivo, e o teste é que estava errado, não o app.
+ */
 async function cenarioComDoseRegistrada(page: Page, request: APIRequestContext) {
   const conta = await criarConta(request);
   const pacienteId = await criarPaciente(request, conta);
-  await registrarUmaDoseHoje(request, conta, pacienteId, "taken");
+  const { recordId } = await registrarUmaDoseHoje(request, conta, pacienteId, "taken");
+  await envelhecerRegistroDeDose(request, conta, recordId);
 
   await entrar(page, conta);
   await page.goto(`/pacientes/${pacienteId}`);
@@ -33,9 +44,9 @@ test.describe("Corrigir um registro de dose", () => {
   test("depois do prazo o caminho e CORRIGIR, e nao apagar", async ({ page, request }) => {
     await cenarioComDoseRegistrada(page, request);
 
-    // O registro veio pela API há mais de um instante, mas o prazo é de 60 s:
-    // o que importa aqui é que "Corrigir" existe e que a palavra "apagar"
-    // não aparece em lugar nenhum deste caminho.
+    // Passado o prazo, "Desfazer" some e "Corrigir" toma o lugar. Nunca os
+    // dois ao mesmo tempo: são respostas para momentos diferentes.
+    await expect(page.getByRole("button", { name: "Desfazer" })).toHaveCount(0);
     const corrigir = page.getByRole("button", { name: "Corrigir" });
     await expect(corrigir).toBeVisible({ timeout: 15_000 });
 

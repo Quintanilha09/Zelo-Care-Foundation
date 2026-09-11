@@ -317,6 +317,37 @@ export async function subirPlano(
 }
 
 /**
+ * Empurra o `created_at` de um registro de dose para trás — Issue #136.
+ *
+ * ── Por que isto precisou existir ────────────────────────────────────────
+ *
+ * O botão "Corrigir" só aparece **depois** que o prazo de desfazer vence
+ * (60 s). É o desenho certo — dentro do minuto o caminho é desfazer —, mas
+ * deixa a correção **inalcançável por um teste de tela**: um registro criado
+ * pela API tem segundos de idade.
+ *
+ * Esperar 60 s por caso, em dois navegadores, custaria minutos de CI por
+ * execução. O CI já morreu uma vez no teto de 20 min por causa disto.
+ *
+ * A rota do outro lado só existe fora de produção, exige sessão, só alcança
+ * registro da própria família, e mexe **só** no `created_at` — nunca no
+ * `taken_at`, que é o dado clínico. Ver `routes/dev-plano.ts`.
+ */
+export async function envelhecerRegistroDeDose(
+  request: APIRequestContext,
+  conta: ContaDeTeste,
+  recordId: number,
+  segundos = 120,
+): Promise<void> {
+  const accessToken = await tokenDaConta(request, conta);
+  const res = await request.post("/api/dev/envelhecer-dose", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    data: { recordId, segundos },
+  });
+  expect(res.status(), `envelhecer registro falhou: ${await res.text()}`).toBe(200);
+}
+
+/**
  * Confere que a página não rola na horizontal.
  *
  * Três dos defeitos relatados pelo fundador eram disso: conteúdo mais largo
@@ -618,7 +649,7 @@ export async function registrarUmaDoseHoje(
   conta: ContaDeTeste,
   alvo: number,
   desfecho: "taken" | "skipped" = "taken"
-): Promise<{ medicamento: string; horaAgendada: string }> {
+): Promise<{ medicamento: string; horaAgendada: string; recordId: number }> {
   const token = await tokenDaConta(request, conta);
   const { medicamento, doseId, horaAgendada } = await criarTratamentoHoje(request, conta, alvo);
 
@@ -641,5 +672,9 @@ export async function registrarUmaDoseHoje(
   });
   expect(registro.ok(), `registrar dose falhou: ${await registro.text()}`).toBeTruthy();
 
-  return { medicamento, horaAgendada };
+  // Issue #136: quem precisa CORRIGIR precisa do id do registro, e nao so
+  // do que apareceu na tela.
+  const recordId = ((await registro.json()) as { id: number }).id;
+
+  return { medicamento, horaAgendada, recordId };
 }
