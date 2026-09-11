@@ -18,6 +18,9 @@ import { getPlanLimits } from "../lib/plan-limits.ts";
 // Issue #135: um dono só para o prazo de desfazer. Quem recusa o 409 é
 // `dose-records.ts`; aqui só se calcula o instante que a tela vai comparar.
 import { UNDO_WINDOW_MS } from "./dose-records.ts";
+// Issue #153: a mesma carencia que o job usa para marcar `late`. Um dono so
+// para o numero; a tela recebe o instante ja calculado.
+import { LATE_GRACE_MINUTES } from "../lib/dose-generation.ts";
 import { alias } from "drizzle-orm/pg-core";
 
 const router = Router();
@@ -298,6 +301,36 @@ router.get("/patients/:patientId/today-doses", requireAuth, async (req, res): Pr
     desfazerAte: d.recordCreatedAt
       ? new Date(d.recordCreatedAt.getTime() + UNDO_WINDOW_MS).toISOString()
       : null,
+    /**
+     * A partir de quando esta dose conta como ATRASADA — Issue #153.
+     *
+     * ── O defeito que isto conserta ──────────────────────────────────────
+     *
+     * Até 11/09/2026 o atraso só existia como o status `late` no banco, e
+     * quem o decidia era um job: `LATE_GRACE_MINUTES` de carência mais um
+     * cron a cada 15 minutos. Somando, **uma dose atrasada podia parecer
+     * "Pendente" por até 45 minutos** — foi o que o fundador fotografou às
+     * 09:58, com uma dose das 09:00.
+     *
+     * A tela não precisa de job nenhum para saber que 09:00 já passou. Ela
+     * recebe este instante e compara com o relógio dela.
+     *
+     * ── Um instante, e não um booleano ───────────────────────────────────
+     *
+     * Mesmo motivo do `desfazerAte` acima: booleano envelhece na mão do
+     * cliente — chega dizendo "não" e continua dizendo "não" meia hora
+     * depois. Instante não envelhece.
+     *
+     * ── E o status `late` do banco continua valendo ──────────────────────
+     *
+     * Ele serve à cascata de lembretes, ao relatório de adesão e ao
+     * histórico, e nada disso muda. O que muda é só a EXIBIÇÃO, que passa a
+     * ser imediata. Quem decide quanto vale a carência continua sendo o
+     * `dose-generation.ts`.
+     */
+    atrasadaApartirDe: new Date(
+      d.scheduledAt.getTime() + LATE_GRACE_MINUTES * 60_000,
+    ).toISOString(),
   }));
 
   // ZELO-34: "baixo" é dias restantes (a partir da posologia prescrita),

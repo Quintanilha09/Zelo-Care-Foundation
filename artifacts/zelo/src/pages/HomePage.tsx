@@ -18,6 +18,8 @@ import { AppHeader } from "@/components/app-header";
 import { AreaCarregando, Esqueleto } from "@/components/esqueleto";
 import { nomeCurto } from "@workspace/nomes";
 import { CampoNumero } from "@/components/campo-numero";
+import { estaAtrasada, textoDoAtraso } from "@/lib/atraso";
+import { usePulsoDeMinuto } from "@/hooks/use-pulso-de-minuto";
 import {
   usePulsoDeDesfazer, ultimoPrazoDeDesfazer, podeDesfazer,
 } from "@/hooks/use-pode-desfazer";
@@ -45,6 +47,8 @@ interface HomeDose {
   // desfeito. Os dois vem do servidor; a tela nao conhece o prazo.
   recordId: number | null;
   desfazerAte: string | null;
+  /** Issue #153: instante a partir do qual a dose conta como atrasada. */
+  atrasadaApartirDe: string | null;
 }
 
 interface HomeData {
@@ -171,6 +175,9 @@ export default function HomePage() {
 
   // Issue #135: um pulso so para a tela. Ele nem nasce se nao houver dose
   // registrada com prazo aberto, e morre no segundo em que o ultimo vence.
+  // Issue #153: pulso de minuto, para a dose virar atrasada sozinha na tela
+  // de quem esta com o app aberto esperando o horario chegar.
+  const agoraEmMinutos = usePulsoDeMinuto();
   const pulso = usePulsoDeDesfazer(ultimoPrazoDeDesfazer(home?.doses ?? []));
 
   /**
@@ -461,7 +468,14 @@ export default function HomePage() {
                 <AnimatePresence initial={false}>
                   {agora.map((d) => (
                     <motion.div key={d.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-2 mb-2">
-                      <DoseCard medicationName={d.medicationName} dosage={d.dose ?? ""} time={d.scheduledLocalTime} status="pending" />
+                      <DoseCard
+                        medicationName={d.medicationName}
+                        dosage={d.dose ?? ""}
+                        time={d.scheduledLocalTime}
+                        status="pending"
+                        atrasada={estaAtrasada(d.atrasadaApartirDe, agoraEmMinutos)}
+                        atrasadaHa={textoDoAtraso(d.scheduledAt, agoraEmMinutos)}
+                      />
                       {!isObserver && editingTimeForDose !== d.id && (
                         <div className="flex items-center gap-2 px-1">
                           <Button className="flex-1" onClick={() => void handleRegister(d.id, "taken")}>✓ Registrar</Button>

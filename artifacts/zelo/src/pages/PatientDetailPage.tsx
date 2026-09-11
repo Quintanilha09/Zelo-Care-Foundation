@@ -29,6 +29,8 @@ import {
 import { AreaCarregando, Esqueleto } from "@/components/esqueleto";
 import { ArrowLeft, Plus, Pill, Package, Trash2, Smartphone, Tablet, Pause, Play, CheckCircle2, Undo2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { estaAtrasada, textoDoAtraso } from "@/lib/atraso";
+import { usePulsoDeMinuto } from "@/hooks/use-pulso-de-minuto";
 import {
   usePulsoDeDesfazer, ultimoPrazoDeDesfazer, podeDesfazer,
 } from "@/hooks/use-pode-desfazer";
@@ -123,6 +125,8 @@ interface ScheduledDose {
    */
   recordId: number | null;
   desfazerAte: string | null;
+  /** Issue #153: instante a partir do qual a dose conta como atrasada. */
+  atrasadaApartirDe: string | null;
   /**
    * Issue #136 — quando e por quem o registro foi emendado.
    *
@@ -287,6 +291,10 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
   // sozinho quando o minuto acaba, sem precisar recarregar nada — e o
   // temporizador nem chega a nascer se não houver registro recente.
   const agora = usePulsoDeDesfazer(ultimoPrazoDeDesfazer(todayDoses ?? []));
+  // Issue #153: pulso proprio, de minuto. Uma dose vira atrasada sozinha, e
+  // sem isto a tela mostraria Pendente para sempre em quem deixou o app
+  // aberto — que e justamente quem acompanha o horario chegar.
+  const agoraEmMinutos = usePulsoDeMinuto();
   const [erroAoDesfazer, setErroAoDesfazer] = useState<string | null>(null);
   /** Issue #136 — o registro que esta sendo emendado. */
   const [aCorrigir, setACorrigir] = useState<DoseParaCorrigir | null>(null);
@@ -671,7 +679,14 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
                     // é âmbar pelo invariante 5. `skipped` é que não podia
                     // continuar ali: já foi resolvida, e aparecia "Pendente"
                     // sem botão nenhum, como se a tela tivesse travado.
+                    //
+                    // Issue #153 — o cuidado acima continua certo (o botão
+                    // não sai), mas ele apagava a diferença entre "ainda vai
+                    // acontecer" e "já devia ter acontecido". O estado do
+                    // cartão continua `pending`; o ATRASO vai à parte.
                     status={d.status === "taken" ? "taken" : d.status === "skipped" ? "skipped" : "pending"}
+                    atrasada={estaAtrasada(d.atrasadaApartirDe, agoraEmMinutos)}
+                    atrasadaHa={textoDoAtraso(d.scheduledAt, agoraEmMinutos)}
                     takenAt={horaDoRegistro(d.registeredAt, patient?.timezone)}
                     takenBy={d.registeredByCaregiverName}
                   />
