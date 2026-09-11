@@ -14,6 +14,7 @@ import PatientDetailPage from '@/pages/PatientDetailPage';
 import AdherenceCalendarPage from '@/pages/AdherenceCalendarPage';
 import AppointmentsPage from '@/pages/AppointmentsPage';
 import RoutinePage from '@/pages/RoutinePage';
+import EmergencyCardPage from '@/pages/EmergencyCardPage';
 import CaregiversPage from '@/pages/CaregiversPage';
 import { AjustesShell } from '@/components/ajustes-shell';
 import SettingsPage from '@/pages/SettingsPage';
@@ -227,6 +228,8 @@ function Router() {
           <Route path="/pacientes/:id/historico" component={AdherenceCalendarPage} />
           <Route path="/pacientes/:id/consultas" component={AppointmentsPage} />
           <Route path="/pacientes/:id/rotina" component={RoutinePage} />
+          {/* Issue #176: a ficha para MOSTRAR a alguem num pronto-socorro. */}
+          <Route path="/pacientes/:id/emergencia" component={EmergencyCardPage} />
           <Route path="/pacientes/:id" component={PatientDetailPage} />
           <Route path="/cuidadores" component={CaregiversPage} />
           {/* As seções de Ajustes dividem a mesma casca — Issue #114. É ela

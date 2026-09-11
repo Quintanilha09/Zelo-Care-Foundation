@@ -29,6 +29,41 @@ export const patientsTable = pgTable("patients", {
   // depender de qual paciente, mesmo dentro da mesma família.
   emergencyContactName: text("emergency_contact_name"),
   emergencyContactPhone: text("emergency_contact_phone"),
+  /**
+   * ── Alergias e condições — Issue #176 ──────────────────────────────────
+   *
+   * ═══════════════════════════════════════════════════════════════════════
+   * É O PRIMEIRO DADO QUE UM PRONTO-SOCORRO PERGUNTA.
+   *
+   * E o cuidador que chega com o idoso às três da manhã costuma não saber de
+   * cor — ainda mais quando não é o cuidador principal.
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * ── Registrar não é interpretar ────────────────────────────────────────
+   *
+   * O invariante 4 proíbe o app de **verificar interação medicamentosa** e de
+   * opinar. Guardar "alérgica a dipirona" e mostrar para quem cuida não é
+   * nenhuma das duas coisas — é a mesma natureza do contato de emergência,
+   * que já vive aqui ao lado.
+   *
+   * **A linha que não se cruza:** o app nunca cruza estes campos com o
+   * medicamento cadastrado, nunca avisa, nunca impede. Ele mostra o que
+   * alguém escreveu, para uma pessoa ler.
+   *
+   * ── Por que texto livre, e não lista fechada ───────────────────────────
+   *
+   * "Alérgica a AAS e a esparadrapo" é uma frase de gente. Obrigar a escolher
+   * de um catálogo faz perder metade — e a metade perdida é justamente a que
+   * ninguém previu.
+   *
+   * ── Dado de saúde, com o cuidado do resto ──────────────────────────────
+   *
+   * Não estão na allowlist do `safeLog`, então nunca entram em log
+   * (invariante 3). Vivem no paciente, e por isso já entram no export e na
+   * exclusão da LGPD junto com ele.
+   */
+  allergies: text("allergies"),
+  conditions: text("conditions"),
   // ZELO-40: liga o modo idoso (tela única, letra grande, só "Tomei") pra
   // este paciente. Ativado pelo cuidador principal — não é uma conta
   // própria do paciente, é o dispositivo entrando num modo travado usando
