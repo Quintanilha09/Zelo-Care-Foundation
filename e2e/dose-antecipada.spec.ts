@@ -24,6 +24,24 @@ import { criarConta, criarPaciente, criarTratamentoHoje, entrar, type ContaDeTes
 let conta: ContaDeTeste;
 let pacienteId: number;
 let horaAgendada: string;
+let scheduledAt: string;
+
+/**
+ * Margem sobre a janela de 1 h do servidor — Issue #136, depois do CI de
+ * 11/09.
+ *
+ * Setenta minutos, e nao sessenta: um caso leva dezenas de segundos, e uma
+ * dose a 61 minutos de distancia no inicio do teste pode estar a 59 no
+ * momento do clique. A margem impede que o teste atravesse a fronteira no
+ * meio da propria execucao.
+ */
+const MINUTOS_PARA_O_SERVIDOR_PERGUNTAR = 70;
+
+/** A dose esta longe o bastante para o servidor pedir confirmacao? */
+function doseEstaLonge(): boolean {
+  const faltam = (new Date(scheduledAt).getTime() - Date.now()) / 60_000;
+  return faltam > MINUTOS_PARA_O_SERVIDOR_PERGUNTAR;
+}
 
 test.beforeAll(async ({ request }) => {
   conta = await criarConta(request);
@@ -31,18 +49,14 @@ test.beforeAll(async ({ request }) => {
   // A geração só cria dose do agora para a frente, e a posologia deste
   // helper é `["00:01", "23:59"]` — então a dose que nasce é, quase sempre,
   // a das 23:59: exatamente o caso do relato.
-  ({ horaAgendada } = await criarTratamentoHoje(request, conta, pacienteId));
+  ({ horaAgendada, scheduledAt } = await criarTratamentoHoje(request, conta, pacienteId));
 });
 
 test.describe("Dose antes da hora", () => {
   test.beforeEach(async ({ page }) => {
-    // Rodar na primeira dezena de segundos do dia geraria a dose das 00:01,
-    // que está DENTRO da janela de antecipação — e aí não há o que provar.
-    // É raro, e mentir sobre isso seria pior que pular.
-    test.skip(
-      horaAgendada === "00:01",
-      "a dose gerada nesta hora do dia esta dentro da janela de antecipacao",
-    );
+    // A tela troca os botoes grandes pelo discreto assim que `scheduledAt >
+    // agora`. Isso vale sempre, independente da distancia — entao o primeiro
+    // caso nao precisa de nenhuma condicao.
     await entrar(page, conta);
     await page.goto(`/pacientes/${pacienteId}`);
     await expect(page.getByRole("heading", { name: "Hoje" })).toBeVisible({ timeout: 15_000 });
@@ -59,7 +73,20 @@ test.describe("Dose antes da hora", () => {
     await expect(page.getByRole("button", { name: "Já dei este remédio" })).toBeVisible();
   });
 
+  /**
+   * ── Os dois casos abaixo dependem de o SERVIDOR perguntar ─────────────
+   *
+   * E isso nao e o mesmo que a tela mostrar o botao discreto. A tela troca
+   * os botoes quando `scheduledAt > agora`; o servidor so pergunta quando a
+   * distancia passa de uma hora. Entre as duas condicoes cabem 60 minutos.
+   *
+   * O CI de 11/09 rodou as 23:19 no fuso do paciente, com a dose das 23:59
+   * a 40 minutos: o botao apareceu, o servidor aceitou direto, e estes
+   * casos ficaram esperando um dialogo que nunca viria. O app estava certo
+   * nas duas pontas — o teste e que tratava as duas condicoes como uma so.
+   */
   test("a pergunta diz o horario da dose, e `Ainda nao` nao registra nada", async ({ page }) => {
+    test.skip(!doseEstaLonge(), "a dose de hoje esta dentro da janela: o servidor nao pergunta");
     await page.getByRole("button", { name: "Já dei este remédio" }).click();
 
     // O horário vem do SERVIDOR: a tela não sabe qual é a janela nem que
@@ -75,6 +102,7 @@ test.describe("Dose antes da hora", () => {
   });
 
   test("confirmando, a dose entra — o caminho nunca fecha", async ({ page }) => {
+    test.skip(!doseEstaLonge(), "a dose de hoje esta dentro da janela: o servidor nao pergunta");
     await page.getByRole("button", { name: "Já dei este remédio" }).click();
     await page.getByRole("alertdialog").getByRole("button", { name: "Sim, já dei" }).click();
 

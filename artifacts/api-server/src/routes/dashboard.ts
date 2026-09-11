@@ -18,8 +18,19 @@ import { getPlanLimits } from "../lib/plan-limits.ts";
 // Issue #135: um dono só para o prazo de desfazer. Quem recusa o 409 é
 // `dose-records.ts`; aqui só se calcula o instante que a tela vai comparar.
 import { UNDO_WINDOW_MS } from "./dose-records.ts";
+import { alias } from "drizzle-orm/pg-core";
 
 const router = Router();
+
+/**
+ * Quem CORRIGIU o registro — Issue #136.
+ *
+ * Apelido da mesma tabela de cuidadores, porque a consulta já a usa para quem
+ * **registrou**. São pessoas diferentes, e a tela mostra as duas: sem o
+ * apelido, o Drizzle juntaria as duas pontas na mesma linha e o nome de quem
+ * corrigiu apareceria como se tivesse registrado.
+ */
+const quemCorrigiu = alias(caregiversTable, "quem_corrigiu");
 
 router.get("/dashboard", requireAuth, async (req, res): Promise<void> => {
   const familyId = getAuth(req).familyId;
@@ -234,12 +245,22 @@ router.get("/patients/:patientId/today-doses", requireAuth, async (req, res): Pr
       // cuidador, e num registro retroativo os dois são bem diferentes — usar
       // o errado daria um minuto para desfazer contado a partir de ontem.
       recordCreatedAt: doseRecordsTable.createdAt,
+      // Issue #136: registro corrigido sem marca visível é pior que registro
+      // errado — quem lê passa a confiar no que não deve. A tela precisa
+      // saber, e precisa saber barato: por isso vem da coluna, e não de uma
+      // consulta ao `audit_log` por dose.
+      correctedAt: doseRecordsTable.correctedAt,
+      correctedByName: quemCorrigiu.name,
     })
     .from(scheduledDosesTable)
     .innerJoin(treatmentsTable, eq(scheduledDosesTable.treatmentId, treatmentsTable.id))
     .innerJoin(medicationsTable, eq(treatmentsTable.medicationId, medicationsTable.id))
     .leftJoin(doseRecordsTable, eq(doseRecordsTable.scheduledDoseId, scheduledDosesTable.id))
     .leftJoin(caregiversTable, eq(doseRecordsTable.caregiverId, caregiversTable.id))
+    // Segundo join, com apelido: quem REGISTROU e quem CORRIGIU sao pessoas
+    // diferentes, e a tela mostra as duas. Sem o alias, o Drizzle juntaria
+    // as duas pontas na mesma linha de caregivers.
+    .leftJoin(quemCorrigiu, eq(doseRecordsTable.correctedByCaregiverId, quemCorrigiu.id))
     .where(and(
       eq(scheduledDosesTable.patientId, patientId),
       gte(scheduledDosesTable.scheduledAt, todayStart),

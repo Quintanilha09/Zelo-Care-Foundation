@@ -1,5 +1,8 @@
 /**
- * Troca o plano da PRÓPRIA família — desenvolvimento e testes apenas.
+ * Atalhos de estado para desenvolvimento e testes.
+ *
+ *   POST /api/dev/plano             troca o plano da PRÓPRIA família
+ *   POST /api/dev/envelhecer-dose   empurra o `created_at` de um registro
  *
  * ══════════════════════════════════════════════════════════════════════════
  * PROTEÇÃO DE PRODUÇÃO
@@ -33,9 +36,9 @@
 
 import { Router } from "express";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { subscriptionsTable } from "@workspace/db";
+import { subscriptionsTable, doseRecordsTable, patientsTable } from "@workspace/db";
 import { requireAuth } from "../middleware/require-auth";
 import { getAuth } from "../lib/auth-types.ts";
 
@@ -75,6 +78,72 @@ router.post("/dev/plano", requireAuth, async (req, res): Promise<void> => {
     .limit(1);
 
   res.json({ ok: true, plano: assinatura?.plan, status: assinatura?.status });
+});
+
+const EnvelhecerBody = z.object({
+  recordId: z.number().int().positive(),
+  segundos: z.number().int().positive().max(86_400),
+});
+
+/**
+ * POST /api/dev/envelhecer-dose  { recordId, segundos }
+ *
+ * ── Por que precisou existir — Issue #136 ────────────────────────────────
+ *
+ * O "Corrigir" só aparece **depois** que o prazo de desfazer vence (60 s).
+ * Isso é o desenho certo: dentro do minuto o caminho é desfazer, e oferecer
+ * os dois ao mesmo tempo faria a pessoa escolher entre "apagar" e "emendar"
+ * sem ter por que decidir isso.
+ *
+ * Mas deixa o caminho **inalcançável por um teste de tela**: um registro
+ * criado pela API tem segundos de idade, e esperar 60 s por caso, em dois
+ * navegadores, custaria minutos de CI por execução. O CI já morreu uma vez
+ * no teto de 20 min por causa disso.
+ *
+ * Então esta rota empurra o `created_at` para trás. É o mesmo desenho do
+ * `dev/plano` logo acima, pelo mesmo motivo: um estado real do produto que
+ * o teste não conseguiria montar de outro jeito.
+ *
+ * ── Os limites ───────────────────────────────────────────────────────────
+ *
+ * Só fora de produção (o router inteiro), só com sessão, e **só registro da
+ * família de quem chamou** — o `familyId` vem do JWT. Um registro de outra
+ * família responde 404, como manda o invariante 2.
+ *
+ * Mexe **só** no `created_at`, que é o carimbo de auditoria de quando a
+ * linha entrou. Não encosta em `taken_at`, que é o dado clínico.
+ */
+router.post("/dev/envelhecer-dose", requireAuth, async (req, res): Promise<void> => {
+  const body = EnvelhecerBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: "Informe recordId e segundos." });
+    return;
+  }
+
+  const [registro] = await db
+    .select({ id: doseRecordsTable.id, createdAt: doseRecordsTable.createdAt })
+    .from(doseRecordsTable)
+    .innerJoin(patientsTable, eq(patientsTable.id, doseRecordsTable.patientId))
+    .where(
+      and(
+        eq(doseRecordsTable.id, body.data.recordId),
+        eq(patientsTable.familyId, getAuth(req).familyId),
+      ),
+    )
+    .limit(1);
+
+  if (!registro) {
+    res.status(404).json({ error: "Recurso não encontrado" });
+    return;
+  }
+
+  const novo = new Date(registro.createdAt.getTime() - body.data.segundos * 1000);
+  await db
+    .update(doseRecordsTable)
+    .set({ createdAt: novo })
+    .where(eq(doseRecordsTable.id, registro.id));
+
+  res.json({ ok: true, createdAt: novo.toISOString() });
 });
 
 export default router;
