@@ -64,6 +64,13 @@ export function CorrigirDose({
   const [precisaDeMotivo, setPrecisaDeMotivo] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState("");
+  /**
+   * Issue #136 — a pergunta de antecipacao, quando o servidor pede.
+   *
+   * Guarda a MENSAGEM que veio dele (com o horario dentro), e nao um
+   * booleano: quem escreve a frase e quem conhece a regra.
+   */
+  const [perguntaDeAntecipacao, setPerguntaDeAntecipacao] = useState("");
 
   // Abrir no estado REAL do registro: um formulário que abre em branco faz a
   // pessoa reconstruir de memória o que ela veio consertar.
@@ -74,6 +81,7 @@ export function CorrigirDose({
     setMotivo("");
     setPrecisaDeMotivo(false);
     setErro("");
+    setPerguntaDeAntecipacao("");
   }, [dose]);
 
   const salvar = async (confirmarAntecipacao = false) => {
@@ -96,6 +104,30 @@ export function CorrigirDose({
 
       if (!res.ok) {
         const corpo = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
+
+        /**
+         * ── O eixo da ANTECIPAÇÃO também vale ao corrigir — Issue #136 ────
+         *
+         * Corrigir revalida as mesmas regras de tempo do registro original,
+         * e uma delas é a janela de antecipação da #134. Corrigir hoje de
+         * manhã o registro de uma dose agendada para as 23:59 cai nela — o
+         * que é certo: o servidor não tem como saber se a pessoa quis mesmo
+         * dizer que já deu o remédio da noite.
+         *
+         * **Isto faltava, e o CI achou.** O parâmetro `confirmarAntecipacao`
+         * existia nesta função desde o começo e nada o acionava: a tela
+         * mostrava o erro e ficava parada, com o diálogo aberto e sem saída.
+         * Quem corrigisse uma dose futura não conseguia salvar de jeito
+         * nenhum.
+         *
+         * A resposta é a mesma do registro: perguntar uma vez, com o horário
+         * na frente, e reenviar. Nunca bloquear — corrigir um registro de
+         * dose não pode ser impossível.
+         */
+        if (corpo.code === "ANTECIPACAO_REQUERIDA") {
+          setPerguntaDeAntecipacao(corpo.error ?? "Esta dose é de mais tarde.");
+          return;
+        }
         // O servidor pede a justificativa quando o horário sai da janela da
         // família. A tela não conhece essa janela — ela reage ao pedido.
         if (corpo.code === "JUSTIFICATION_REQUIRED") setPrecisaDeMotivo(true);
@@ -179,6 +211,25 @@ export function CorrigirDose({
           <Alert variant="destructive">
             <AlertDescription>{erro}</AlertDescription>
           </Alert>
+        )}
+
+        {/* ── Issue #136: a saída que faltava ────────────────────────────
+
+            Âmbar, não vermelho: a dose ser de mais tarde é uma pendência a
+            confirmar, não um erro (invariante 5). E o texto é o do servidor,
+            que já vem com o horário dentro — a tela não conhece a janela. */}
+        {perguntaDeAntecipacao && (
+          <div className="rounded-lg border border-zelo-amber/30 bg-zelo-amber-bg px-4 py-3 space-y-3">
+            <p className="text-sm text-zelo-amber-fg">{perguntaDeAntecipacao}</p>
+            <Button
+              size="sm"
+              className="w-full"
+              disabled={salvando}
+              onClick={() => void salvar(true)}
+            >
+              Sim, é esta dose
+            </Button>
+          </div>
         )}
 
         <div className="flex justify-end gap-2">

@@ -180,7 +180,20 @@ jobs:
   ponta-a-ponta:
     name: Testes de tela (Playwright)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 30 min desde 11/09/2026, e o motivo esta medido.
+    #
+    # A leva de sete issues de 10/09 levou a suite de tela a **354 testes**
+    # (dois projetos: chromium e celular). Na ultima execucao verde ela
+    # chegou a 330 antes do teto de 20 min cair - ou seja, passou a raspar.
+    #
+    # Nao da para acelerar com paralelismo: `workers: 1` no
+    # playwright.config.ts existe porque o banco e compartilhado, igual a
+    # suite de integracao. Um worker por banco e outra historia.
+    #
+    # O teto continua existindo para pegar processo pendurado, que foi o que
+    # ele pegou duas vezes nesta leva (pg-boss sem `stop`, e teste falhando
+    # com retentativa). 30 min deixa folga sem deixar de ser um teto.
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:16-alpine

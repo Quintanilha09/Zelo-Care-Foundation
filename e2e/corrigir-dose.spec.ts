@@ -80,6 +80,19 @@ test.describe("Corrigir um registro de dose", () => {
     await page.getByRole("dialog").getByRole("button", { name: "Pulou" }).click();
     await page.getByRole("button", { name: "Salvar correção" }).click();
 
+    /**
+     * A dose gerada é quase sempre a das 23:59, então corrigir revalida a
+     * janela de antecipação da #134 e o servidor pergunta uma vez. É o
+     * comportamento certo — e foi o CI que mostrou que a tela não tinha
+     * saída para ele: o diálogo ficava aberto para sempre.
+     *
+     * `count()` em vez de esperar: nos primeiros segundos do dia a dose é a
+     * das 00:01, já dentro da janela, e aí a pergunta não aparece. Os dois
+     * caminhos ficam cobertos sem o teste depender da hora do CI.
+     */
+    const confirmar = page.getByRole("button", { name: "Sim, é esta dose" });
+    if (await confirmar.count()) await confirmar.click();
+
     await expect(page.getByRole("dialog")).toBeHidden({ timeout: 15_000 });
     await expect(page.getByText("Pulado", { exact: true })).toBeVisible({ timeout: 15_000 });
 
