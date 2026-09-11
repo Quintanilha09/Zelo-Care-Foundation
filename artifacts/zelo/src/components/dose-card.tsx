@@ -99,7 +99,21 @@ export function DoseCard({ medicationName, dosage, time, status, takenBy, takenA
           tomada && "bg-zelo-green/10 text-zelo-green-fg border-zelo-green/20",
           pulada && "bg-muted text-muted-foreground border-border",
           !resolvida && !atrasada && "bg-zelo-amber/20 text-zelo-amber-fg border-zelo-amber/20",
-          !resolvida && atrasada && "bg-zelo-amber text-white border-zelo-amber font-semibold"
+          // #153 — o preenchimento NAO muda, e o motivo esta medido.
+          //
+          // A primeira versao punha branco sobre ambar solido. O teste de
+          // contraste da #149 reprovou na hora: 2,11:1 no claro e 2,14:1 no
+          // escuro. Medi as alternativas, e todas falham — ambar cheio com
+          // ambar-fg da 2,70:1, e ate o /40 fica em 4,26:1.
+          //
+          // Ambar e uma cor de luminancia MEDIA: nada legivel assenta nela.
+          // O /20 com ambar-fg, que ja existia, e a combinacao mais legivel
+          // que o ambar permite (4,94:1).
+          //
+          // Entao a urgencia vem do PESO e da BORDA, que nao tem texto por
+          // cima: borda cheia em vez de 20%, e a palavra em negrito. O que
+          // grita e a palavra "Atrasado", nao a saturacao do fundo.
+          !resolvida && atrasada && "bg-zelo-amber/20 text-zelo-amber-fg border-zelo-amber font-semibold"
         )}>
           {tomada && <Check className="w-4 h-4" />}
           {pulada && <MinusCircle className="w-4 h-4" />}
