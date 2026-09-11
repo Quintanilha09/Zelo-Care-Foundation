@@ -61,7 +61,7 @@ interface DoseDoDia {
   patientName: string;
   scheduledAt: string;
   scheduledLocalTime: string;
-  status: "pending" | "taken" | "skipped" | "late";
+  status: "pending" | "taken" | "skipped" | "late" | "partial";
   dose: string | null;
   medicationName: string;
   registeredAt: string | null;
@@ -235,7 +235,9 @@ export default function HomePage() {
   const pendentes = todas.filter((d) => d.status === "pending");
   const deAgora = pendentes.filter((d) => new Date(d.scheduledAt).getTime() <= agora);
   const maisTarde = pendentes.filter((d) => new Date(d.scheduledAt).getTime() > agora);
-  const jaFoi = todas.filter((d) => d.status === "taken" || d.status === "skipped");
+  // Issue #175: parcial é resolvida, e por isso mora em "Já foi" — deixá-la
+  // fora faria a dose sumir da tela depois de registrada.
+  const jaFoi = todas.filter((d) => d.status === "taken" || d.status === "skipped" || d.status === "partial");
   // ZELO-24: uma dose perdida não é sentença — continua registrável, só que
   // retroativamente, porque o horário real já passou.
   const perdidas = todas.filter((d) => d.status === "late");

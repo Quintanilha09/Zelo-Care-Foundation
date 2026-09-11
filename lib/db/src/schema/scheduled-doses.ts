@@ -21,6 +21,9 @@ export const scheduledDoseStatusEnum = pgEnum("scheduled_dose_status", [
   // ZELO-23: adiada é uma decisão do cuidador (via dose_records.outcome),
   // "late"/perdida continua exclusivamente atribuída pelo sistema.
   "postponed",
+  // Issue #175: tomou em parte. O status espelha o desfecho do registro, e
+  // sem ele a tela mostraria uma coisa e o relatório outra.
+  "partial",
 ]);
 
 // REGRA DE INTEGRIDADE CRÍTICA #1:

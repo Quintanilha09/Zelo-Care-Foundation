@@ -136,7 +136,7 @@ const CreateDoseRecordBody = z.object({
   // servidor". Só o registro retroativo (ZELO-24) manda um instante
   // explícito — ver a explicação no handler.
   takenAt: z.string().optional(),
-  outcome: z.enum(["taken", "skipped", "postponed"]),
+  outcome: z.enum(["taken", "skipped", "postponed", "partial"]),
   postponedTo: z.string().optional().nullable(),
   // ZELO-24: só exigida pelo servidor quando takenAt cai fora da janela
   // retroativa da família — texto curto e neutro, nunca uma escolha numa
@@ -670,7 +670,10 @@ router.post(
 
 const CorrigirDoseBody = z
   .object({
-    outcome: z.enum(["taken", "skipped"]).optional(),
+    // Issue #175: corrigir para/de 'tomou em parte' também precisa caber —
+    // descobrir que a dose foi cuspida dez minutos depois é exatamente o
+    // tipo de coisa que se descobre DEPOIS de registrar.
+    outcome: z.enum(["taken", "skipped", "partial"]).optional(),
     takenAt: z.string().optional(),
     justification: z.string().trim().max(500).optional().nullable(),
     // Mesmo campo da criação: fora da janela de antecipação, é ele que diz

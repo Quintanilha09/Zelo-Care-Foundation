@@ -31,7 +31,7 @@ import {
 import { Clock as ClockIcon, Undo2, Pencil } from "lucide-react";
 import { podeDesfazer } from "@/hooks/use-pode-desfazer";
 import { useState } from "react";
-import { MOTIVOS_SUGERIDOS } from "@/hooks/use-registrar-dose";
+import { MOTIVOS_SUGERIDOS, type Desfecho } from "@/hooks/use-registrar-dose";
 import type { ControladorDeDose, DoseRegistravel } from "@/hooks/use-registrar-dose";
 
 /**
@@ -47,14 +47,47 @@ function EditorDeHorario({
   controlador,
 }: {
   dose: DoseRegistravel;
-  desfecho: "taken" | "skipped";
+  desfecho: Desfecho;
   controlador: ControladorDeDose;
 }) {
+  const [escolhido, setEscolhido] = useState<Desfecho>(desfecho);
   if (controlador.editandoHorarioDe !== dose.id) return null;
   const agora = new Date();
 
   return (
     <div className="px-1 space-y-2 bg-muted/50 rounded-lg p-3">
+      {/* ── Issue #175: o que aconteceu de verdade ────────────────────
+
+          "Tomou em parte" mora AQUI, e não como um quarto botão grande na
+          linha. Registrar continua sendo um toque para o caso comum; a
+          nuance fica onde já se vai quando o caso não é o comum.
+
+          Em idoso com dificuldade de engolir isto é rotina: cuspiu metade,
+          vomitou dez minutos depois. Antes o cuidador escolhia entre duas
+          respostas erradas — marcar tomada, e o médico achar que a dose
+          entrou; ou pular, e ele achar que nem se tentou. */}
+      <fieldset className="space-y-1">
+        <legend className="text-xs text-muted-foreground">O que aconteceu</legend>
+        <div className="flex gap-2">
+          {([
+            ["taken", "Tomou"],
+            ["partial", "Em parte"],
+            ["skipped", "Pulou"],
+          ] as const).map(([valor, rotulo]) => (
+            <Button
+              key={valor}
+              type="button"
+              size="sm"
+              variant={escolhido === valor ? "default" : "outline"}
+              className="flex-1"
+              aria-pressed={escolhido === valor}
+              onClick={() => setEscolhido(valor)}
+            >
+              {rotulo}
+            </Button>
+          ))}
+        </div>
+      </fieldset>
       <label className="text-xs text-muted-foreground block" htmlFor={`horario-${dose.id}`}>
         Horário real
       </label>
@@ -86,7 +119,7 @@ function EditorDeHorario({
         <Button
           size="sm"
           disabled={controlador.emVoo === dose.id}
-          onClick={() => void controlador.confirmarHorarioEscolhido(dose, desfecho)}
+          onClick={() => void controlador.confirmarHorarioEscolhido(dose, escolhido)}
         >
           {controlador.emVoo === dose.id ? "Registrando…" : "Confirmar"}
         </Button>
@@ -121,7 +154,9 @@ export function AcoesDaDose({
 
   const tamanho = compacto ? "sm" : "default";
   const jaChegou = new Date(dose.scheduledAt).getTime() <= agora;
-  const resolvida = dose.status === "taken" || dose.status === "skipped";
+  // Issue #175: parcial é RESOLVIDA. Ela já aconteceu, e o que ela
+  // oferece é desfazer ou corrigir — não registrar de novo.
+  const resolvida = dose.status === "taken" || dose.status === "skipped" || dose.status === "partial";
   const editorAberto = controlador.editandoHorarioDe === dose.id;
 
   // ── Registrada ────────────────────────────────────────────────────────
@@ -152,7 +187,7 @@ export function AcoesDaDose({
             // inicial mostra várias pessoas de uma vez.
             patientId: dose.patientId,
             medicationName,
-            outcome: dose.status === "skipped" ? "skipped" : "taken",
+            outcome: dose.status === "skipped" ? "skipped" : dose.status === "partial" ? "partial" : "taken",
             registeredAt: null,
           })
         }

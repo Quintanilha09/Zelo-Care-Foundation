@@ -48,7 +48,11 @@ import { authFetch } from "@/lib/auth-client";
 import { enqueueAction } from "@/lib/offline-queue";
 import type { DoseParaCorrigir } from "@/components/corrigir-dose";
 
-export type Desfecho = "taken" | "skipped";
+/**
+ * Issue #175: "em parte" entra aqui e não é um estado intermediário — é
+ * um desfecho, com o mesmo peso dos outros dois.
+ */
+export type Desfecho = "taken" | "skipped" | "partial";
 
 /**
  * O mínimo que uma dose precisa ter para ser registrável.
@@ -70,7 +74,7 @@ export interface DoseRegistravel {
   patientId: number;
   scheduledAt: string;
   scheduledLocalTime: string;
-  status: "pending" | "taken" | "skipped" | "late";
+  status: "pending" | "taken" | "skipped" | "late" | "partial";
   recordId: number | null;
   desfazerAte: string | null;
 }
@@ -300,7 +304,9 @@ export function useRegistrarDose({
      * de horário e escreveu uma justificativa, perguntar de novo seria não
      * ter ouvido.
      */
-    if (desfecho === "skipped" && !opcoes.justification?.trim()) {
+    // Issue #175: a dose parcial também pede o que houve — mais ainda que
+      // a pulada, porque "em parte" sozinho não diz nada ao médico.
+    if ((desfecho === "skipped" || desfecho === "partial") && !opcoes.justification?.trim()) {
       setMotivoPendente(dose);
     }
   };
