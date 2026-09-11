@@ -94,9 +94,22 @@
   --popover-foreground: 36 5% 19%;
   --popover-border: 43 14% 90%;
   
-  --primary: 140 21% 50%;
+  /* ══════════════════════════════════════════════════════════════════════
+     O VERDE DA MARCA, ESCURECIDO — Issue #151.
+
+     Era `140 21% 50%`. Branco por cima media **3,25:1**, e o piso AA para
+     texto normal é 4,5:1 — abaixo em TODO botão primário do app ("Salvar",
+     "Convidar", "✓ Registrar"), porque `--primary` é o fundo do `<Button>`
+     no variant padrão.
+
+     `140 21% 40%` mede **4,81:1**. A margem não é folga desperdiçada: em
+     `41%` daria 4,58:1, e um ajuste futuro de um ponto voltaria a reprovar.
+
+     O botão continua separado da página: 4,53:1 contra `--background`.
+     ══════════════════════════════════════════════════════════════════════ */
+  --primary: 140 21% 40%;
   --primary-foreground: 0 0% 100%;
-  
+
   --secondary: 40 10% 90%;
   --secondary-foreground: 36 5% 19%;
   
@@ -114,7 +127,9 @@
   --sidebar-border: 43 14% 90%;
   
   --input: 43 14% 90%;
-  --ring: 140 21% 50%;
+  /* Issue #151: o anel de foco é o verde da marca. Escurecer junto não é
+     detalhe — o anel precisa aparecer contra o mesmo fundo claro. */
+  --ring: 140 21% 40%;
   
   --radius: 0.75rem;
 
@@ -122,7 +137,7 @@
      embrulha e o `@theme inline`, igual a todos os outros tokens deste
      arquivo. Nenhuma cor mudou de aparencia aqui; o que mudou foi passar a
      existir uma camada que o `.dark` consegue trocar. */
-  --zelo-green: 140 21% 50%;
+  --zelo-green: 140 21% 40%;
   --zelo-green-fg: 140 21% 30%;
   --zelo-green-bg: 140 21% 95%;
   --zelo-amber: 38 82% 55%;
@@ -155,9 +170,34 @@
   --popover-foreground: 40 20% 90%;
   --popover-border: 40 5% 25%;
   
-  --primary: 140 20% 45%;
-  --primary-foreground: 0 0% 100%;
-  
+  /* ══════════════════════════════════════════════════════════════════════
+     NO ESCURO, ESCURECER NÃO RESOLVE — Issue #151.
+
+     A #151 foi escrita supondo que bastava baixar a luminosidade nos dois
+     temas. No claro bastou. No escuro, medir mostrou que as duas exigências
+     se cancelam:
+
+       • branco legível por cima  →  o verde precisa de L ≤ 41%
+       • botão distinguível do cartão (`40 5% 18%`)  →  L ≥ ~46%
+
+     Em `140 20% 40%` o branco passa (4,87:1), mas o botão mede **2,77:1
+     contra o cartão** — abaixo do piso de 3:1 para componente de interface.
+     O rótulo ficaria legível dentro de um botão que some no fundo.
+
+     ── A saída é a outra ponta ──────────────────────────────────────────
+
+     No escuro o verde **clareia** e a tinta do rótulo escurece. É o que todo
+     tema escuro faz com a cor de ação, e mantém a regra que importa nos dois
+     temas: *o botão contrasta com a página, e o rótulo contrasta com o
+     botão.* Só o sentido se inverte.
+
+     Medido: tinta sobre o botão **6,61:1**; botão contra o cartão
+     **5,70:1**; botão contra o fundo **6,35:1**. Os três acima do piso, e
+     todos melhores do que os de antes.
+     ══════════════════════════════════════════════════════════════════════ */
+  --primary: 140 28% 60%;
+  --primary-foreground: 140 30% 12%;
+
   --secondary: 40 5% 25%;
   --secondary-foreground: 40 20% 90%;
   
@@ -175,7 +215,7 @@
   --sidebar-border: 40 5% 25%;
   
   --input: 40 5% 25%;
-  --ring: 140 20% 45%;
+  --ring: 140 28% 60%;
 
   /* ══════════════════════════════════════════════════════════════════════
      AS CORES QUE SIGNIFICAM ALGUMA COISA — Issue #138
@@ -224,7 +264,7 @@
      claro, não menor.
      ══════════════════════════════════════════════════════════════════════ */
   /* Issue #149 — igual ao `--primary` do escuro, como no claro os dois já são
-     iguais (140 21% 50%).
+     iguais.
 
      A #138 pôs 140 30% 55% aqui pensando em pontinho e borda, e não em texto
      branco por cima. Mas `bg-zelo-green` é fundo de botão — o "Compartilhar
@@ -232,8 +272,12 @@
      que o próprio botão primário do app no mesmo tema (3,97:1).
 
      `--zelo-green` **é** o verde da marca. Deixá-lo divergir do `--primary`
-     no escuro fazia o mesmo verde ter dois valores conforme a classe usada. */
-  --zelo-green: 140 20% 45%;
+     no escuro fazia o mesmo verde ter dois valores conforme a classe usada.
+
+     Issue #151: por isso ele acompanha o `--primary` clareado acima. Quem
+     usa `bg-zelo-green` com texto por cima usa `text-primary-foreground`
+     junto — é o mesmo par, e separá-los reabriria exatamente este buraco. */
+  --zelo-green: 140 28% 60%;
   --zelo-green-fg: 140 40% 70%;
   --zelo-green-bg: 140 18% 20%;
   --zelo-amber: 38 70% 58%;

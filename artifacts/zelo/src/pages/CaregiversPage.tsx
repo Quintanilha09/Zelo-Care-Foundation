@@ -260,7 +260,13 @@ function InviteDialog({ onCreated, plan, caregiverCount }: {
                 href={`https://wa.me/?text=${encodeURIComponent(whatsappText)}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center justify-center gap-2 w-full py-2.5 rounded-lg bg-zelo-green text-white font-medium text-sm hover:opacity-90"
+                /* Issue #151: `text-primary-foreground`, e não `text-white`.
+                   Este é o único lugar do app que escrevia a tinta do verde
+                   à mão — e era por isso que ele aparecia na lista de dívida
+                   de contraste ao lado do botão primário. No escuro o verde
+                   clareia e a tinta escurece junto; `text-white` fixo faria
+                   branco sobre verde-claro, que é ilegível. */
+                className="flex items-center justify-center gap-2 w-full py-2.5 rounded-lg bg-zelo-green text-primary-foreground font-medium text-sm hover:opacity-90"
               >
                 <MessageCircle className="w-4 h-4" /> Compartilhar no WhatsApp
               </a>

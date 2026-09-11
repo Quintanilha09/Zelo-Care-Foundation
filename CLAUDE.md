@@ -58,7 +58,7 @@ arquivo, e monitor de janela de contexto.
 3. **Logs nunca contêm nome de medicamento, condição de saúde ou identificador de paciente.** Use `safeLog` (allowlist).
 4. **O produto nunca prescreve, calcula dose, interpreta aferição nem verifica interação medicamentosa.**
    Aferições são string bruta, sem faixa de referência. O médico interpreta; o ZELO registra.
-5. **Âmbar (`#E9AD51`), nunca vermelho**, para dose pendente ou atrasada. Verde (`#659A76`) só para dose tomada.
+5. **Âmbar (`#E9AD51`), nunca vermelho**, para dose pendente ou atrasada. Verde (`#517B5F`) só para dose tomada.
    Vermelho é proibido em qualquer contexto de dose. (Exceção deliberada: o botão de *sair do modo idoso* é vermelho —
    é ação destrutiva de sessão, não estado de dose.)
 6. **Nada que proteja a segurança do paciente entra em paywall.** Registrar dose, lembrete, escalonamento e modo idoso
@@ -196,6 +196,7 @@ ele foi migrado para cá justamente porque duas fontes divergiram e dois agentes
 | Em que ambiente o produto vive ate a venda | [planning/decisoes/ESTRATEGIA-ATE-A-VENDA.md](planning/decisoes/ESTRATEGIA-ATE-A-VENDA.md) |
 | Armadilhas técnicas em detalhe | [planning/decisoes/ARMADILHAS.md](planning/decisoes/ARMADILHAS.md) |
 | Planos e limites | [planning/decisoes/PLANOS.md](planning/decisoes/PLANOS.md) |
+| Por que o verde da marca escureceu (e clareou no escuro) | [planning/decisoes/VERDE-DA-MARCA.md](planning/decisoes/VERDE-DA-MARCA.md) |
 | Requisitos e roadmap | [planning/REQUIREMENTS.md](planning/REQUIREMENTS.md), [planning/ROADMAP.md](planning/ROADMAP.md) |
 | Regras de fase e violações bloqueantes | [planning/config.json](planning/config.json) |
 | Spec original do produto | [planning/referencia/ESPECIFICACAO.md](planning/referencia/ESPECIFICACAO.md) |

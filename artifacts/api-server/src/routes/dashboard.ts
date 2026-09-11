@@ -422,7 +422,7 @@ router.get("/patients/:patientId/adherence-stats", requireAuth, async (req, res)
 
 router.get("/design-tokens", async (_req, res): Promise<void> => {
   res.json({
-    colors: { zeloCalmGreen: "#659A76", zeloAmber: "#E9AD51", zeloBackground: "#F8F7F5", zeloSurface: "#FFFFFF", zeloText: "#2D2D2B", zeloTextMuted: "#6B6B6B" },
+    colors: { zeloCalmGreen: "#517B5F", zeloAmber: "#E9AD51", zeloBackground: "#F8F7F5", zeloSurface: "#FFFFFF", zeloText: "#2D2D2B", zeloTextMuted: "#6B6B6B" },
     typography: { baseSize: "18px", headingFont: "DM Sans, system-ui, sans-serif" },
     spacing: { touchTarget: "48px" },
   });
