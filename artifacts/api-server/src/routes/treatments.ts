@@ -11,7 +11,7 @@ import { eq, and, gte } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { treatmentsTable, patientsTable, medicationsTable, stockEntriesTable, scheduledDosesTable, doseRecordsTable } from "@workspace/db";
 import { z } from "zod";
-import { expandSchedule } from "@workspace/scheduling";
+import { expandSchedule, toLocalDateTime } from "@workspace/scheduling";
 import type { ScheduleConfig } from "@workspace/scheduling";
 import { requireAuth } from "../middleware/require-auth";
 import { audit } from "../lib/audit";
@@ -66,6 +66,19 @@ const PreviewBody = z.object({
    * é ele que responde "quantas doses pendentes esta mudança apaga?".
    */
   treatmentId: z.number().int().positive().optional(),
+  /**
+   * Quantas doses o tratamento tem ao todo — Issue #173.
+   *
+   * Boa parte da receita brasileira é por quantidade: *tomar os 21
+   * comprimidos*, *1 caixa*, *10 doses*. Quem cadastra tinha de fazer a
+   * conta de cabeça — 21 comprimidos, 3 por dia, começa dia 12, termina
+   * dia 18 — e errar por um dia significa uma dose a mais ou a menos no
+   * fim do antibiótico.
+   *
+   * O teto de 500 não é regra clínica: é o tamanho da janela que a
+   * expansão consegue varrer sem virar trabalho pesado.
+   */
+  quantidadeDeDoses: z.number().int().positive().max(500).optional(),
 });
 
 async function loadPatientInFamily(patientId: number, familyId: number) {
@@ -168,9 +181,13 @@ router.post("/patients/:patientId/treatments/preview", requireAuth, async (req, 
   if (!body.success) { res.status(400).json({ error: mensagemDeValidacao(body.error) }); return; }
 
   const windowStart = Clock.now();
-  const windowEnd = new Date(windowStart.getTime() + 90 * 86_400_000); // busca até 90 dias à frente para achar 5 doses mesmo em posologias esparsas
+  // 90 dias bastam para achar 5 doses mesmo em posologia esparsa. Com
+  // `quantidadeDeDoses` a janela precisa alcançar a última — daí os 2 anos,
+  // que cobrem 500 doses de qualquer posologia que o app aceita.
+  const diasDaJanela = body.data.quantidadeDeDoses ? 730 : 90;
+  const windowEnd = new Date(windowStart.getTime() + diasDaJanela * 86_400_000);
 
-  const dates = expandSchedule(
+  const todas = expandSchedule(
     {
       schedule: body.data.scheduleConfig as ScheduleConfig,
       treatmentStartDate: body.data.startDate,
@@ -179,7 +196,31 @@ router.post("/patients/:patientId/treatments/preview", requireAuth, async (req, 
     },
     windowStart,
     windowEnd
-  ).slice(0, 5);
+  );
+  const dates = todas.slice(0, 5);
+
+  /**
+   * A data em que a última dose cai — Issue #173.
+   *
+   * ── Por que o SERVIDOR calcula, e não o formulário ──────────────────
+   *
+   * Porque a conta é a mesma que gera as doses (`expandSchedule`), e ela
+   * conhece dia alternado, ciclo com pausa e dia da semana. Refazê-la no
+   * navegador criaria dois donos da mesma conta — e um dia eles
+   * discordariam, com a tela prometendo uma data e o banco gerando outra.
+   *
+   * ── Por que a conta fica À VISTA ────────────────────────────────────
+   *
+   * A tela mostra a data antes de salvar. Esconder a conta faria a pessoa
+   * aceitar um número que ela não tem como conferir — e é a receita do
+   * médico que está sendo transcrita.
+   */
+  const ultima = body.data.quantidadeDeDoses
+    ? todas[body.data.quantidadeDeDoses - 1]
+    : undefined;
+  const fimPelaQuantidade = ultima
+    ? toLocalDateTime(ultima, patient.timezone).localDate
+    : null;
 
   /**
    * Quantas doses pendentes esta mudança vai apagar — Issue #174.
@@ -225,6 +266,12 @@ router.post("/patients/:patientId/treatments/preview", requireAuth, async (req, 
     nextDoses: dates.map((d) => d.toISOString()),
     inPortuguese: describeInPortuguese(dates, patient.timezone),
     dosesQueSeraoCanceladas,
+    /**
+     * `null` quando não se pediu quantidade — e também quando a janela de
+     * dois anos não alcançou a última dose. A tela precisa distinguir
+     * "não perguntei" de "perguntei e não cabe", e trata os dois casos.
+     */
+    fimPelaQuantidade,
   });
 });
 

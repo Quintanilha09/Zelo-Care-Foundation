@@ -162,6 +162,22 @@ export function TreatmentForm({ patientId, onCreated, onCancel, tratamento }: Tr
   const [scheduleType, setScheduleType] = useState<ScheduleType>(cfg.scheduleType ?? "times_per_day");
   const [startDate, setStartDate] = useState(tratamento?.startDate ?? (() => new Date().toISOString().slice(0, 10))());
   const [endDate, setEndDate] = useState(tratamento?.endDate ?? "");
+  /**
+   * Quantas doses ao todo — Issue #173.
+   *
+   * Boa parte da receita brasileira é por quantidade: *tomar os 21
+   * comprimidos*, *1 caixa*. Quem cadastra fazia a conta de cabeça, e
+   * errar por um dia significa uma dose a mais ou a menos no fim do
+   * antibiótico.
+   *
+   * Isto NÃO vira um campo do tratamento: ele continua acabando por DATA.
+   * O que muda é o caminho até ela — o app faz a conta, mostra o
+   * resultado, e o que se salva é a data como sempre foi.
+   */
+  const [quantidadeDeDoses, setQuantidadeDeDoses] = useState("");
+  const [porQuantidade, setPorQuantidade] = useState(false);
+  const [calculandoFim, setCalculandoFim] = useState(false);
+  const [erroDaQuantidade, setErroDaQuantidade] = useState("");
   const [escalationProfile, setEscalationProfile] = useState<EscalationProfile>((tratamento?.escalationProfile as EscalationProfile) ?? "standard");
 
   // ZELO-34: opcional de propósito — sem estoque informado, o app nunca
@@ -292,6 +308,50 @@ export function TreatmentForm({ patientId, onCreated, onCancel, tratamento }: Tr
     setPosologyHint(null);
     setRetainPhoto(false);
     setScheduleGuessApplied(false);
+  };
+
+  /**
+   * Pergunta ao servidor em que dia a última dose cai — Issue #173.
+   *
+   * Quem calcula é ele, com a MESMA expansão que gera as doses: ela
+   * conhece dia alternado, ciclo com pausa e dia da semana. Refazer a
+   * conta aqui criaria dois donos dela, e um dia a tela prometeria uma
+   * data e o banco geraria outra.
+   */
+  const calcularOFim = async () => {
+    const n = Number(quantidadeDeDoses);
+    if (!n || n <= 0) return;
+    setCalculandoFim(true);
+    setErroDaQuantidade("");
+    try {
+      const res = await authFetch(`/api/patients/${patientId}/treatments/preview`, {
+        method: "POST",
+        body: JSON.stringify({
+          scheduleConfig: buildScheduleConfig(),
+          startDate,
+          quantidadeDeDoses: n,
+        }),
+      });
+      if (!res.ok) {
+        const erro = (await res.json().catch(() => ({}))) as { error?: string };
+        setErroDaQuantidade(erro.error ?? "Não deu para calcular agora.");
+        return;
+      }
+      const dados = (await res.json()) as { fimPelaQuantidade: string | null };
+      if (!dados.fimPelaQuantidade) {
+        // A janela de dois anos não alcançou a última dose: a posologia é
+        // esparsa demais para essa quantidade. Dizer isso é melhor que
+        // preencher uma data errada.
+        setErroDaQuantidade("Essa quantidade passa de dois anos com esta posologia. Prefira informar a data de fim.");
+        return;
+      }
+      setEndDate(dados.fimPelaQuantidade);
+      setPreview(null);
+    } catch {
+      setErroDaQuantidade("Sem conexão agora.");
+    } finally {
+      setCalculandoFim(false);
+    }
   };
 
   const handlePreview = async () => {
@@ -654,6 +714,66 @@ export function TreatmentForm({ patientId, onCreated, onCancel, tratamento }: Tr
           <Input id="tf-end" type="date" value={endDate} onChange={(e) => { setEndDate(e.target.value); setPreview(null); }} />
         </div>
       </div>
+
+      {/* ── Issue #173: acabar por QUANTIDADE ─────────────────────────
+
+          "Tomar os 21 comprimidos" é receita comum, e virava conta de
+          cabeça. O tratamento continua acabando por data — o que muda é o
+          caminho até ela.
+
+          Fechado por padrão: a maioria informa a data, e quem não precisa
+          disto não pode nem ver campo novo. O formulário de tratamento já
+          é a tela de maior atrito do app. */}
+      {!porQuantidade ? (
+        <button
+          type="button"
+          className="text-sm text-muted-foreground underline"
+          onClick={() => setPorQuantidade(true)}
+        >
+          A receita diz uma quantidade, não uma data
+        </button>
+      ) : (
+        <div className="rounded-lg border bg-muted/40 p-3 space-y-2">
+          <Label htmlFor="tf-qtd">Quantas doses ao todo</Label>
+          <div className="flex items-center gap-2">
+            <CampoNumero
+              id="tf-qtd"
+              value={quantidadeDeDoses}
+              onChange={setQuantidadeDeDoses}
+              min={1}
+              placeholder="21"
+              className="flex-1"
+            />
+            <Button
+              type="button"
+              size="sm"
+              disabled={!quantidadeDeDoses || calculandoFim}
+              onClick={() => void calcularOFim()}
+            >
+              {calculandoFim ? "Calculando…" : "Calcular o fim"}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => { setPorQuantidade(false); setErroDaQuantidade(""); }}
+            >
+              Fechar
+            </Button>
+          </div>
+          {/* A conta fica À VISTA, no campo de fim logo acima. Esconder
+              faria a pessoa aceitar um número que ela não tem como
+              conferir — e é a receita do médico que está sendo
+              transcrita. */}
+          {erroDaQuantidade ? (
+            <p className="text-sm text-zelo-amber-fg">{erroDaQuantidade}</p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              O app preenche a data de fim acima. Confira antes de salvar.
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="space-y-2">
         <Label htmlFor="tf-instructions">Instruções (opcional)</Label>

@@ -295,3 +295,79 @@ describe("O aviso de quantas doses a edicao cancela", () => {
     assert.equal((res.body as { dosesQueSeraoCanceladas: number | null }).dosesQueSeraoCanceladas, 0);
   });
 });
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * O FIM PELA QUANTIDADE DE DOSES — Issue #173.
+ *
+ * "Tomar os 21 comprimidos" é receita comum, e virava conta de cabeça: 21
+ * comprimidos, 3 por dia, começa dia 12 → termina dia 18. Errar por um dia
+ * significa uma dose a mais ou a menos no fim do antibiótico.
+ *
+ * Quem calcula é o SERVIDOR, com a mesma expansão que gera as doses — ela
+ * conhece dia alternado, ciclo com pausa e dia da semana. Refazer a conta no
+ * navegador criaria dois donos dela, e um dia a tela prometeria uma data e o
+ * banco geraria outra.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+describe("O fim calculado pela quantidade de doses", () => {
+  it("tres por dia, seis doses: termina dois dias depois do comeco", async () => {
+    const hoje = Clock.todayInTimezone("America/Sao_Paulo");
+    const res = await api("POST", `/patients/${patientId}/treatments/preview`, {
+      scheduleConfig: { scheduleType: "times_per_day", times: ["08:00", "14:00", "20:00"] },
+      startDate: hoje,
+      quantidadeDeDoses: 6,
+    });
+
+    assert.equal(res.status, 200);
+    const { fimPelaQuantidade } = res.body as { fimPelaQuantidade: string | null };
+    assert.ok(fimPelaQuantidade, "seis doses a três por dia cabem na janela");
+
+    // A conta tem que ser DATA, e não "dois dias corridos a partir de agora":
+    // a expansão começa do próximo horário, então o dia exato depende da hora
+    // em que isto roda. O que não pode é voltar para trás nem passar de uma
+    // semana — aí a expansão estaria contando outra coisa.
+    const inicio = new Date(`${hoje}T00:00:00-03:00`).getTime();
+    const fim = new Date(`${fimPelaQuantidade}T00:00:00-03:00`).getTime();
+    assert.ok(fim >= inicio, "o fim não pode ser antes do começo");
+    assert.ok(
+      (fim - inicio) / 86_400_000 <= 7,
+      "seis doses a três por dia não podem levar mais de uma semana",
+    );
+  });
+
+  it("sem quantidade, o campo vem NULO — e nao zero nem uma data", async () => {
+    const res = await api("POST", `/patients/${patientId}/treatments/preview`, {
+      scheduleConfig: { scheduleType: "times_per_day", times: ["08:00"] },
+      startDate: Clock.todayInTimezone("America/Sao_Paulo"),
+    });
+
+    // A tela precisa distinguir "não perguntei" de "perguntei e não cabe".
+    assert.equal((res.body as { fimPelaQuantidade: string | null }).fimPelaQuantidade, null);
+  });
+
+  it("quantidade que nao cabe na janela devolve nulo, e nao uma data errada", async () => {
+    const res = await api("POST", `/patients/${patientId}/treatments/preview`, {
+      // Uma vez por semana, 400 doses: quase oito anos. A janela vai a dois.
+      scheduleConfig: { scheduleType: "specific_weekdays", weekdays: [1], times: ["08:00"] },
+      startDate: Clock.todayInTimezone("America/Sao_Paulo"),
+      quantidadeDeDoses: 400,
+    });
+
+    assert.equal(res.status, 200);
+    assert.equal(
+      (res.body as { fimPelaQuantidade: string | null }).fimPelaQuantidade,
+      null,
+      "melhor dizer que não cabe do que preencher uma data errada no formulário",
+    );
+  });
+
+  it("quantidade acima do teto e recusada", async () => {
+    const res = await api("POST", `/patients/${patientId}/treatments/preview`, {
+      scheduleConfig: { scheduleType: "times_per_day", times: ["08:00"] },
+      startDate: Clock.todayInTimezone("America/Sao_Paulo"),
+      quantidadeDeDoses: 5000,
+    });
+    assert.equal(res.status, 400);
+  });
+});
