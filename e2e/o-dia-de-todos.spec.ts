@@ -85,3 +85,63 @@ test.describe("O dia de todos na tela inicial", () => {
     await expect(page.getByRole("heading", { name: "Hoje" })).toBeVisible();
   });
 });
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * O MOTIVO DE TER PULADO — Issue #166.
+ *
+ * "Pular" era um toque e nada mais, e o relatório do médico recebia só
+ * "Pulado". O motivo é metade da informação: "acabou o remédio" e "estava
+ * passando mal" são duas conversas diferentes na consulta.
+ *
+ * O que só a tela prova é a ordem: a dose é registrada NO TOQUE, e a oferta
+ * do motivo vem depois. Perguntar antes transformaria um toque em dois.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+test.describe("O motivo de ter pulado", () => {
+  let conta: ContaDeTeste;
+  let pacienteId: number;
+
+  test.beforeEach(async ({ request }) => {
+    conta = await criarConta(request);
+    pacienteId = await criarPaciente(request, conta);
+    await criarTratamentoHoje(request, conta, pacienteId);
+  });
+
+  test("pular e um toque, e o motivo vem DEPOIS", async ({ page }) => {
+    await entrar(page, conta);
+    await page.goto(`/pacientes/${pacienteId}`);
+    await expect(page.getByRole("heading", { name: "Hoje" })).toBeVisible({ timeout: 15_000 });
+
+    const pular = page.getByRole("button", { name: "Pular", exact: true });
+    // A dose das 00:01 já passou, então os botões grandes estão na tela. Se
+    // não estiverem, é a das 23:59 — e aí este caso não tem o que exercitar.
+    test.skip(!(await pular.count()), "sem dose de agora nesta hora do dia");
+
+    await pular.click();
+
+    // A dose entrou no toque — isto primeiro, porque é o que não pode faltar.
+    await expect(page.getByText("Pulado", { exact: true })).toBeVisible({ timeout: 15_000 });
+
+    // E só então a oferta. Ela é uma faixa, não um modal: ignorá-la é uma
+    // resposta legítima, e provavelmente a mais comum.
+    await expect(page.getByText(/Quer dizer por que a dose não foi dada/)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Acabou o remédio" })).toBeVisible();
+  });
+
+  test("agora nao fecha a oferta e nao desfaz nada", async ({ page }) => {
+    await entrar(page, conta);
+    await page.goto(`/pacientes/${pacienteId}`);
+    await expect(page.getByRole("heading", { name: "Hoje" })).toBeVisible({ timeout: 15_000 });
+
+    const pular = page.getByRole("button", { name: "Pular", exact: true });
+    test.skip(!(await pular.count()), "sem dose de agora nesta hora do dia");
+    await pular.click();
+
+    await page.getByRole("button", { name: "Agora não" }).click();
+    await expect(page.getByText(/Quer dizer por que a dose não foi dada/)).toHaveCount(0);
+    // Seguir em frente sem dizer nada não é falha de ninguém — e a dose
+    // continua registrada.
+    await expect(page.getByText("Pulado", { exact: true })).toBeVisible();
+  });
+});
