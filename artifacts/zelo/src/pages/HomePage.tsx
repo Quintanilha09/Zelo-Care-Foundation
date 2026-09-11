@@ -56,6 +56,14 @@ interface HomeData {
   patientTimezone: string;
   doses: HomeDose[];
   lateDoses: number;
+  /**
+   * Issue #154: as doses de amanha ate as 06:00.
+   *
+   * Vazio durante o dia. Quem decide que ja e noite e o SERVIDOR, porque
+   * 18:00 tem de ser 18:00 no relogio do PACIENTE — um filho em Portugal
+   * olhando a mae em Sao Paulo tem outro relogio no navegador.
+   */
+  madrugada: HomeDose[];
   lowStockItems: { medicationId: number; medicationName: string; quantityRemaining: number; unit: string; effectiveDaysRemaining: number | null }[];
   nextAppointment: { specialty: string; doctorName: string | null; scheduledAt: string; localDate: string; localTime: string } | null;
 }
@@ -453,7 +461,13 @@ export default function HomePage() {
               )}
             </div>
 
-            {home.doses.length === 0 && (
+            {/* Issue #154: "nenhum tratamento ativo" também olha a madrugada.
+
+                Numa noite em que a única dose do paciente é às 03:00, `doses`
+                chega vazio — é dia civil de amanhã. Só com `doses` esta tela
+                convidaria a cadastrar o primeiro tratamento logo abaixo da
+                seção que mostra o tratamento que existe. */}
+            {home.doses.length === 0 && (home.madrugada ?? []).length === 0 && (
               <div className="text-center py-16 border rounded-xl border-dashed">
                 <Pill className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
                 <p className="text-foreground font-medium">Nenhum tratamento ativo</p>
@@ -525,6 +539,45 @@ export default function HomePage() {
                     </motion.div>
                   ))}
                 </AnimatePresence>
+              </div>
+            )}
+
+            {/* ── Issue #154: a madrugada seguinte ─────────────────────────
+
+                O fundador perguntou o que acontece com um remédio de
+                madrugada. Não acontecia nada: a tela recorta pelo dia civil,
+                então às 22:00 a dose das 03:00 não aparecia em lugar nenhum.
+                Quem ia dormir não sabia que precisava acordar.
+
+                Não é sobre o aviso — o lembrete de madrugada já funciona, e o
+                silêncio noturno não o cala. É sobre poder se PLANEJAR:
+                ajustar o despertador, combinar quem acorda, separar o
+                remédio.
+
+                Quem decide que já é noite é o servidor, no fuso do PACIENTE.
+                Durante o dia esta lista chega vazia e a seção nem existe.
+
+                Sem botão de registrar, de propósito: é aviso, não ação.
+                Registrar dose que ainda não chegou é assunto da #134. */}
+            {(home?.madrugada ?? []).length > 0 && (
+              <div className="space-y-2">
+                <h3 className="text-sm font-medium text-muted-foreground">Madrugada</h3>
+                <p className="text-sm text-muted-foreground -mt-1">
+                  Para você já se organizar hoje.
+                </p>
+                {(home?.madrugada ?? []).map((d) => (
+                  <div
+                    key={d.id}
+                    className="flex items-center justify-between gap-2 px-4 py-3 rounded-lg border border-dashed bg-card text-[17px] mb-2"
+                  >
+                    <span className="min-w-0">{d.medicationName}{d.dose ? ` — ${d.dose}` : ""}</span>
+                    {/* O dia entra AQUI e só aqui. Nos cartões de hoje ele
+                        seria ruído — a seção já diz que é hoje —, e é
+                        justamente esta lista que faz a tela deixar de ter um
+                        dia só. */}
+                    <span className="text-muted-foreground shrink-0">Amanhã, {d.scheduledLocalTime}</span>
+                  </div>
+                ))}
               </div>
             )}
 
