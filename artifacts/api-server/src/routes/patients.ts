@@ -38,6 +38,15 @@ const CreatePatientBody = z.object({
   // ZELO-37: pra quando algo parecer preocupante — o app encaminha, nunca avalia.
   emergencyContactName: z.string().optional().nullable(),
   emergencyContactPhone: z.string().optional().nullable(),
+  /**
+   * Alergias e condições — Issue #176.
+   *
+   * Texto livre e limite generoso: é o cuidador transcrevendo o que sabe,
+   * não preenchendo formulário clínico. O app guarda e mostra; nunca cruza
+   * com medicamento, nunca avisa, nunca impede (invariante 4).
+   */
+  allergies: z.string().max(2000).optional().nullable(),
+  conditions: z.string().max(2000).optional().nullable(),
   healthConsent: z.object({
     givenBy: z.enum(["self", "legal_representative"]),
     version: z.string().min(1),
@@ -51,6 +60,10 @@ const UpdatePatientBody = z.object({
   notes: z.string().optional().nullable(),
   emergencyContactName: z.string().optional().nullable(),
   emergencyContactPhone: z.string().optional().nullable(),
+  // Issue #176 — os mesmos dois da criacao. Editar a ficha e o caminho
+  // normal: alergia se descobre depois, condicao muda.
+  allergies: z.string().max(2000).optional().nullable(),
+  conditions: z.string().max(2000).optional().nullable(),
 });
 
 // ── Listar pacientes ──────────────────────────────────────────────────────

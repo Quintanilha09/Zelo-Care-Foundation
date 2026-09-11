@@ -14,6 +14,7 @@ import { NotificationPreferencesCard } from "@/components/notification-preferenc
 import { PatientAccessCard } from "@/components/patient-access-card";
 import { MomentosCard } from "@/components/momentos-card";
 import { ResponsaveisCard } from "@/components/responsaveis-card";
+import { AlergiasECondicoes } from "@/components/alergias-e-condicoes";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -79,6 +80,9 @@ interface Patient {
   timezone: string;
   archived: boolean;
   elderModeEnabled: boolean;
+  /** Issue #176 — dado de saude, texto livre. O app guarda e mostra; nunca cruza com medicamento. */
+  allergies: string | null;
+  conditions: string | null;
 }
 
 interface Treatment {
@@ -1023,6 +1027,17 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
             remédio nem sobre uma consulta, é sobre a pessoa. */}
         {/* Issue #120 — quem responde por esta pessoa. Fica antes de
             Momentos: e informacao sobre o cuidado, nao sobre o dia. */}
+        {/* Issue #176: antes dos responsaveis, porque e o dado que alguem
+            de fora da familia precisa ler primeiro numa emergencia. */}
+        {patient && (
+          <AlergiasECondicoes
+            patientId={params.id}
+            allergies={patient.allergies}
+            conditions={patient.conditions}
+            somenteLeitura={user?.caregiver?.role === "observer"}
+          />
+        )}
+
         {patient && <ResponsaveisCard patientId={Number(params.id)} />}
 
         {patient && <MomentosCard patientId={Number(params.id)} patientName={nomeCurto(patient.name)} />}
