@@ -238,6 +238,59 @@ function corDe(nome: string, trecho: string): Hsl | null {
 }
 
 describe("Contraste dos pares que as telas usam", () => {
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   * COR DE FUNDO CRAVADA NAO SEGUE TEMA — Issue #156.
+   *
+   * O fundador abriu o login com o aparelho no escuro e viu um **cartao
+   * escuro sobre fundo claro**: nao era nenhum dos dois temas, era metade de
+   * cada. A pagina tinha a cor escrita a mao; o cartao usava `bg-card`, que
+   * segue o tema.
+   *
+   * Estavam assim **oito telas** — todas as de antes de entrar no app:
+   * login, consentimento, confirmacao de e-mail, redefinir senha, aceitar
+   * convite, segundo fator, codigos de recuperacao e a tela de carregando.
+   *
+   * A incoerencia era antiga: enquanto a classe `.dark` nunca era aplicada,
+   * `bg-card` era sempre branco e combinava. Ligar o tema (#138) revelou.
+   * ═══════════════════════════════════════════════════════════════════════
+   */
+  it("nenhuma tela crava cor de fundo, fora as que nao herdam o tema", () => {
+    const culpados: string[] = [];
+
+    for (const arquivo of arquivosTsx(dirDoFront)) {
+      const nome = basename(arquivo);
+      // As duas de fundo fixo por desenho — mesma lista usada na medicao de
+      // contraste, e pelo mesmo motivo.
+      if (NAO_HERDA_O_TEMA.includes(nome)) continue;
+
+      const txt = readFileSync(arquivo, "utf8");
+
+      // Busca por TEXTO, e nao por expressao regular. A primeira versao deste
+      // caso usava regex e ela nasceu quebrada — o `\b` inicial virou um
+      // caractere de backspace literal no arquivo, e o padrao passou a nunca
+      // casar. O caso ficou verde sem verificar nada, que e o defeito que
+      // este arquivo existe para nao repetir. Descobri porque reintroduzi o
+      // defeito de proposito e o teste continuou passando.
+      //
+      // `bg-[#` sao cinco caracteres sem metacaractere nenhum: nao ha o que
+      // escapar, e nao ha como escapar errado.
+      let i = txt.indexOf("bg-[#");
+      while (i !== -1) {
+        culpados.push(`${nome}: ${txt.slice(i, txt.indexOf("]", i) + 1)}`);
+        i = txt.indexOf("bg-[#", i + 1);
+      }
+    }
+
+    assert.deepEqual(
+      culpados,
+      [],
+      "cor de fundo escrita a mao numa tela que deveria seguir o tema — use `bg-background` " +
+        "(ou `bg-muted`, `bg-card`). Cravar a cor faz a pagina ficar clara enquanto os " +
+        "componentes dentro dela escurecem, e foi assim que o login apareceu meio escuro.",
+    );
+  });
+
   it("a lista de pares sai do codigo, e nao esta vazia", () => {
     const pares = paresDoCodigo();
     // Se a varredura parar de achar (regex quebrada, pasta movida), o teste

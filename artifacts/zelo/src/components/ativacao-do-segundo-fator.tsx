@@ -133,7 +133,7 @@ export function AtivacaoDoSegundoFator({ children }: { children: React.ReactNode
 
   if (fase === "carregando") {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#F8F7F5]">
+      <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center space-y-2">
           <p className="text-lg font-medium text-[#2D2D2B]">ZELO</p>
           <p className="text-sm text-[#6B6B6B]">Carregando…</p>
@@ -143,7 +143,7 @@ export function AtivacaoDoSegundoFator({ children }: { children: React.ReactNode
   }
 
   return (
-    <div className="min-h-screen bg-[#F8F7F5] px-4 py-10">
+    <div className="min-h-screen bg-background px-4 py-10">
       <div className="mx-auto w-full max-w-lg space-y-6">
         <header className="space-y-2">
           <p className="text-xs font-medium uppercase tracking-widest text-[#6B6B6B]">Segurança da conta</p>
@@ -188,7 +188,7 @@ export function AtivacaoDoSegundoFator({ children }: { children: React.ReactNode
 
             <ul className="grid grid-cols-2 gap-2 font-mono text-sm" data-testid="lista-de-codigos">
               {codigos.map((codigo) => (
-                <li key={codigo} className="rounded-md border bg-[#F8F7F5] px-3 py-2 text-center tracking-wider">
+                <li key={codigo} className="rounded-md border bg-background px-3 py-2 text-center tracking-wider">
                   {codigo}
                 </li>
               ))}

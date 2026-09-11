@@ -201,7 +201,7 @@ export function AparelhosConfiaveis() {
             </p>
             <ul className="grid grid-cols-2 gap-2 font-mono text-sm">
               {novosCodigos.map((c) => (
-                <li key={c} className="rounded-md border bg-[#F8F7F5] px-3 py-2 text-center tracking-wider">
+                <li key={c} className="rounded-md border bg-muted px-3 py-2 text-center tracking-wider">
                   {c}
                 </li>
               ))}
