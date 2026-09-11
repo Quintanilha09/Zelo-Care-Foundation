@@ -48,6 +48,9 @@ const TOKENS_COM_SIGNIFICADO = [
   "--zelo-amber",
   "--zelo-amber-fg",
   "--zelo-amber-bg",
+  // Issue #160 — o vermelho contido do ícone de "Atrasado". Carrega
+  // significado como os outros: é o que separa atrasado de pendente.
+  "--zelo-atraso",
   "--zelo-measure",
   "--zelo-measure-bg",
 ];

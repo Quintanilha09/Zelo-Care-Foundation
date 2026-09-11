@@ -118,7 +118,17 @@ export function DoseCard({ medicationName, dosage, time, status, takenBy, takenA
           {tomada && <Check className="w-4 h-4" />}
           {pulada && <MinusCircle className="w-4 h-4" />}
           {!resolvida && !atrasada && <Clock className="w-4 h-4" />}
-          {!resolvida && atrasada && <AlertCircle className="w-4 h-4" />}
+          {/* Issue #160 — o UNICO vermelho de todo o contexto de dose.
+
+              O fundador pediu senso de urgencia depois de ver a #153 no
+              aparelho: peso e borda nao bastavam para o atraso saltar. O
+              recorte e o que mantem o invariante 5 de pe — fundo, texto e
+              borda do selo continuam ambar, e "Pendente" nao muda. O
+              vermelho e um ACENTO de icone, nao a cor do estado.
+
+              `text-zelo-atraso`, e nao `text-destructive`: destrutivo e
+              apagar e cancelar. Dose atrasada nao e nenhum dos dois. */}
+          {!resolvida && atrasada && <AlertCircle className="w-4 h-4 text-zelo-atraso" />}
           <span>{tomada ? "Tomado" : pulada ? "Pulado" : atrasada ? "Atrasado" : "Pendente"}</span>
         </div>
       </div>

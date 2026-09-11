@@ -435,6 +435,50 @@ describe("Contraste dos pares que as telas usam", () => {
     });
 
     /**
+     * ═════════════════════════════════════════════════════════════════════
+     * O ÍCONE DE "ATRASADO" — Issue #160.
+     *
+     * A varredura lê a classe de fundo e a classe de texto **do mesmo
+     * elemento**. O ícone é elemento-filho do selo, então ele não entra —
+     * e é justamente o único vermelho que existe em contexto de dose.
+     *
+     * O fundo real dele não é `--zelo-amber`: é `bg-zelo-amber/20`
+     * **composto sobre o cartão**. Medir contra o âmbar cheio daria um
+     * número que ninguém vê.
+     * ═════════════════════════════════════════════════════════════════════
+     */
+    it(`o icone de atrasado se ve sobre o selo no tema ${nomeDoTema}`, () => {
+      const trecho = trechoDoTema(escuro);
+      const pegar = (nome: string) => {
+        const v = token(trecho, nome);
+        assert.ok(v, `${nome} precisa existir no tema ${nomeDoTema}`);
+        return v;
+      };
+
+      const selo = compor(paraRgb(pegar("--zelo-amber")), paraRgb(pegar("--card")), 0.2);
+      const c = contraste(paraRgb(pegar("--zelo-atraso")), selo);
+
+      // Piso de ícone é 3:1 (WCAG 1.4.11), mas o token é medido contra AA:
+      // a palavra "Atrasado" fica ao lado dele, e um ícone visivelmente mais
+      // fraco que o texto que acompanha lê-se como decoração.
+      assert.ok(
+        c >= AA,
+        `o ícone de "Atrasado" mede ${c.toFixed(2)}:1 sobre o selo no tema ` +
+          `${nomeDoTema}, abaixo de ${AA}:1. Ajuste --zelo-atraso, nunca o piso.`,
+      );
+
+      // O fundador pediu "cuidado para que não fique muito forte", e o
+      // recorte da #160 é o que mantém o invariante 5 de pé: o vermelho é
+      // ACENTO de ícone. Se ele virar a cor do estado, isto reprova.
+      assert.notDeepEqual(
+        token(trecho, "--zelo-atraso"),
+        token(trecho, "--destructive"),
+        "--zelo-atraso não pode ser o --destructive: destrutivo é apagar e " +
+          "cancelar, e dose atrasada não é nenhum dos dois",
+      );
+    });
+
+    /**
      * `--zelo-green` **é** o verde da marca, e `--primary` também. Já
      * divergiram uma vez — entre a #138 e a #149 —, e o mesmo verde passou a
      * ter dois valores conforme a classe. Isto trava os dois juntos.

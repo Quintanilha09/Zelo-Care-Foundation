@@ -77,6 +77,7 @@
   --color-zelo-amber: hsl(var(--zelo-amber));
   --color-zelo-amber-fg: hsl(var(--zelo-amber-fg));
   --color-zelo-amber-bg: hsl(var(--zelo-amber-bg));
+  --color-zelo-atraso: hsl(var(--zelo-atraso));
   --color-zelo-measure: hsl(var(--zelo-measure));
   --color-zelo-measure-bg: hsl(var(--zelo-measure-bg));
 }
@@ -150,6 +151,30 @@
      e o tom continua o mesmo a olho. */
   --zelo-amber-fg: 38 82% 30%;
   --zelo-amber-bg: 38 82% 95%;
+  /* ══════════════════════════════════════════════════════════════════════
+     O VERMELHO CONTIDO DO ATRASO — Issue #160, decisao do fundador.
+
+     O invariante 5 proibe vermelho em contexto de dose, e a razao e boa:
+     vermelho amplifica ansiedade, e o ZELO reduz culpa. A #153 respeitou
+     isso — a urgencia de "Atrasado" foi feita com peso e borda.
+
+     O fundador olhou no aparelho e disse que nao basta: atraso precisa ser
+     VISTO. A decisao e dele, e o recorte e o que mantem o invariante de pe:
+     **isto pinta o ICONE do selo, e nada mais.** Fundo, texto e borda do
+     selo continuam ambar; o cartao continua ambar; "Pendente" nao muda.
+
+     ── Token proprio, e nao `--destructive` ─────────────────────────────
+
+     `--destructive` e apagar, cancelar, sair do modo idoso. Se o atraso
+     usasse a mesma cor, a tela passaria a dizer que dose atrasada e acao
+     destrutiva sao a mesma classe de coisa — e ai o invariante teria se
+     perdido de verdade.
+
+     Terracota, e nao vermelho de alarme: `8 58% 44%` mede **4,97:1** sobre
+     o selo (`bg-zelo-amber/20` composto no cartao). No escuro clareia para
+     `10 70% 76%`, **4,51:1** — os dois acima de AA, e o piso do icone
+     seria so 3:1. */
+  --zelo-atraso: 8 58% 44%;
   /* Azul calmo, exclusivo das MEDICOES na tela de rotina. Verde e ambar ja
      significam estado de dose (invariante 5); reusa-los aqui misturaria
      dois assuntos. Uma medicao e um numero anotado, nao um estado. */
@@ -283,6 +308,8 @@
   --zelo-amber: 38 70% 58%;
   --zelo-amber-fg: 38 85% 68%;
   --zelo-amber-bg: 38 30% 20%;
+  /* Issue #160 — clareia, como todo acento no escuro. 4,51:1 sobre o selo. */
+  --zelo-atraso: 10 70% 76%;
   --zelo-measure: 205 45% 65%;
   --zelo-measure-bg: 205 25% 19%;
 }

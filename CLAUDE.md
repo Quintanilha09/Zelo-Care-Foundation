@@ -59,6 +59,8 @@ arquivo, e monitor de janela de contexto.
 4. **O produto nunca prescreve, calcula dose, interpreta aferição nem verifica interação medicamentosa.**
    Aferições são string bruta, sem faixa de referência. O médico interpreta; o ZELO registra.
 5. **Âmbar (`#E9AD51`), nunca vermelho**, para dose pendente ou atrasada. Verde (`#517B5F`) só para dose tomada.
+   **Exceção do fundador, 11/09/2026 (#160):** o **ícone** do selo "Atrasado" usa `--zelo-atraso`,
+   um terracota contido. Só o ícone — fundo, texto e borda do selo seguem âmbar, e "Pendente" não muda.
    Vermelho é proibido em qualquer contexto de dose. (Exceção deliberada: o botão de *sair do modo idoso* é vermelho —
    é ação destrutiva de sessão, não estado de dose.)
 6. **Nada que proteja a segurança do paciente entra em paywall.** Registrar dose, lembrete, escalonamento e modo idoso
