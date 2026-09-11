@@ -144,8 +144,21 @@ receber `403 PLAN_READ_ONLY` ao apertar "Tomei".
 Vermelho amplifica ansiedade. O ZELO reduz culpa. Âmbar comunica atenção sem pânico.
 Nunca reverter sem decisão explícita de produto documentada aqui.
 
-**Única exceção deliberada:** o botão de *sair do modo idoso* é vermelho — é ação
-destrutiva de sessão, não estado de dose.
+**Exceções deliberadas, e são duas:**
+
+1. O botão de *sair do modo idoso* é vermelho — é ação destrutiva de sessão, não estado
+   de dose.
+2. **O ícone do selo "Atrasado"**, decisão do fundador em 11/09/2026 (Issue #160). Ele
+   viu a #153 no aparelho e disse que peso e borda não bastavam para o atraso saltar.
+
+   O recorte é o que mantém a regra de pé: **só o ícone**. Fundo, texto e borda do selo
+   continuam âmbar, o cartão continua âmbar, e **"Pendente" não muda** — o vermelho é o
+   que separa *atrasado* de *pendente*, e não a cor do estado de dose.
+
+   Token próprio, `--zelo-atraso` (terracota, `8 58% 44%` no claro e `10 70% 76%` no
+   escuro), e **nunca** `--destructive`: destrutivo é apagar e cancelar, e dose atrasada
+   não é nenhum dos dois. O `contraste-real.test.ts` trava as duas coisas — o contraste
+   sobre o selo e o fato de não ser o `--destructive`.
 
 **Corolário aprendido na prática:** "nada que gere ansiedade" **nunca quis dizer esconder
 falha**. Para quem olha a tela, silêncio e falha são a mesma coisa: parece quebrado.
