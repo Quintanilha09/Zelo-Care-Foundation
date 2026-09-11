@@ -41,16 +41,45 @@ async function cenarioLimpo(page: Page, request: import("@playwright/test").APIR
  * Registra a dose pela TELA, passando pela confirmação de antecipação
  * quando ela aparecer.
  *
- * A dose que a geração cria é quase sempre a das 23:59 (#134), então o
- * caminho normal aqui passa por "Já dei este remédio" + "Sim, já dei". Nos
- * primeiros segundos do dia a dose é a das 00:01, já dentro da janela, e aí
- * os botões grandes é que estão na tela — os dois caminhos ficam cobertos.
+ * A dose que a geração cria é quase sempre a das 23:59 (#134), então há
+ * **três** caminhos possíveis até o registro, e todos terminam igual:
+ *
+ *   1. dose distante: botão discreto **e** a pergunta do servidor;
+ *   2. dose a menos de uma hora: botão discreto, **sem** pergunta;
+ *   3. dose já vencida (madrugada, quando a gerada é a das 00:01): os
+ *      botões grandes de sempre.
+ *
+ * Esta função cobre os três sem depender da hora em que o CI rodar.
  */
 async function registrarPelaTela(page: Page) {
   const adiantada = page.getByRole("button", { name: "Já dei este remédio" });
   if (await adiantada.count()) {
     await adiantada.click();
-    await page.getByRole("alertdialog").getByRole("button", { name: "Sim, já dei" }).click();
+
+    /**
+     * ── A pergunta é OPCIONAL aqui, e o CI de 11/09 ensinou por quê ──────
+     *
+     * "A tela mostra o botão discreto" e "o servidor vai perguntar" **não
+     * são a mesma condição**, e entre elas cabe até uma hora:
+     *
+     *   - a tela troca os botões grandes pelo discreto quando
+     *     `scheduledAt > agora`;
+     *   - o servidor só pergunta quando `scheduledAt - agora > 1 h`.
+     *
+     * A dose gerada pelo fixture é a das 23:59 no fuso do paciente. Quando o
+     * CI roda **entre 22:59 e 23:59** nesse fuso, ela está a menos de uma
+     * hora: o botão discreto aparece e o servidor aceita direto, sem
+     * diálogo nenhum.
+     *
+     * Foi exatamente o que aconteceu às 02:19 UTC (23:19 em São Paulo), e
+     * derrubou este arquivo inteiro. O app estava certo nas duas pontas — o
+     * teste é que tratava as duas condições como uma só.
+     *
+     * Aqui não importa por qual caminho a dose foi registrada; importa que
+     * ela esteja registrada no fim.
+     */
+    const confirmar = page.getByRole("alertdialog").getByRole("button", { name: "Sim, já dei" });
+    if (await confirmar.count()) await confirmar.click();
   } else {
     await page.getByRole("button", { name: "✓ Tomou" }).first().click();
   }

@@ -586,7 +586,7 @@ export async function criarTratamentoHoje(
   conta: ContaDeTeste,
   alvo: number,
   sufixo = ""
-): Promise<{ tratamentoId: number; medicamento: string; doseId: number; horaAgendada: string }> {
+): Promise<{ tratamentoId: number; medicamento: string; doseId: number; horaAgendada: string; scheduledAt: string }> {
   // Antes de qualquer coisa: garantir que há dia civil sobrando (Issue #43).
   await esperarAViradaDoDiaSePreciso();
 
@@ -622,7 +622,7 @@ export async function criarTratamentoHoje(
   const hojeRes = await request.get(`/api/patients/${alvo}/today-doses`, { headers: cabecalho });
   expect(hojeRes.ok(), `today-doses falhou: ${await hojeRes.text()}`).toBeTruthy();
   const corpo = (await hojeRes.json()) as {
-    doses: Array<{ id: number; treatmentId: number; scheduledLocalTime: string }>;
+    doses: Array<{ id: number; treatmentId: number; scheduledLocalTime: string; scheduledAt: string }>;
   };
   const dose = corpo.doses.find((d) => d.treatmentId === tratamentoId);
   expect(
@@ -634,7 +634,22 @@ export async function criarTratamentoHoje(
       "cobre os últimos 90 segundos do dia (Issue #43)"
   ).toBeTruthy();
 
-  return { tratamentoId, medicamento, doseId: dose!.id, horaAgendada: dose!.scheduledLocalTime };
+  return {
+    tratamentoId,
+    medicamento,
+    doseId: dose!.id,
+    horaAgendada: dose!.scheduledLocalTime,
+    /**
+     * O INSTANTE agendado — Issue #136, depois de o CI de 11/09 mostrar
+     * por que a etiqueta nao basta.
+     *
+     * `horaAgendada` e "23:59" no fuso do PACIENTE. Para saber se a dose
+     * esta longe o bastante para o servidor perguntar, o teste precisa da
+     * distancia real ate agora - e calcular isso a partir da etiqueta
+     * exigiria refazer a conta de fuso que o servidor ja fez.
+     */
+    scheduledAt: dose!.scheduledAt,
+  };
 }
 
 /**
