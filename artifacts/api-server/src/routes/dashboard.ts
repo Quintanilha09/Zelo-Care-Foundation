@@ -4,36 +4,20 @@ import { getAuth } from "../lib/auth-types.ts";
  * familyId vem do token JWT.
  */
 import { Router } from "express";
-import { eq, and, count, gte, lte, inArray, } from "drizzle-orm";
+import { eq, and, count, gte, lte } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   patientsTable, caregiversTable, scheduledDosesTable, appointmentsTable, stockEntriesTable,
-  treatmentsTable, medicationsTable, doseRecordsTable,
+  medicationsTable,
 } from "@workspace/db";
 import { requireAuth } from "../middleware/require-auth";
 import { Clock } from "../lib/clock";
-import { localDayBoundsUtc, toLocalDateTime, tomorrowInTimezone } from "@workspace/scheduling";
+import { localDayBoundsUtc, toLocalDateTime } from "@workspace/scheduling";
 import { computeDaysRemaining, loadActiveTreatmentSchedule } from "../lib/stock.ts";
 import { getPlanLimits } from "../lib/plan-limits.ts";
-// Issue #135: um dono só para o prazo de desfazer. Quem recusa o 409 é
-// `dose-records.ts`; aqui só se calcula o instante que a tela vai comparar.
-import { UNDO_WINDOW_MS } from "./dose-records.ts";
-// Issue #153: a mesma carencia que o job usa para marcar `late`. Um dono so
-// para o numero; a tela recebe o instante ja calculado.
-import { LATE_GRACE_MINUTES } from "../lib/dose-generation.ts";
-import { alias } from "drizzle-orm/pg-core";
+import { dosesDoDia, janelaDoDia } from "../lib/doses-do-dia.ts";
 
 const router = Router();
-
-/**
- * Quem CORRIGIU o registro — Issue #136.
- *
- * Apelido da mesma tabela de cuidadores, porque a consulta já a usa para quem
- * **registrou**. São pessoas diferentes, e a tela mostra as duas: sem o
- * apelido, o Drizzle juntaria as duas pontas na mesma linha e o nome de quem
- * corrigiu apareceria como se tivesse registrado.
- */
-const quemCorrigiu = alias(caregiversTable, "quem_corrigiu");
 
 router.get("/dashboard", requireAuth, async (req, res): Promise<void> => {
   const familyId = getAuth(req).familyId;
@@ -143,38 +127,44 @@ router.get("/dashboard/today-summary", requireAuth, async (req, res): Promise<vo
 
   if (patients.length === 0) { res.json({ patients: [] }); return; }
 
-  // Cada paciente pode ter fuso próprio (ZELO-19), então o "dia de hoje"
-  // não é o mesmo intervalo pra todos. A janela consultada é a união dos
-  // dias locais; o recorte exato por paciente é feito depois, em memória.
-  const bounds = patients.map((p) => localDayBoundsUtc(Clock.todayInTimezone(p.timezone), p.timezone));
-  const windowStart = new Date(Math.min(...bounds.map((b) => b.start.getTime())));
-  const windowEnd = new Date(Math.max(...bounds.map((b) => b.end.getTime())));
+  /**
+   * Cada paciente pode ter fuso próprio (ZELO-19), então o "dia de hoje" não
+   * é o mesmo intervalo para todos — e nem a madrugada (#154), que começa às
+   * 18:00 no relógio de cada um.
+   *
+   * A consulta usa a UNIÃO das janelas, numa ida só ao banco. O recorte
+   * exato de cada paciente é feito depois, em memória: uma consulta por
+   * paciente seria N idas para responder uma pergunta só.
+   */
+  const agora = Clock.now();
+  const janelas = patients.map((p) => janelaDoDia(p.timezone, agora));
+  const windowStart = new Date(Math.min(...janelas.map((j) => j.inicioDoDia.getTime())));
+  const windowEnd = new Date(Math.max(...janelas.map((j) => j.fimDaBusca.getTime())));
 
-  const doses = await db
-    .select({
-      patientId: scheduledDosesTable.patientId,
-      scheduledAt: scheduledDosesTable.scheduledAt,
-      scheduledLocalTime: scheduledDosesTable.scheduledLocalTime,
-      status: scheduledDosesTable.status,
-      medicationName: medicationsTable.name,
-    })
-    .from(scheduledDosesTable)
-    .innerJoin(treatmentsTable, eq(scheduledDosesTable.treatmentId, treatmentsTable.id))
-    .innerJoin(medicationsTable, eq(treatmentsTable.medicationId, medicationsTable.id))
-    .where(and(
-      inArray(scheduledDosesTable.patientId, patients.map((p) => p.id)),
-      gte(scheduledDosesTable.scheduledAt, windowStart),
-      lte(scheduledDosesTable.scheduledAt, windowEnd)
-    ))
-    .orderBy(scheduledDosesTable.scheduledAt);
+  /**
+   * Issue #178 — as doses INTEIRAS, e não só a contagem delas.
+   *
+   * Esta rota já buscava as doses de todos os pacientes da família e as
+   * jogava fora, devolvendo números. A tela inicial, que precisava delas,
+   * pedia `today-doses` para UM paciente — e era por isso que ela mostrava
+   * um enquanto o cuidador tinha quatro.
+   *
+   * Devolver as doses é abrir a mão que já estava cheia: a consulta custa o
+   * mesmo, e é literalmente a mesma de `today-doses` (ver
+   * `lib/doses-do-dia.ts`, que passou a ser o dono do dia).
+   */
+  const doses = await dosesDoDia(patients, { de: windowStart, ate: windowEnd });
 
-  const now = Clock.now();
+  const now = agora;
   const summaries = patients.map((patient, i) => {
-    const { start, end } = bounds[i];
+    const { inicioDoDia, fimDoDia } = janelas[i];
+    // As contagens são do DIA. A madrugada de amanhã não entra: sem isso, a
+    // faixa "Tudo em dia hoje" sumiria numa noite em que o dia ESTÁ em dia,
+    // só porque há remédio às 03:00 (#154).
     const ofPatient = doses.filter((d) =>
       d.patientId === patient.id &&
-      d.scheduledAt.getTime() >= start.getTime() &&
-      d.scheduledAt.getTime() <= end.getTime()
+      d.scheduledAt.getTime() >= inicioDoDia.getTime() &&
+      d.scheduledAt.getTime() <= fimDoDia.getTime()
     );
 
     const pending = ofPatient.filter((d) => d.status === "pending");
@@ -206,7 +196,47 @@ router.get("/dashboard/today-summary", requireAuth, async (req, res): Promise<vo
     a.patientName.localeCompare(b.patientName, "pt-BR")
   );
 
-  res.json({ patients: summaries });
+  /**
+   * As doses do dia de cada paciente, numa lista só.
+   *
+   * ── Por que uma lista só, e não agrupada por paciente ─────────────────
+   *
+   * Porque a pergunta do cuidador é "o que precisa de mim agora", e não
+   * "como vai o paciente número três". Agrupar por pessoa faria ler quatro
+   * blocos para achar as duas coisas que precisam dele. O nome do paciente
+   * vai em cada dose, e a tela o mostra quando há mais de um.
+   *
+   * O recorte é feito AQUI, e não na consulta: cada paciente pode ter fuso
+   * próprio (ZELO-19), então "hoje" não é o mesmo intervalo para todos —
+   * `bounds[i]` é o dia civil de cada um.
+   */
+  const doDia = patients.flatMap((patient, i) => {
+    const { inicioDoDia, fimDoDia } = janelas[i];
+    return doses.filter(
+      (d) =>
+        d.patientId === patient.id &&
+        d.scheduledAt.getTime() >= inicioDoDia.getTime() &&
+        d.scheduledAt.getTime() <= fimDoDia.getTime(),
+    );
+  });
+  doDia.sort((a, b) => a.scheduledAt.getTime() - b.scheduledAt.getTime());
+
+  /**
+   * A madrugada de amanhã — Issue #154, agora de todos os pacientes.
+   *
+   * Vazia durante o dia, porque a janela nem foi buscar tão longe. Lista à
+   * parte, e nunca misturada em `doses`: a tela responde "está tudo em dia
+   * hoje?", e uma dose de amanhã no meio das de hoje mudaria a pergunta.
+   */
+  const daMadrugada = patients.flatMap((patient, i) => {
+    const { fimDoDia } = janelas[i];
+    return doses.filter(
+      (d) => d.patientId === patient.id && d.scheduledAt.getTime() > fimDoDia.getTime(),
+    );
+  });
+  daMadrugada.sort((a, b) => a.scheduledAt.getTime() - b.scheduledAt.getTime());
+
+  res.json({ patients: summaries, doses: doDia, madrugada: daMadrugada });
 });
 
 router.get("/patients/:patientId/today-doses", requireAuth, async (req, res): Promise<void> => {
@@ -254,129 +284,25 @@ router.get("/patients/:patientId/today-doses", requireAuth, async (req, res): Pr
    * deixar a tela decidir mostraria a madrugada na hora errada para ele. É a
    * mesma regra do ZELO-19, e o servidor é quem sabe o fuso.
    */
-  const HORA_DE_MOSTRAR_A_MADRUGADA = 18;
-  const FIM_DA_MADRUGADA = 6;
+  // Issue #178: a regra saiu daqui para `lib/doses-do-dia.ts`. A tela
+  // inicial de vários pacientes precisa da MESMA resposta para "já é
+  // noite?", e copiá-la criaria duas.
+  const { fimDaBusca } = janelaDoDia(patient.timezone, Clock.now());
 
-  const amanhaNoFusoDoPaciente = tomorrowInTimezone(Clock.now(), patient.timezone);
-  const { start: amanhaComeca } = localDayBoundsUtc(amanhaNoFusoDoPaciente, patient.timezone);
-  const fimDaMadrugada = new Date(amanhaComeca.getTime() + FIM_DA_MADRUGADA * 3_600_000);
-
-  const horaAgoraNoFusoDoPaciente = Number(
-    toLocalDateTime(Clock.now(), patient.timezone).localTime.slice(0, 2),
+  // ZELO-22 (tela inicial): junta o nome do medicamento e, pra doses já
+  // registradas, quem registrou — "✓ Losartana 08:00 — Ana" é o diferencial
+  // do produto, e não dá pra montar isso com 3 chamadas separadas.
+  //
+  // Issue #178: a consulta e o mapeamento saíram daqui para
+  // `lib/doses-do-dia.ts`. Eles estavam duplicados com a `today-summary`,
+  // que buscava as doses de todos os pacientes e devolvia só a contagem —
+  // e era por isso que a tela inicial mostrava um paciente enquanto o
+  // cuidador tinha quatro. Duas verdades sobre o mesmo dia é o defeito que
+  // a #162 acabou de consertar na tela; aqui seria o mesmo, no servidor.
+  const dosesWithDisplayName = await dosesDoDia(
+    [{ id: patient.id, name: patient.name }],
+    { de: todayStart, ate: fimDaBusca },
   );
-  const ehNoite = horaAgoraNoFusoDoPaciente >= HORA_DE_MOSTRAR_A_MADRUGADA;
-
-  // Durante o dia a consulta continua sendo a de sempre: a tela responde
-  // "está tudo em dia hoje?", e trazer amanhã sem mostrar seria carregar
-  // dado para descartar.
-  const fimDaBusca = ehNoite ? fimDaMadrugada : todayEnd;
-
-  // ZELO-22 (tela inicial): junta o nome do medicamento (via treatment) e,
-  // pra doses já registradas, quem registrou — "✓ Losartana 08:00 — Ana" é
-  // o diferencial do produto, não dá pra montar isso com 3 chamadas separadas.
-  const doses = await db
-    .select({
-      id: scheduledDosesTable.id,
-      treatmentId: scheduledDosesTable.treatmentId,
-      scheduledAt: scheduledDosesTable.scheduledAt,
-      scheduledLocalTime: scheduledDosesTable.scheduledLocalTime,
-      status: scheduledDosesTable.status,
-      dose: scheduledDosesTable.dose,
-      medicationName: medicationsTable.name,
-      registeredAt: doseRecordsTable.takenAt,
-      registeredByCaregiverId: doseRecordsTable.caregiverId,
-      registeredByCaregiverName: caregiversTable.name,
-      registeredViaElderMode: doseRecordsTable.registeredViaElderMode,
-      recordId: doseRecordsTable.id,
-      // Issue #135: quando o registro foi CRIADO, que é o que decide o prazo
-      // de desfazer. `takenAt` (acima) é quando a dose foi dada segundo o
-      // cuidador, e num registro retroativo os dois são bem diferentes — usar
-      // o errado daria um minuto para desfazer contado a partir de ontem.
-      recordCreatedAt: doseRecordsTable.createdAt,
-      // Issue #136: registro corrigido sem marca visível é pior que registro
-      // errado — quem lê passa a confiar no que não deve. A tela precisa
-      // saber, e precisa saber barato: por isso vem da coluna, e não de uma
-      // consulta ao `audit_log` por dose.
-      correctedAt: doseRecordsTable.correctedAt,
-      correctedByName: quemCorrigiu.name,
-    })
-    .from(scheduledDosesTable)
-    .innerJoin(treatmentsTable, eq(scheduledDosesTable.treatmentId, treatmentsTable.id))
-    .innerJoin(medicationsTable, eq(treatmentsTable.medicationId, medicationsTable.id))
-    .leftJoin(doseRecordsTable, eq(doseRecordsTable.scheduledDoseId, scheduledDosesTable.id))
-    .leftJoin(caregiversTable, eq(doseRecordsTable.caregiverId, caregiversTable.id))
-    // Segundo join, com apelido: quem REGISTROU e quem CORRIGIU sao pessoas
-    // diferentes, e a tela mostra as duas. Sem o alias, o Drizzle juntaria
-    // as duas pontas na mesma linha de caregivers.
-    .leftJoin(quemCorrigiu, eq(doseRecordsTable.correctedByCaregiverId, quemCorrigiu.id))
-    .where(and(
-      eq(scheduledDosesTable.patientId, patientId),
-      gte(scheduledDosesTable.scheduledAt, todayStart),
-      lte(scheduledDosesTable.scheduledAt, fimDaBusca)
-    ))
-    .orderBy(scheduledDosesTable.scheduledAt);
-
-  // ZELO-40: quando o registro veio do modo idoso, o nome exibido é o do
-  // PRÓPRIO paciente ("✓ 08:00 — Dona Maria"), não o do cuidador cuja
-  // sessão o aparelho travado estava usando — o caregiverId real (auditoria)
-  // não muda, só este rótulo.
-  const dosesWithDisplayName = doses.map((d) => ({
-    ...d,
-    registeredByCaregiverName: d.registeredViaElderMode ? patient.name : d.registeredByCaregiverName,
-    /**
-     * Issue #135 — até quando esta dose ainda pode ser desfeita.
-     *
-     * ── Por que um INSTANTE, e não um booleano ───────────────────────────
-     *
-     * Um `podeDesfazer: true` envelhece na mão do cliente: a resposta chega,
-     * a pessoa olha a tela por trinta segundos, e o booleano continua
-     * dizendo "sim" muito depois de ter virado "não". Um instante não
-     * envelhece — a tela compara com o relógio dela e acerta sozinha, sem
-     * pedir nada de novo ao servidor.
-     *
-     * ── E por que a tela não recebe o NÚMERO da janela ───────────────────
-     *
-     * Porque aí seriam dois donos do mesmo prazo, e um dia discordariam.
-     * O servidor manda o resultado pronto; quem decide quanto vale um
-     * minuto continua sendo `dose-records.ts`, que é quem recusa o 409.
-     *
-     * `null` quando não há registro — a dose está pendente e não há o que
-     * desfazer.
-     */
-    desfazerAte: d.recordCreatedAt
-      ? new Date(d.recordCreatedAt.getTime() + UNDO_WINDOW_MS).toISOString()
-      : null,
-    /**
-     * A partir de quando esta dose conta como ATRASADA — Issue #153.
-     *
-     * ── O defeito que isto conserta ──────────────────────────────────────
-     *
-     * Até 11/09/2026 o atraso só existia como o status `late` no banco, e
-     * quem o decidia era um job: `LATE_GRACE_MINUTES` de carência mais um
-     * cron a cada 15 minutos. Somando, **uma dose atrasada podia parecer
-     * "Pendente" por até 45 minutos** — foi o que o fundador fotografou às
-     * 09:58, com uma dose das 09:00.
-     *
-     * A tela não precisa de job nenhum para saber que 09:00 já passou. Ela
-     * recebe este instante e compara com o relógio dela.
-     *
-     * ── Um instante, e não um booleano ───────────────────────────────────
-     *
-     * Mesmo motivo do `desfazerAte` acima: booleano envelhece na mão do
-     * cliente — chega dizendo "não" e continua dizendo "não" meia hora
-     * depois. Instante não envelhece.
-     *
-     * ── E o status `late` do banco continua valendo ──────────────────────
-     *
-     * Ele serve à cascata de lembretes, ao relatório de adesão e ao
-     * histórico, e nada disso muda. O que muda é só a EXIBIÇÃO, que passa a
-     * ser imediata. Quem decide quanto vale a carência continua sendo o
-     * `dose-generation.ts`.
-     */
-    atrasadaApartirDe: new Date(
-      d.scheduledAt.getTime() + LATE_GRACE_MINUTES * 60_000,
-    ).toISOString(),
-  }));
 
   // Issue #154: duas listas, e o corte e o fim do dia civil do paciente.
   // O que vem depois e madrugada de amanha — so existe aqui quando ja e
