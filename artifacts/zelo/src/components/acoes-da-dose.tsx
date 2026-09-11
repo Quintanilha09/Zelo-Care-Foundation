@@ -84,7 +84,7 @@ function EditorDeHorario({
         <Button
           size="sm"
           disabled={controlador.emVoo === dose.id}
-          onClick={() => void controlador.confirmarHorarioEscolhido(dose.id, desfecho)}
+          onClick={() => void controlador.confirmarHorarioEscolhido(dose, desfecho)}
         >
           {controlador.emVoo === dose.id ? "Registrando…" : "Confirmar"}
         </Button>
@@ -134,7 +134,7 @@ export function AcoesDaDose({
         variant="ghost"
         size="sm"
         className="gap-1 h-auto py-1 shrink-0"
-        onClick={() => void controlador.desfazer(dose.recordId!)}
+        onClick={() => void controlador.desfazer(dose)}
       >
         <Undo2 className="w-3.5 h-3.5" /> Desfazer
       </Button>
@@ -146,6 +146,9 @@ export function AcoesDaDose({
         onClick={() =>
           controlador.abrirCorrecao({
             recordId: dose.recordId!,
+            // #178: a correção precisa saber de QUEM é a dose — a tela
+            // inicial mostra várias pessoas de uma vez.
+            patientId: dose.patientId,
             medicationName,
             outcome: dose.status === "skipped" ? "skipped" : "taken",
             registeredAt: null,
@@ -189,7 +192,7 @@ export function AcoesDaDose({
             variant="outline"
             size={tamanho}
             className="gap-1.5"
-            onClick={() => void controlador.registrar(dose.id, "taken")}
+            onClick={() => void controlador.registrar(dose, "taken")}
           >
             <ClockIcon className="w-3.5 h-3.5" /> Já dei este remédio
           </Button>
@@ -208,7 +211,7 @@ export function AcoesDaDose({
             className="flex-1"
             size={tamanho}
             disabled={controlador.emVoo === dose.id}
-            onClick={() => void controlador.registrar(dose.id, "taken")}
+            onClick={() => void controlador.registrar(dose, "taken")}
           >
             ✓ Registrar
           </Button>
@@ -216,7 +219,7 @@ export function AcoesDaDose({
             variant="secondary"
             size={tamanho}
             disabled={controlador.emVoo === dose.id}
-            onClick={() => void controlador.registrar(dose.id, "skipped")}
+            onClick={() => void controlador.registrar(dose, "skipped")}
           >
             Pular
           </Button>
@@ -241,13 +244,7 @@ export function AcoesDaDose({
  * São modais: existir um por cartão criaria dez instâncias da mesma caixa
  * esperando para abrir.
  */
-export function DialogosDaDose({
-  controlador,
-  patientId,
-}: {
-  controlador: ControladorDeDose;
-  patientId: string;
-}) {
+export function DialogosDaDose({ controlador }: { controlador: ControladorDeDose }) {
   return (
     <>
       {/* ── Issue #134, agora nas duas telas ──────────────────────────────
@@ -285,8 +282,10 @@ export function DialogosDaDose({
       </AlertDialog>
 
       {/* Issue #136 — existia só na ficha do paciente até a #162. */}
+      {/* #178: o paciente vem da dose aberta, e não da tela — a tela inicial
+          mostra as doses de todos de uma vez. */}
       <CorrigirDose
-        patientId={patientId}
+        patientId={String(controlador.aCorrigir?.patientId ?? "")}
         dose={controlador.aCorrigir}
         onFechar={controlador.fecharCorrecao}
         onCorrigido={controlador.aoCorrigir}

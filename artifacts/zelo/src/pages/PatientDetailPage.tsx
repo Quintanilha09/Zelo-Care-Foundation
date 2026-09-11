@@ -104,6 +104,14 @@ interface Treatment {
 interface ScheduledDose {
   id: number;
   treatmentId: number;
+  /**
+   * De quem é a dose — Issue #178.
+   *
+   * O servidor sempre devolveu; era este tipo que omitia. Passou a importar
+   * quando o paciente deixou de ser propriedade da TELA e voltou a ser
+   * propriedade da DOSE, que é o que ele sempre foi.
+   */
+  patientId: number;
   scheduledAt: string;
   scheduledLocalTime: string;
   status: "pending" | "taken" | "skipped" | "late";
@@ -297,7 +305,6 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
   // proprio `handleRegister`, sem editor de horario, sem justificativa e
   // engolindo todo erro que nao fosse antecipacao (#165).
   const dose = useRegistrarDose({
-    patientId: params.id,
     aoMudar: () => {
       void queryClient.invalidateQueries({ queryKey: ["today-doses", params.id] });
       // O decremento automatico de estoque (ZELO-34) pode ter mudado os
@@ -789,7 +796,7 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
         {/* Issue #162 — os dois dialogos num componente so, e agora nas
             DUAS telas. A pergunta da #134 e a correcao da #136 viviam so
             aqui; a tela inicial nao tinha nenhuma das duas. */}
-        <DialogosDaDose controlador={dose} patientId={params.id} />
+        <DialogosDaDose controlador={dose} />
 
         {/* Excluir é a única ação do ciclo que não dá para desfazer — as
             outras três têm "Reativar" logo ali embaixo. Por isso é a única
