@@ -61,13 +61,6 @@ function blocoEscuro(): string {
   return css.slice(i, fim);
 }
 
-/** Lê `hsl(H S% L%)` de uma declaração dentro do trecho dado. */
-function hsl(trecho: string, token: string): [number, number, number] {
-  const m = trecho.match(new RegExp(`${token}:\\s*hsl\\(([\\d.]+)\\s+([\\d.]+)%\\s+([\\d.]+)%\\)`));
-  assert.ok(m, `não achei ${token} com valor hsl() no trecho`);
-  return [Number(m![1]), Number(m![2]), Number(m![3])];
-}
-
 // ── Contraste WCAG. A conta é curta, e o número precisa ser reprodutível. ──
 
 function paraRgb([h, s, l]: [number, number, number]): [number, number, number] {
