@@ -10,7 +10,15 @@
 > arquivo voltar a passar de ~150 linhas, mova o excedente para `historico/` — foi por virar diário
 > que ele parou de ser lido. **Já aconteceu duas vezes:** 609 linhas em 23/08, 286 em 31/08/2026.
 >
-> Última revisão: 31/08/2026.
+> Última revisão: 12/09/2026.
+>
+> **Este arquivo está com ~390 linhas, acima do limite que ele mesmo impõe.** Em 12/09/2026 a
+> leva de 10/09 saiu para o [diário de setembro](historico/DIARIO-2026-09-01-a-2026-09-12.md),
+> e o resto do excedente está identificado: as **cinco armadilhas** duplicam
+> [decisoes/ARMADILHAS.md](decisoes/ARMADILHAS.md) e deviam virar um ponteiro, e a lista de
+> ZELO-* nunca abertos no navegador é um backlog de verificação, não estado. Não fiz os dois
+> nesta sessão para não apagar estado vivo às pressas — é a próxima faxina, e ela é de
+> documentação, então vai direto ao `main`.
 
 ---
 
@@ -39,14 +47,26 @@ Das 10 fases do backlog original só sobraram três buracos, todos deixados de p
   — schema completo já gerado e testado, trigger de imutabilidade, secrets faltando, URL do OAuth.
 - **Verificação visual só acontece no Replit.** O roteamento de `/api` para o backend é da
   infraestrutura dele (`router = "application"`), não reproduzido localmente.
-- **A suíte de integração não roda nesta máquina — e a causa mudou em 04/09/2026.** O diagnóstico
-  antigo culpava o Smart App Control por bloquear `argon2` e `biome`; medido de novo, **os dois
-  funcionam**. O que falta é só o banco: o cluster da porta 5433 não sobe (`postgres.exe` recebe
-  `Permission denied` no bind), e o serviço que roda na 5432 não tem o papel `zelo_dev`. Detalhe e
-  as três saídas em [../CONTEXT.md](../CONTEXT.md) — a mais barata é abrir o Docker, que já está
-  instalado. **Enquanto isso o CI em Linux é a única verificação real** da integração e do
-  Playwright, e todo número novo sai do log dele. Typecheck, lint, build e os testes de `lib/`
-  rodam aqui e devem ser rodados antes de todo push.
+- **A suíte de integração PASSOU A RODAR nesta máquina — medido em 11–12/09/2026.** O Postgres 18
+  local sobe na porta 5433, e a suíte completa e o Playwright rodam daqui. **Medido em 12/09/2026:
+  950 testes de servidor, 948 passando, 0 falhando, 2 pulados.** Como subir o banco:
+
+  ```bash
+  "/c/Program Files/PostgreSQL/18/bin/pg_ctl.exe" -D "C:/Projetos/Zelo/zelo-local-pgdata" \
+    -o "-p 5433" -l "C:/Projetos/Zelo/zelo-local-pgdata/server.log" -w start
+  set -a && . artifacts/api-server/.env.local && set +a
+  pnpm --filter @workspace/api-server run test:all
+  ```
+
+  **Duas armadilhas medidas nesta sessão.** (1) Matar a tarefa de fundo que iniciou o Postgres
+  mata o Postgres junto, e ele volta com `could not reserve shared memory region` — a saída é
+  `pg_ctl stop -m immediate` e subir de novo com `-w` e sem pipe. (2) O `drizzle-kit push` é
+  **interativo**: ele ofereceu TRUNCAR `scheduled_doses` para criar a restrição
+  `uq_treatment_scheduled_at`, e sem TTY ele falha em vez de perguntar. Valor de enum novo
+  entra à mão com `ALTER TYPE ... ADD VALUE IF NOT EXISTS`, que é aditivo e não pede nada.
+
+  O CI em Linux continua sendo o portão — o que mudou é que dá para reprovar aqui antes de
+  abrir o PR, em vez de descobrir no log dele.
 - **Portões de CI** (`.github/workflows/validate.yml`, no `main` desde 26/08/2026): typecheck, lint
   de relógio, suíte do servidor, build, **Biome** e **Playwright**; o **Knip** é relatório e não
   falha o build. **Nada de código entra no `main` sem Issue e PR** — [CLAUDE.md](../CLAUDE.md) e
@@ -56,26 +76,48 @@ Das 10 fases do backlog original só sobraram três buracos, todos deixados de p
 
 ## Onde o desenvolvimento parou
 
-**Oito Issues abertas, uma delas bloqueada — medido em 10/09/2026 com `gh`.** Este bloco envelhece
+**Uma Issue aberta, e ela está bloqueada — medido em 12/09/2026 com `gh`.** Este bloco envelhece
 rápido: se a sessão for depois disso, meça de novo.
 
-**Há fila, e ela é nova.** A leva de 08/09 fechou inteira no dia 09/09. Em 10/09 o fundador
-relatou dois problemas e pediu duas melhorias, refinados em
-[`refinamentos/foto-dose-e-modo-noturno.md`](refinamentos/foto-dose-e-modo-noturno.md) e abertos
-como sete Issues.
-
-**Ordem: #134 → #135 → #132 → #133 → #136 → #137 → #138.** As duas primeiras tocam registro de
-dose, que é o dado vital do produto.
+A fila de 10/09 (#132 a #138) **fechou inteira**. A varredura de QA e análise de negócio pedida
+pelo fundador em 11/09/2026 gerou uma segunda leva, também **fechada por inteiro** entre 11 e
+12/09 — doze Issues, da dose que se corrige à escala de plantão:
 
 | Issue | O quê |
 |---|---|
-| [#134](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/134) | 🔴 dose pode ser marcada como tomada com **horas de antecedência**. O servidor nunca compara `takenAt` com `scheduledAt`; a ficha do paciente oferece o botão para toda dose pendente, enquanto a tela inicial já não oferece. Defeito silencioso: a dose sai da lista e ninguém é lembrado dela |
-| [#135](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/135) | o desfazer **existe e não está ao alcance** — um único chamador (`HomePage`), estado de React que morre ao recarregar, e só para quem venceu a corrida |
-| [#132](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/132) | a foto some sozinha: o token do link vale 10 min e a mesma rota manda o navegador guardar 24 h (144× de diferença). Junto, o `AvatarImage` sem `object-cover`, que estica o rosto |
-| [#133](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/133) | "Seu perfil" antes de "Sua conta", e o avatar no topo dos Ajustes — o fundador procurou a própria foto em `/ajustes/conta`, onde ela não mora |
-| [#136](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/136) | corrigir um registro de dose depois dos 60 s, **emendando com rastro, nunca apagando** |
-| [#137](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/137) | recortar a foto (1:1) antes de enviar. Dependência decidida pelo fundador em 10/09/2026: `react-easy-crop`, com `vet-dependencies` antes de instalar |
-| [#138](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/138) | modo noturno. O `.dark` já existe no `index.css` com 21 tokens e **nunca é ligado**; os 8 tokens `zelo-*` (dose) não são redefinidos nele — ligar a classe sem tratar isso destrói a linguagem de cor da dose |
+| #160 | o ícone do selo "Atrasado" ganha um terracota contido (`--zelo-atraso`), exceção declarada do invariante 5 |
+| #162 | **um dono só para registrar uma dose** — o hook `use-registrar-dose` e o componente `acoes-da-dose`. Era escrito duas vezes, e a tela inicial não tinha "Corrigir" |
+| #166 | pular uma dose passa a poder dizer por quê, em rota própria (o PATCH de correção marcaria `correctedAt` falsamente) |
+| #167 | registrar dose sem internet entra na fila e sobe depois |
+| #169 | **remédio "se precisar"** — sexto `schedule_type`, sem hora marcada, fora da adesão e fora do calendário |
+| #170 | o relatório passa a imprimir a dose que valia em CADA dose, e não a do tratamento hoje |
+| #171 | a dose pode mudar de um horário para outro (`dosePorHorario`) |
+| #172 | **desmame em degraus**, com aviso na véspera de cada troca |
+| #173 | tratamento pode acabar por quantidade de doses |
+| #175 | "tomou em parte", em balde próprio — nem tomada, nem pulada |
+| #176 | alergias e condições no paciente, e uma ficha de emergência para virar para a enfermeira |
+| #177 | **escala de plantão** — de quem é a vez, com guardrail de código contra virar filtro de acesso |
+| #178 | a tela inicial passa a ser **o dia de todos** os pacientes |
+| #189 | `dose-atrasada.test.ts` reprovava na primeira hora depois da meia-noite (03:00–04:00 UTC no CI) |
+
+Três decisões desta leva que valem mais que o código:
+
+1. **O app não julga.** O "se precisar" mostra "a última foi às 14:20" e "a receita diz a cada
+   6 h" — e nunca junta os dois numa conclusão. Dizer "ainda não pode dar" seria prescrever
+   (invariante 4). Há teste de servidor varrendo o corpo da resposta e teste de tela varrendo a
+   janela, os dois procurando essas palavras.
+2. **A escala de plantão não pode virar filtro.** Um teste varre `lib/`, `routes/` e
+   `middleware/` procurando quem consulta `quemEstaDePlantao`; são quatro arquivos autorizados.
+   Se a escala filtrasse acesso, uma família perderia o app numa noite em que ninguém marcou
+   plantão.
+3. **O uso de um "se precisar" é gravado em `scheduled_doses` já tomada**, e não em tabela
+   nova: desfazer, corrigir o horário, acrescentar o motivo, auditoria e histórico são todos
+   amarrados a `scheduledDoseId`. O que o separa é o `scheduleType`, e é por ele que a adesão,
+   o calendário e as doses do dia o excluem.
+
+**A leva de 10/09 (#132 a #138) está fechada**, e o que cada Issue era foi para o
+[diário de setembro](historico/DIARIO-2026-09-01-a-2026-09-12.md). As armadilhas que ela
+deixou continuam logo abaixo — elas são estado, não história.
 
 Duas levas, dois refinamentos:
 
@@ -252,6 +294,16 @@ Checar tudo de uma vez no Replit:
      `phone` e `relationship` em `caregivers` com o enum `caregiver_relationship` (#116), a tabela
      `caregiver_patients` (#120), e as colunas `uncovered_since` e `uncovered_alert_sent_at` em
      `patients` (#123). Tudo aditivo — o `push` não deve oferecer `drop` nem `rename`.
+   - **QA e negócio (11–12/09/2026):** os valores `partial` nos enums `dose_outcome` e
+     `scheduled_dose_status` (#175); as colunas `allergies` e `conditions` em `patients`
+     (#176); o valor `se_necessario` no enum `schedule_type` (#169); e a tabela `shifts`
+     (#177). Tudo aditivo.
+
+     **⚠ O `push` é interativo, e ofereceu TRUNCAR `scheduled_doses`** na máquina local, para
+     criar a restrição `uq_treatment_scheduled_at`. `scheduled_doses` é o histórico de doses
+     inteiro — **a resposta é não.** Se ele insistir e a restrição não entrar, o caminho
+     seguro para valor de enum é `ALTER TYPE ... ADD VALUE IF NOT EXISTS`, que é aditivo e
+     não pergunta nada.
 4. `pnpm --filter @workspace/db run push:raw` — trigger de imutabilidade (idempotente)
 5. **`ADMIN_PANEL_SECRET` — o fundador informou em 25/08/2026 que já está configurado** no Replit.
    `NÃO VERIFICADO`: falta abrir `/admin` e confirmar que a senha entra — estava **confirmado
@@ -267,6 +319,14 @@ Checar tudo de uma vez no Replit:
 ---
 
 ## Roteiro de teste pendente do fundador
+
+**A leva de 11–12/09/2026 (#160 a #189) tem guia publicado, com 10 testes:**
+https://claude.ai/code/artifact/460113a7-566c-486e-8f6b-48d5b7a24327
+
+O passo marcado é o **07 — o relatório do médico aberto num leitor de verdade**. Três mudanças
+diferentes mexeram naquele PDF (#170, #172 e #169) e nenhuma foi vista numa página renderizada:
+os testes leem o texto extraído dos bytes. É também o único documento do app que vai à mão de
+um médico.
 
 A leva de 08–09/09/2026 (#97 a #123) tem **guia publicado, com 17 passos em 7 grupos**:
 https://claude.ai/code/artifact/488e1904-4b62-4d2a-af0c-cfe74264ad9b — o passo do e-mail da #123
