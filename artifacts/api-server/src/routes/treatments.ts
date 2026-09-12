@@ -24,12 +24,39 @@ const router = Router();
 
 const TimeOfDay = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "horário deve ser HH:mm");
 
+/**
+ * A dose de cada horário — Issue #171.
+ *
+ * ═══════════════════════════════════════════════════════════════════════
+ * "1 COMPRIMIDO DE MANHÃ E 2 À NOITE" NÃO CABIA.
+ *
+ * `treatments.dose` é um texto só para o tratamento inteiro. Receita de
+ * anticoagulante, insulina e diurético diz dose diferente por horário o
+ * tempo todo — e o contorno era cadastrar o mesmo remédio duas vezes,
+ * com duas datas de fim para manter e duas linhas no relatório.
+ * ═══════════════════════════════════════════════════════════════════════
+ *
+ * ── Por que um mapa ao lado, e não uma lista de objetos em `times` ───
+ *
+ * Porque `times` é lido por `expandSchedule`, que só quer horários e não
+ * sabe nada de dose. Trocar a forma dele obrigaria a mexer na expansão —
+ * a peça mais delicada do app, que conhece dia alternado, ciclo com pausa
+ * e fuso. Um mapa ao lado é aditivo: a expansão não muda uma linha, e
+ * todo tratamento que já existe continua válido.
+ *
+ * ── A dose do tratamento continua sendo a padrão ────────────────────
+ *
+ * Horário que não estiver no mapa usa `treatments.dose`, como sempre. O
+ * mapa é exceção declarada, não substituição.
+ */
+const DosePorHorario = z.record(TimeOfDay, z.string().max(120)).optional();
+
 const ScheduleConfigBody = z.discriminatedUnion("scheduleType", [
-  z.object({ scheduleType: z.literal("times_per_day"), times: z.array(TimeOfDay).min(1) }),
+  z.object({ scheduleType: z.literal("times_per_day"), times: z.array(TimeOfDay).min(1), dosePorHorario: DosePorHorario }),
   z.object({ scheduleType: z.literal("every_n_hours"), intervalHours: z.number().int().positive(), startTime: TimeOfDay }),
-  z.object({ scheduleType: z.literal("specific_weekdays"), weekdays: z.array(z.number().int().min(0).max(6)).min(1), times: z.array(TimeOfDay).min(1) }),
-  z.object({ scheduleType: z.literal("alternate_days"), times: z.array(TimeOfDay).min(1), startDate: z.string() }),
-  z.object({ scheduleType: z.literal("cycle_with_pause"), onDays: z.number().int().positive(), offDays: z.number().int().min(0), times: z.array(TimeOfDay).min(1) }),
+  z.object({ scheduleType: z.literal("specific_weekdays"), weekdays: z.array(z.number().int().min(0).max(6)).min(1), times: z.array(TimeOfDay).min(1), dosePorHorario: DosePorHorario }),
+  z.object({ scheduleType: z.literal("alternate_days"), times: z.array(TimeOfDay).min(1), startDate: z.string(), dosePorHorario: DosePorHorario }),
+  z.object({ scheduleType: z.literal("cycle_with_pause"), onDays: z.number().int().positive(), offDays: z.number().int().min(0), times: z.array(TimeOfDay).min(1), dosePorHorario: DosePorHorario }),
 ]);
 
 const CreateTreatmentBody = z.object({

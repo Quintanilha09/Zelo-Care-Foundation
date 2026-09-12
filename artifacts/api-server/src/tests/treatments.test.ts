@@ -371,3 +371,101 @@ describe("O fim calculado pela quantidade de doses", () => {
     assert.equal(res.status, 400);
   });
 });
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * A DOSE DE CADA HORÁRIO — Issue #171.
+ *
+ * "1 comprimido de manhã e 2 à noite" não cabia: `treatments.dose` é um texto
+ * só para o tratamento inteiro. Receita de anticoagulante, insulina e
+ * diurético diz isso o tempo todo, e o contorno era cadastrar o mesmo remédio
+ * duas vezes — duas datas de fim para manter, duas linhas no relatório.
+ *
+ * O mapa vive no `scheduleConfig` porque a dose de cada horário É parte da
+ * posologia. E ele é aditivo: tratamento sem o campo continua usando a dose
+ * do tratamento em todo horário, exatamente como antes.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+describe("A dose de cada horario", () => {
+  it("cada dose agendada nasce com a dose do horario dela", async () => {
+    const hoje = Clock.todayInTimezone("America/Sao_Paulo");
+    const criado = await api("POST", `/patients/${patientId}/treatments`, {
+      medicationId,
+      dose: "1 comprimido",
+      scheduleConfig: {
+        scheduleType: "times_per_day",
+        times: ["08:00", "20:00"],
+        dosePorHorario: { "20:00": "2 comprimidos" },
+      },
+      startDate: hoje,
+    });
+    assert.equal(criado.status, 201, JSON.stringify(criado.body));
+    const { id } = criado.body as { id: number };
+
+    const geradas = await db
+      .select({ hora: scheduledDosesTable.scheduledLocalTime, dose: scheduledDosesTable.dose })
+      .from(scheduledDosesTable)
+      .where(eq(scheduledDosesTable.treatmentId, id));
+
+    const das20 = geradas.filter((d) => d.hora === "20:00");
+    const das08 = geradas.filter((d) => d.hora === "08:00");
+    assert.ok(das20.length > 0 && das08.length > 0, "a janela precisa ter gerado os dois horários");
+
+    // O horário do mapa usa a dose dele...
+    for (const d of das20) assert.equal(d.dose, "2 comprimidos");
+    // ...e o que está fora dele cai na dose do tratamento. O mapa é exceção
+    // declarada, não substituição.
+    for (const d of das08) assert.equal(d.dose, "1 comprimido");
+
+    await db.delete(treatmentsTable).where(eq(treatmentsTable.id, id));
+  });
+
+  it("sem o mapa, tudo continua exatamente como era", async () => {
+    const hoje = Clock.todayInTimezone("America/Sao_Paulo");
+    const criado = await api("POST", `/patients/${patientId}/treatments`, {
+      medicationId,
+      dose: "1 comprimido",
+      scheduleConfig: { scheduleType: "times_per_day", times: ["08:00", "20:00"] },
+      startDate: hoje,
+    });
+    const { id } = criado.body as { id: number };
+
+    const geradas = await db
+      .select({ dose: scheduledDosesTable.dose })
+      .from(scheduledDosesTable)
+      .where(eq(scheduledDosesTable.treatmentId, id));
+
+    assert.ok(geradas.length > 0);
+    // Este caso é o que prova que a mudança é aditiva: todo tratamento que já
+    // existe no banco não tem o campo, e não pode mudar de comportamento.
+    for (const d of geradas) assert.equal(d.dose, "1 comprimido");
+
+    await db.delete(treatmentsTable).where(eq(treatmentsTable.id, id));
+  });
+
+  it("horario fora da lista no mapa nao quebra nada", async () => {
+    const hoje = Clock.todayInTimezone("America/Sao_Paulo");
+    const criado = await api("POST", `/patients/${patientId}/treatments`, {
+      medicationId,
+      dose: "1 comprimido",
+      scheduleConfig: {
+        scheduleType: "times_per_day",
+        times: ["08:00"],
+        // Sobra de quem apagou um horário sem limpar o mapa. Ninguém casa com
+        // ele, e o certo é ser ignorado — não recusar o tratamento inteiro.
+        dosePorHorario: { "22:00": "3 comprimidos" },
+      },
+      startDate: hoje,
+    });
+    assert.equal(criado.status, 201, JSON.stringify(criado.body));
+    const { id } = criado.body as { id: number };
+
+    const geradas = await db
+      .select({ dose: scheduledDosesTable.dose })
+      .from(scheduledDosesTable)
+      .where(eq(scheduledDosesTable.treatmentId, id));
+    for (const d of geradas) assert.equal(d.dose, "1 comprimido");
+
+    await db.delete(treatmentsTable).where(eq(treatmentsTable.id, id));
+  });
+});
