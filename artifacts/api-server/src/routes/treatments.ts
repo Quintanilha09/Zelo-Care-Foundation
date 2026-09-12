@@ -51,12 +51,37 @@ const TimeOfDay = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "horário deve s
  */
 const DosePorHorario = z.record(TimeOfDay, z.string().max(120)).optional();
 
+/**
+ * Os degraus de um desmame — Issue #172.
+ *
+ * ═══════════════════════════════════════════════════════════════════════
+ * "40mg POR 5 DIAS, 20mg POR 5, 10mg POR 5, DEPOIS PARA."
+ *
+ * Receita comum de corticoide, e também de ansiolítico e antidepressivo
+ * sendo retirados. Sem isto era preciso criar quatro tratamentos e
+ * encerrar cada um à mão — e **cada transição era uma chance de
+ * esquecer**. Esquecer um degrau de desmame de corticoide não é um
+ * detalhe administrativo.
+ * ═══════════════════════════════════════════════════════════════════════
+ *
+ * O app NÃO sugere o desenho do desmame: quem decide os degraus é o
+ * médico, e aqui se transcreve (invariante 4).
+ *
+ * Teto de 20 degraus e 365 dias por degrau: são as bordas do que é
+ * desmame. Acima disso é outro tratamento, não outro degrau.
+ */
+const Degraus = z
+  .array(z.object({ dose: z.string().min(1).max(120), dias: z.number().int().positive().max(365) }))
+  .min(2, "um desmame tem pelo menos dois degraus")
+  .max(20)
+  .optional();
+
 const ScheduleConfigBody = z.discriminatedUnion("scheduleType", [
-  z.object({ scheduleType: z.literal("times_per_day"), times: z.array(TimeOfDay).min(1), dosePorHorario: DosePorHorario }),
+  z.object({ scheduleType: z.literal("times_per_day"), times: z.array(TimeOfDay).min(1), dosePorHorario: DosePorHorario, degraus: Degraus }),
   z.object({ scheduleType: z.literal("every_n_hours"), intervalHours: z.number().int().positive(), startTime: TimeOfDay }),
-  z.object({ scheduleType: z.literal("specific_weekdays"), weekdays: z.array(z.number().int().min(0).max(6)).min(1), times: z.array(TimeOfDay).min(1), dosePorHorario: DosePorHorario }),
-  z.object({ scheduleType: z.literal("alternate_days"), times: z.array(TimeOfDay).min(1), startDate: z.string(), dosePorHorario: DosePorHorario }),
-  z.object({ scheduleType: z.literal("cycle_with_pause"), onDays: z.number().int().positive(), offDays: z.number().int().min(0), times: z.array(TimeOfDay).min(1), dosePorHorario: DosePorHorario }),
+  z.object({ scheduleType: z.literal("specific_weekdays"), weekdays: z.array(z.number().int().min(0).max(6)).min(1), times: z.array(TimeOfDay).min(1), dosePorHorario: DosePorHorario, degraus: Degraus }),
+  z.object({ scheduleType: z.literal("alternate_days"), times: z.array(TimeOfDay).min(1), startDate: z.string(), dosePorHorario: DosePorHorario, degraus: Degraus }),
+  z.object({ scheduleType: z.literal("cycle_with_pause"), onDays: z.number().int().positive(), offDays: z.number().int().min(0), times: z.array(TimeOfDay).min(1), dosePorHorario: DosePorHorario, degraus: Degraus }),
 ]);
 
 const CreateTreatmentBody = z.object({

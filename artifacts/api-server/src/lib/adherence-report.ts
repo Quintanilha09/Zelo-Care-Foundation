@@ -31,10 +31,42 @@ export interface ActualVsPrescribed {
   sampleSize: number;
 }
 
+/**
+ * Uma dose e o trecho do período em que ela valeu — Issue #172.
+ *
+ * É o degrau do desmame visto de fora: o relatório não sabe (nem precisa
+ * saber) que houve um desmame cadastrado. Ele olha o que as doses
+ * agendadas dizem e descreve o que aconteceu.
+ *
+ * ── Primeiro e último dia, e não blocos contíguos ────────────────────
+ *
+ * Com dose por horário (#171), o mesmo dia tem legitimamente duas doses
+ * diferentes — "1 comprimido de manhã e 2 à noite". Partir isso em blocos
+ * contíguos faria a lista alternar linha a linha e não descreveria nada.
+ * Primeiro e último dia de cada dose é verdade nos dois casos: no desmame
+ * os trechos saem em sequência, e na dose por horário eles se sobrepõem —
+ * que é exatamente o que houve.
+ */
+export interface DosePeriodRow {
+  dose: string;
+  /** Primeiro dia do período em que esta dose apareceu (YYYY-MM-DD). */
+  from: string;
+  /** Último dia (YYYY-MM-DD). */
+  to: string;
+}
+
 export interface MedicationReportRow {
   medicationId: number;
   medicationName: string;
   dose: string | null;
+  /**
+   * Os degraus, em ordem cronológica — Issue #172.
+   *
+   * Vazio quando não houve dose nenhuma registrada no período. Com uma
+   * dose só, tem um item — e aí o PDF continua imprimindo a frase de
+   * sempre, sem data nenhuma.
+   */
+  dosePeriods: DosePeriodRow[];
   prescribedTimes: string[];
   totalScheduled: number;
   taken: number;
@@ -72,6 +104,17 @@ export interface AdherenceReportData {
   generatedAt: Date;
   medications: MedicationReportRow[];
   measurements: MeasurementRow[];
+}
+
+/**
+ * "2026-03-01" → "01/03/2026" — Issue #172.
+ *
+ * Troca de posição de texto, sem passar por Date: o valor já é um dia
+ * civil do fuso do paciente, e construir uma data aqui só para formatá-la
+ * é o caminho clássico de imprimir o dia anterior num documento clínico.
+ */
+function emPortugues(iso: string): string {
+  return iso.split("-").reverse().join("/");
 }
 
 function timeToMinutes(hhmm: string): number {
@@ -131,6 +174,10 @@ export async function computeReportData(
        * lê `scheduledDosesTable.dose`) e só o PDF errava.
        */
       dose: scheduledDosesTable.dose,
+      // O dia CIVIL do paciente, e não o instante: é ele que vira a data
+      // impressa ao lado do degrau, e converter o instante de volta aqui
+      // refaria uma conta de fuso que o agendamento já fez.
+      scheduledLocalDate: scheduledDosesTable.scheduledLocalDate,
       scheduledLocalTime: scheduledDosesTable.scheduledLocalTime,
       status: scheduledDosesTable.status,
       takenAt: doseRecordsTable.takenAt,
@@ -160,6 +207,8 @@ export async function computeReportData(
      * PDF sai exatamente como sempre saiu.
      */
     doses: Set<string>;
+    /** dose → primeiro e último dia em que ela apareceu — Issue #172. */
+    periodoDaDose: Map<string, { de: string; ate: string }>;
     prescribedTimes: Set<string>;
     total: number; taken: number; skipped: number; partial: number; unregistered: number;
     actualByPrescribedTime: Map<string, string[]>; // prescribedTime -> lista de horários reais (HH:mm, tomadas)
@@ -169,13 +218,25 @@ export async function computeReportData(
     let entry = byMedication.get(row.medicationId);
     if (!entry) {
       entry = {
-        medicationName: row.medicationName, doses: new Set(),
+        medicationName: row.medicationName, doses: new Set(), periodoDaDose: new Map(),
         prescribedTimes: new Set(), total: 0, taken: 0, skipped: 0, partial: 0, unregistered: 0,
         actualByPrescribedTime: new Map(),
       };
       byMedication.set(row.medicationId, entry);
     }
-    if (row.dose) entry.doses.add(row.dose);
+    if (row.dose) {
+      entry.doses.add(row.dose);
+      // Comparação de string em "YYYY-MM-DD" é comparação de data: o
+      // formato é ordenável por natureza, e construir um Date aqui só
+      // para comparar abriria a porta do fuso sem necessidade.
+      const ja = entry.periodoDaDose.get(row.dose);
+      if (!ja) {
+        entry.periodoDaDose.set(row.dose, { de: row.scheduledLocalDate, ate: row.scheduledLocalDate });
+      } else {
+        if (row.scheduledLocalDate < ja.de) ja.de = row.scheduledLocalDate;
+        if (row.scheduledLocalDate > ja.ate) ja.ate = row.scheduledLocalDate;
+      }
+    }
     entry.prescribedTimes.add(row.scheduledLocalTime);
     entry.total += 1;
 
@@ -212,12 +273,32 @@ export async function computeReportData(
         sampleSize: actuals.length,
       });
     }
+    const periodos: DosePeriodRow[] = Array.from(e.periodoDaDose.entries())
+      .map(([dose, p]) => ({ dose, from: p.de, to: p.ate }))
+      .sort((a, b) => (a.from === b.from ? a.dose.localeCompare(b.dose) : a.from.localeCompare(b.from)));
+
     return {
       medicationId, medicationName: e.medicationName,
-      // Ordenadas para o PDF não mudar de ordem entre duas gerações do
-      // mesmo período — um documento clínico que muda sozinho perde a
-      // confiança de quem o compara com o anterior.
-      dose: e.doses.size > 0 ? Array.from(e.doses).sort().join(", ") : null,
+      /**
+       * Ordem CRONOLÓGICA — Issue #172, corrigindo a ordem alfabética que
+       * a #170 havia deixado.
+       *
+       * Alfabética, um desmame saía "10mg, 20mg, 40mg" — a ordem exata do
+       * contrário do que aconteceu, num documento que vai ao médico.
+       * Empate no primeiro dia (dose por horário) desempata pelo texto,
+       * para o PDF não mudar de ordem entre duas gerações do mesmo
+       * período: documento clínico que muda sozinho perde a confiança de
+       * quem o compara com o anterior.
+       */
+      dose: periodos.length > 0
+        ? periodos.length === 1
+          // Uma dose só: a frase sai exatamente como sempre saiu, sem
+          // data. "Dose prescrita: 1 comprimido (01/03 a 31/03)" seria
+          // ruído no caso que é a esmagadora maioria.
+          ? periodos[0].dose
+          : periodos.map((d) => `${d.dose} (${emPortugues(d.from)} a ${emPortugues(d.to)})`).join(", ")
+        : null,
+      dosePeriods: periodos,
       prescribedTimes,
       totalScheduled: e.total, taken: e.taken, skipped: e.skipped,
       partial: e.partial, unregistered: e.unregistered,
@@ -288,7 +369,21 @@ export function generateReportPdf(data: AdherenceReportData): Promise<Buffer> {
       if (doc.y > doc.page.height - 200) doc.addPage();
       doc.fontSize(14).font("Helvetica-Bold").text(med.medicationName);
       doc.fontSize(11).font("Helvetica");
-      if (med.dose) doc.text(`Dose prescrita: ${med.dose}`);
+      /**
+       * Um degrau por linha quando houve mais de uma dose — Issue #172.
+       *
+       * Tudo numa linha só cabe para duas; um desmame de corticoide tem
+       * quatro ou cinco, e a linha vira uma tira que o médico lê torto.
+       * Com uma dose só, a frase continua sendo a de sempre.
+       */
+      if (med.dosePeriods.length > 1) {
+        doc.text("Doses no período:");
+        for (const d of med.dosePeriods) {
+          doc.text(`  ${d.dose} — de ${emPortugues(d.from)} a ${emPortugues(d.to)}`);
+        }
+      } else if (med.dose) {
+        doc.text(`Dose prescrita: ${med.dose}`);
+      }
       if (med.prescribedTimes.length > 0) doc.text(`Horários prescritos: ${med.prescribedTimes.join(", ")}`);
       const pct = med.adherenceRate !== null ? `${Math.round(med.adherenceRate * 100)}%` : "—";
       doc.text(`Adesão no período: ${pct}`);

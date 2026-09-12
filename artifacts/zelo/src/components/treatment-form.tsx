@@ -217,6 +217,8 @@ export function TreatmentForm({ patientId, onCreated, onCancel, tratamento }: Tr
     offDays?: number;
     /** Issue #171: horário → dose. Ausente nos tratamentos anteriores a ela. */
     dosePorHorario?: Record<string, string>;
+    /** Issue #172: os degraus de um desmame, em ordem. */
+    degraus?: Array<{ dose: string; dias: number }>;
   };
   const [medicationName, setMedicationName] = useState(tratamento?.medicationName ?? "");
   const [dose, setDose] = useState(tratamento?.dose ?? "");
@@ -262,6 +264,18 @@ export function TreatmentForm({ patientId, onCreated, onCancel, tratamento }: Tr
   const [dosePorHorario, setDosePorHorario] = useState<Record<string, string>>(
     cfg.dosePorHorario ?? {},
   );
+  /**
+   * Os degraus do desmame — Issue #172.
+   *
+   * "40mg por 5 dias, 20mg por 5, 10mg por 5, depois para." Antes disto
+   * era preciso criar quatro tratamentos e encerrar cada um à mão, e
+   * cada transição era uma chance de esquecer.
+   *
+   * Vazio = tratamento de dose única, que é a esmagadora maioria.
+   */
+  const [degraus, setDegraus] = useState<Array<{ dose: string; dias: number }>>(
+    cfg.degraus ?? [],
+  );
   const [intervalHours, setIntervalHours] = useState(cfg.intervalHours ?? 8);
   const [everyNStartTime, setEveryNStartTime] = useState(cfg.startTime ?? "08:00");
   const [weekdays, setWeekdays] = useState<number[]>(cfg.weekdays ?? [1, 3, 5]);
@@ -301,17 +315,26 @@ export function TreatmentForm({ patientId, onCreated, onCancel, tratamento }: Tr
      * mapa lá seria um campo que nunca casa com nada.
      */
     const comDose = Object.keys(dosePorHorario).length > 0 ? { dosePorHorario } : {};
+    /**
+     * Um degrau só não é desmame — é um tratamento normal, e gravar isso
+     * criaria uma estrutura que não descreve nada. Degrau com dose vazia
+     * também fica de fora: dose em branco geraria dose em branco.
+     */
+    const comDegraus =
+      degraus.length > 1 && degraus.every((d) => d.dose.trim() && d.dias > 0)
+        ? { degraus: degraus.map((d) => ({ dose: d.dose.trim(), dias: d.dias })) }
+        : {};
     switch (scheduleType) {
       case "times_per_day":
-        return { scheduleType, times, ...comDose };
+        return { scheduleType, times, ...comDose, ...comDegraus };
       case "every_n_hours":
         return { scheduleType, intervalHours, startTime: everyNStartTime };
       case "specific_weekdays":
-        return { scheduleType, weekdays, times, ...comDose };
+        return { scheduleType, weekdays, times, ...comDose, ...comDegraus };
       case "alternate_days":
-        return { scheduleType, times, startDate, ...comDose };
+        return { scheduleType, times, startDate, ...comDose, ...comDegraus };
       case "cycle_with_pause":
-        return { scheduleType, onDays, offDays, times, ...comDose };
+        return { scheduleType, onDays, offDays, times, ...comDose, ...comDegraus };
     }
   }
 
@@ -473,6 +496,27 @@ export function TreatmentForm({ patientId, onCreated, onCancel, tratamento }: Tr
    * instruções, dose ou perfil de escalonamento não mexe em dose nenhuma —
    * e avisar ali seria assustar à toa.
    */
+  /**
+   * Quantos dias o desmame dura, e em que dia ele termina — Issue #172.
+   *
+   * Soma o que a pessoa digitou, e nada além disso. O app NÃO sugere o
+   * desenho do desmame nem opina sobre ele: quem decide os degraus é o
+   * médico, e aqui se transcreve (invariante 4). Somar dias é aritmética
+   * do que já está na tela, não interpretação de receita.
+   */
+  const diasDoDesmame = degraus.reduce((total, d) => total + (d.dias || 0), 0);
+  const fimDoDesmame = (): string => {
+    // Data civil em UTC de propósito: `startDate` é "YYYY-MM-DD" sem hora,
+    // e interpretá-la no fuso do navegador faria a conta pular um dia.
+    const inicio = Date.parse(`${startDate}T00:00:00Z`);
+    if (Number.isNaN(inicio) || diasDoDesmame < 1) return "";
+    return new Date(inicio + (diasDoDesmame - 1) * 86_400_000).toISOString().slice(0, 10);
+  };
+  // "2026-09-30" → "30/09/2026". Troca de posição de texto, sem passar
+  // por Date: construir uma data aqui só para formatá-la é o caminho
+  // clássico de perder um dia na virada de fuso.
+  const emPortugues = (iso: string) => iso.split("-").reverse().join("/");
+
   const mexeuNaAgenda = (): boolean => {
     if (!editando) return false;
     const antes = JSON.stringify(tratamento.scheduleConfig ?? {});
@@ -857,6 +901,110 @@ export function TreatmentForm({ patientId, onCreated, onCancel, tratamento }: Tr
           )}
         </div>
       )}
+
+      {/* ── Issue #172: o desmame ─────────────────────────────────────
+
+          "40mg por 5 dias, 20mg por 5, 10mg por 5, depois para." Receita
+          comum de corticoide, e também de ansiolítico sendo retirado.
+
+          Fechado por padrão, pelo mesmo motivo do bloco de quantidade: a
+          maioria dos tratamentos tem dose única, e o formulário de
+          tratamento já é a tela de maior atrito do app.
+
+          Só aparece nos tipos que têm lista de horários. Em
+          `every_n_hours` o `buildScheduleConfig` não manda os degraus — e
+          um campo que a gente não salva é pior que campo nenhum. */}
+      {scheduleType !== "every_n_hours" && (degraus.length === 0 ? (
+        <button
+          type="button"
+          className="text-sm text-muted-foreground underline text-left"
+          onClick={() => setDegraus([{ dose, dias: 5 }, { dose: "", dias: 5 }])}
+        >
+          A dose vai diminuindo (desmame)
+        </button>
+      ) : (
+        <div className="rounded-lg border bg-muted/40 p-3 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <Label>Como a dose vai diminuindo</Label>
+            <Button type="button" size="sm" variant="ghost" onClick={() => setDegraus([])}>
+              Fechar
+            </Button>
+          </div>
+          {degraus.map((degrau, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <Input
+                aria-label={`Dose do ${i + 1}º degrau`}
+                placeholder="40mg"
+                value={degrau.dose}
+                maxLength={120}
+                className="flex-1 min-w-0"
+                onChange={(e) => {
+                  const texto = e.target.value;
+                  setDegraus(degraus.map((d, j) => (j === i ? { ...d, dose: texto } : d)));
+                  setPreview(null);
+                }}
+              />
+              <CampoNumero
+                aria-label={`Dias do ${i + 1}º degrau`}
+                value={String(degrau.dias)}
+                onChange={(v) => {
+                  setDegraus(degraus.map((d, j) => (j === i ? { ...d, dias: v === "" ? 1 : Number(v) } : d)));
+                  setPreview(null);
+                }}
+                min={1}
+                max={365}
+                sufixo="dias"
+                className="w-40 shrink-0"
+              />
+              {/* Abaixo de dois degraus não é desmame, e o botão some para
+                  não deixar a pessoa desmontar o que ela acabou de montar. */}
+              {degraus.length > 2 && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`Remover o ${i + 1}º degrau`}
+                  onClick={() => { setDegraus(degraus.filter((_, j) => j !== i)); setPreview(null); }}
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              )}
+            </div>
+          ))}
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            className="gap-1"
+            onClick={() => { setDegraus([...degraus, { dose: "", dias: 5 }]); setPreview(null); }}
+          >
+            <Plus className="w-3.5 h-3.5" /> Mais um degrau
+          </Button>
+          {/* A conta fica À VISTA, como no bloco de quantidade: o desmame
+              define quando o tratamento acaba, e a pessoa precisa conferir
+              esse número contra a receita antes de salvar. */}
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <p className="text-xs text-muted-foreground">
+              {diasDoDesmame} dias ao todo
+              {fimDoDesmame() ? `, terminando em ${emPortugues(fimDoDesmame())}` : ""}.
+            </p>
+            {fimDoDesmame() && fimDoDesmame() !== endDate && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => { setEndDate(fimDoDesmame()); setPreview(null); }}
+              >
+                Usar como data de fim
+              </Button>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            O ZELO avisa na véspera de cada troca. Ele não sugere o desenho do
+            desmame — quem decide isso é o médico.
+          </p>
+        </div>
+      ))}
 
       <div className="space-y-2">
         <Label htmlFor="tf-instructions">Instruções (opcional)</Label>

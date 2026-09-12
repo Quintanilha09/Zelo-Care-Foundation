@@ -469,3 +469,187 @@ describe("A dose de cada horario", () => {
     await db.delete(treatmentsTable).where(eq(treatmentsTable.id, id));
   });
 });
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * O DESMAME — Issue #172.
+ *
+ * "40mg por 5 dias, 20mg por 5, 10mg por 5, depois para." Receita comum de
+ * corticoide, e também de ansiolítico e antidepressivo sendo retirados. Antes
+ * disto era preciso criar quatro tratamentos e encerrar cada um à mão — e
+ * cada transição era uma chance de esquecer.
+ *
+ * Os degraus vivem no `scheduleConfig` pelo mesmo motivo do mapa da #171: a
+ * dose que vale em cada fase É parte da posologia.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+describe("O desmame", () => {
+  it("cada dose agendada nasce com a dose do degrau do dia dela", async () => {
+    const hoje = Clock.todayInTimezone("America/Sao_Paulo");
+    const criado = await api("POST", `/patients/${patientId}/treatments`, {
+      medicationId,
+      // Dose do tratamento diferente de todo degrau, de propósito: é o que
+      // permite distinguir "caiu no degrau certo" de "caiu no fallback".
+      dose: "dose de sempre",
+      scheduleConfig: {
+        scheduleType: "times_per_day",
+        times: ["08:00"],
+        degraus: [
+          { dose: "40mg", dias: 2 },
+          { dose: "20mg", dias: 2 },
+          { dose: "10mg", dias: 2 },
+        ],
+      },
+      startDate: hoje,
+    });
+    assert.equal(criado.status, 201, JSON.stringify(criado.body));
+    const { id } = criado.body as { id: number };
+
+    const geradas = await db
+      .select({ dia: scheduledDosesTable.scheduledLocalDate, dose: scheduledDosesTable.dose })
+      .from(scheduledDosesTable)
+      .where(eq(scheduledDosesTable.treatmentId, id));
+
+    /**
+     * A asserção é sobre TODA dose gerada, e não sobre dias escolhidos a
+     * dedo. Se o horário de hoje já passou quando a suíte roda, o dia de
+     * hoje simplesmente não tem dose — e um teste que espera a dose de hoje
+     * passa de manhã e falha à tarde. Já aconteceu aqui.
+     */
+    const desdeOInicio = (dia: string) =>
+      Math.floor((Date.parse(`${dia}T00:00:00Z`) - Date.parse(`${hoje}T00:00:00Z`)) / 86_400_000);
+    const esperada = (n: number) =>
+      n < 2 ? "40mg" : n < 4 ? "20mg" : n < 6 ? "10mg" : "dose de sempre";
+
+    assert.ok(geradas.length > 0, "a criação precisa ter gerado doses");
+    const vistos = new Set<number>();
+    for (const d of geradas) {
+      const n = desdeOInicio(d.dia);
+      vistos.add(n);
+      assert.equal(d.dose, esperada(n), `dia ${n} do tratamento (${d.dia})`);
+    }
+    // As duas viradas precisam estar dentro da janela gerada, senão o teste
+    // acima teria passado sem nunca ter olhado um degrau que não o primeiro.
+    assert.ok(vistos.has(2), "a janela precisa alcançar a primeira virada");
+    assert.ok(vistos.has(4), "a janela precisa alcançar a segunda virada");
+
+    await db.delete(treatmentsTable).where(eq(treatmentsTable.id, id));
+  });
+
+  it("passado o ultimo degrau, volta para a dose do tratamento", async () => {
+    // Degraus que somam menos que o tratamento não podem gerar dose vazia.
+    // Um desmame bem cadastrado termina junto com a data de fim — mas quem
+    // errou a conta não pode ficar com um card sem posologia na tela.
+    const hoje = Clock.todayInTimezone("America/Sao_Paulo");
+    const criado = await api("POST", `/patients/${patientId}/treatments`, {
+      medicationId,
+      dose: "dose de sempre",
+      scheduleConfig: {
+        scheduleType: "times_per_day",
+        times: ["08:00"],
+        degraus: [
+          { dose: "40mg", dias: 1 },
+          { dose: "20mg", dias: 1 },
+        ],
+      },
+      startDate: hoje,
+    });
+    const { id } = criado.body as { id: number };
+
+    const geradas = await db
+      .select({ dia: scheduledDosesTable.scheduledLocalDate, dose: scheduledDosesTable.dose })
+      .from(scheduledDosesTable)
+      .where(eq(scheduledDosesTable.treatmentId, id));
+
+    const depoisDoFim = geradas.filter(
+      (d) => Date.parse(`${d.dia}T00:00:00Z`) >= Date.parse(`${hoje}T00:00:00Z`) + 2 * 86_400_000,
+    );
+    assert.ok(depoisDoFim.length > 0, "a janela de geração precisa passar dos dois degraus");
+    for (const d of depoisDoFim) assert.equal(d.dose, "dose de sempre");
+
+    await db.delete(treatmentsTable).where(eq(treatmentsTable.id, id));
+  });
+
+  it("o horario ganha do degrau quando os dois falam do mesmo dia", async () => {
+    // Precedência declarada: horário (#171) > degrau (#172) > tratamento.
+    // Quem diz "meio comprimido às 22:00" está falando daquele horário, e não
+    // da fase do desmame.
+    const hoje = Clock.todayInTimezone("America/Sao_Paulo");
+    const criado = await api("POST", `/patients/${patientId}/treatments`, {
+      medicationId,
+      dose: "dose de sempre",
+      scheduleConfig: {
+        scheduleType: "times_per_day",
+        times: ["08:00", "22:00"],
+        dosePorHorario: { "22:00": "meio comprimido" },
+        degraus: [
+          { dose: "40mg", dias: 3 },
+          { dose: "20mg", dias: 3 },
+        ],
+      },
+      startDate: hoje,
+    });
+    const { id } = criado.body as { id: number };
+
+    const geradas = await db
+      .select({
+        dia: scheduledDosesTable.scheduledLocalDate,
+        hora: scheduledDosesTable.scheduledLocalTime,
+        dose: scheduledDosesTable.dose,
+      })
+      .from(scheduledDosesTable)
+      .where(eq(scheduledDosesTable.treatmentId, id));
+
+    const dentroDoPrimeiroDegrau = (dia: string) =>
+      Date.parse(`${dia}T00:00:00Z`) < Date.parse(`${hoje}T00:00:00Z`) + 3 * 86_400_000;
+
+    const das22 = geradas.filter((d) => d.hora === "22:00");
+    const das08 = geradas.filter((d) => d.hora === "08:00" && dentroDoPrimeiroDegrau(d.dia));
+    assert.ok(das22.length > 0 && das08.length > 0, "a janela precisa ter gerado os dois horários");
+
+    // O horário vence em TODO dia do desmame, inclusive nos degraus de
+    // baixo — é isso que faz dele exceção declarada, e não um valor inicial.
+    for (const d of das22) assert.equal(d.dose, "meio comprimido");
+    for (const d of das08) assert.equal(d.dose, "40mg");
+
+    await db.delete(treatmentsTable).where(eq(treatmentsTable.id, id));
+  });
+
+  it("um degrau so e recusado: isso nao e desmame", async () => {
+    const hoje = Clock.todayInTimezone("America/Sao_Paulo");
+    const res = await api("POST", `/patients/${patientId}/treatments`, {
+      medicationId,
+      dose: "40mg",
+      scheduleConfig: {
+        scheduleType: "times_per_day",
+        times: ["08:00"],
+        degraus: [{ dose: "40mg", dias: 5 }],
+      },
+      startDate: hoje,
+    });
+    assert.equal(res.status, 400);
+  });
+
+  it("sem degraus, tudo continua exatamente como era", async () => {
+    const hoje = Clock.todayInTimezone("America/Sao_Paulo");
+    const criado = await api("POST", `/patients/${patientId}/treatments`, {
+      medicationId,
+      dose: "1 comprimido",
+      scheduleConfig: { scheduleType: "times_per_day", times: ["08:00"] },
+      startDate: hoje,
+    });
+    const { id } = criado.body as { id: number };
+
+    const geradas = await db
+      .select({ dose: scheduledDosesTable.dose })
+      .from(scheduledDosesTable)
+      .where(eq(scheduledDosesTable.treatmentId, id));
+
+    assert.ok(geradas.length > 0);
+    // Este é o caso que prova que a mudança é aditiva: todo tratamento que já
+    // existe no banco não tem degraus, e não pode mudar de comportamento.
+    for (const d of geradas) assert.equal(d.dose, "1 comprimido");
+
+    await db.delete(treatmentsTable).where(eq(treatmentsTable.id, id));
+  });
+});
