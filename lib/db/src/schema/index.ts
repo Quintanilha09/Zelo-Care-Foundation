@@ -8,6 +8,8 @@ export * from "./photo-extractions";
 export * from "./scheduled-doses";
 export * from "./dose-records";
 export * from "./stock";
+// Issue #177: a escala de plantao — responde "de quem e a vez?", nunca "quem pode?".
+export * from "./shifts";
 export * from "./appointments";
 export * from "./health-measurements";
 export * from "./notifications";

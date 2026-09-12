@@ -16,6 +16,7 @@ import { localDayBoundsUtc, toLocalDateTime } from "@workspace/scheduling";
 import { computeDaysRemaining, loadActiveTreatmentSchedule } from "../lib/stock.ts";
 import { getPlanLimits } from "../lib/plan-limits.ts";
 import { dosesDoDia, seNecessarioDoDia, janelaDoDia } from "../lib/doses-do-dia.ts";
+import { quemEstaDePlantao } from "../lib/plantao.ts";
 
 const router = Router();
 
@@ -264,6 +265,43 @@ router.get("/dashboard/today-summary", requireAuth, async (req, res): Promise<vo
   );
   const sePrecisar = await seNecessarioDoDia(patients, janelasPorPaciente);
 
+  /**
+   * ── De quem é a vez hoje — Issue #177 ─────────────────────────────────
+   *
+   * Uma linha, e só. Numa família que reveza, *"você vai dar o da noite ou
+   * eu vou?"* continua acontecendo no WhatsApp — e é nessa pergunta não
+   * respondida que a dose se perde: os dois acham que o outro deu.
+   *
+   * `null` para quem não tem escala, que é a esmagadora maioria. A tela
+   * não desenha nada nesse caso: família que não reveza não pode nem ver
+   * o assunto.
+   *
+   * E isto NÃO filtra nada. O cuidador continua vendo todos os pacientes,
+   * todas as doses e todos os botões, esteja de plantão ou não.
+   */
+  const plantoes = await Promise.all(
+    patients.map(async (p) => ({
+      patientId: p.id,
+      patientName: p.name,
+      dePlantao: await quemEstaDePlantao(p.id, p.timezone, agora),
+    })),
+  );
+  const plantaoDeHoje = plantoes
+    .filter((p) => p.dePlantao !== null)
+    .map((p) => ({
+      patientId: p.patientId,
+      patientName: p.patientName,
+      caregiverId: p.dePlantao!.caregiverId,
+      caregiverName: p.dePlantao!.caregiverName,
+      startTime: p.dePlantao!.startTime,
+      endTime: p.dePlantao!.endTime,
+      troca: p.dePlantao!.troca,
+      // Quem está lendo é quem está de plantão? A conta é do servidor,
+      // porque é ele que sabe qual `caregiverId` é o do JWT — e "é a sua
+      // vez" é a frase que a tela precisa acertar.
+      souEu: p.dePlantao!.caregiverId === getAuth(req).caregiverId,
+    }));
+
   const planLimits = await getPlanLimits(familyId);
   const nomePorPaciente = new Map(patients.map((p) => [p.id, p.name]));
   const fusoPorPaciente = new Map(patients.map((p) => [p.id, p.timezone]));
@@ -328,6 +366,7 @@ router.get("/dashboard/today-summary", requireAuth, async (req, res): Promise<vo
     patients: summaries,
     doses: doDia,
     madrugada: daMadrugada,
+    plantaoDeHoje,
     sePrecisar,
     lowStockItems,
     nextAppointment: nextAppointment

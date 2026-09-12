@@ -47,6 +47,7 @@ import {
 } from "@/hooks/use-pode-desfazer";
 import { DoseCard } from "@/components/dose-card";
 import { AcoesDaDose, DialogosDaDose } from "@/components/acoes-da-dose";
+import { LinhaDoPlantao, type PlantaoDeHoje } from "@/components/plantao";
 import { SePrecisar, type SeNecessario } from "@/components/se-precisar";
 import { useRegistrarDose } from "@/hooks/use-registrar-dose";
 import { Button } from "@/components/ui/button";
@@ -89,6 +90,14 @@ interface ODia {
   doses: DoseDoDia[];
   /** Issue #154: as doses de amanhã até as 06:00, quando já é noite no fuso de cada paciente. */
   madrugada: DoseDoDia[];
+  /**
+   * Issue #177: de quem é a vez hoje, por paciente.
+   *
+   * Lista vazia para quem não tem escala, que é a esmagadora maioria — e
+   * aí a tela não desenha linha nenhuma. Isto NÃO filtra nada: quem não
+   * está de plantão continua vendo o dia inteiro e todos os botões.
+   */
+  plantaoDeHoje: PlantaoDeHoje[];
   /**
    * Issue #169: os remédios "se precisar", de todos os pacientes.
    *
@@ -335,6 +344,20 @@ export default function HomePage() {
                 </>
               )}
             </div>
+
+            {/* ── Issue #177: de quem é a vez hoje ─────────────────────────
+
+                Logo abaixo da faixa do dia, e antes das doses: numa família
+                que reveza, saber se a vez é sua muda o que você vai fazer
+                nos próximos minutos.
+
+                Uma linha, sem cartão e sem cor de estado — não é alerta, é
+                combinação. E some inteira para quem não tem escala, que é a
+                esmagadora maioria.
+
+                NÃO filtra nada: quem não está de plantão continua vendo o
+                dia inteiro, todos os pacientes e todos os botões. */}
+            <LinhaDoPlantao plantoes={dia.plantaoDeHoje ?? []} varios={varios} />
 
             {/* Issue #154: a tela vazia também olha a madrugada. Numa noite
                 em que a única dose é às 03:00, `doses` chega vazio — é dia

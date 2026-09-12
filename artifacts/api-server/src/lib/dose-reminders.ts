@@ -50,6 +50,7 @@ import { sendPushToUser, type PushPayload } from "./push.ts";
 import { boss, QUEUE_DELIVERY_CHECK } from "./queue.ts";
 import { hasCapability, type CaregiverRole } from "./capabilities.ts";
 import { publishPatientEvent } from "./realtime.ts";
+import { quemEstaDePlantao } from "./plantao.ts";
 import { logger } from "./logger.ts";
 
 export const ESCALATION_LEVEL_FIRST = 0; // T+0
@@ -238,7 +239,15 @@ async function loadContext(scheduledDoseId: number): Promise<LoadedContext | nul
 async function resolveRecipients(
   familyId: number,
   patientId: number,
-  scope: "on_duty" | "capable"
+  scope: "on_duty" | "capable",
+  /**
+   * O fuso do paciente, para a pergunta do plantão — Issue #177.
+   *
+   * "Quem está de plantão agora" é 22:00 no relógio DE QUEM É CUIDADO,
+   * não no do servidor. Um filho em Portugal marcando o turno da noite da
+   * mãe em São Paulo tem oito horas de diferença.
+   */
+  timezone?: string,
 ): Promise<Array<{ caregiverId: number; userId: number | null; role: CaregiverRole }>> {
   const rows = await db
     .select({ caregiverId: caregiversTable.id, userId: caregiversTable.userId, role: caregiversTable.role })
@@ -259,8 +268,39 @@ async function resolveRecipients(
     );
 
   const typed = rows.map((r) => ({ ...r, role: r.role as CaregiverRole }));
-  if (scope === "on_duty") return typed.filter((r) => r.role === "primary_caregiver");
-  return typed.filter((r) => hasCapability(r.role, "register_dose"));
+  if (scope !== "on_duty") return typed.filter((r) => hasCapability(r.role, "register_dose"));
+
+  /**
+   * ── O primeiro lembrete vai para quem está de plantão — Issue #177 ──
+   *
+   * Numa família que reveza, *"você vai dar o da noite ou eu vou?"*
+   * continua acontecendo no WhatsApp — e é nessa pergunta não respondida
+   * que a dose se perde: os dois acham que o outro deu.
+   *
+   * ── Três razões para cair de volta no cuidador principal ───────────
+   *
+   *   1. não há escala — a esmagadora maioria das famílias
+   *   2. há escala, mas ninguém marcou este horário
+   *   3. quem está de plantão desligou o aviso de dose deste paciente
+   *
+   * Nos três, o lembrete sai como sempre saiu. Um aviso de remédio que
+   * não sai porque a escala tinha um buraco é exatamente o defeito que
+   * este produto existe para não ter.
+   *
+   * ── E isto NÃO é filtro de acesso ──────────────────────────────────
+   *
+   * Ninguém perde paciente, dose, tela ou capacidade por não estar de
+   * plantão. O que muda é só para quem vai o PRIMEIRO aviso; o
+   * escalonamento do T+30 usa "capable" e não passa por aqui.
+   */
+  if (timezone) {
+    const deVez = await quemEstaDePlantao(patientId, timezone, Clock.now());
+    if (deVez) {
+      const ele = typed.find((r) => r.caregiverId === deVez.caregiverId);
+      if (ele) return [ele];
+    }
+  }
+  return typed.filter((r) => r.role === "primary_caregiver");
 }
 
 /**
@@ -276,7 +316,7 @@ export async function sendDoseReminder(scheduledDoseId: number, level: number = 
   const { dose, patient, medicationName, family, escalationProfile } = context;
 
   if (level === ESCALATION_LEVEL_FIRST || level === ESCALATION_LEVEL_SNOOZE) {
-    const recipients = await resolveRecipients(patient.familyId, patient.id, "on_duty");
+    const recipients = await resolveRecipients(patient.familyId, patient.id, "on_duty", patient.timezone);
     for (const r of recipients) await claimAndSendReminder(level, dose, patient, medicationName, r);
     return;
   }
@@ -304,7 +344,7 @@ export async function sendDoseReminder(scheduledDoseId: number, level: number = 
       .set({ status: "late", updatedAt: Clock.now() })
       .where(and(eq(scheduledDosesTable.id, dose.id), eq(scheduledDosesTable.status, "pending")));
 
-    const recipients = await resolveRecipients(patient.familyId, patient.id, "on_duty");
+    const recipients = await resolveRecipients(patient.familyId, patient.id, "on_duty", patient.timezone);
     for (const r of recipients) await claimAndSendReminder(level, dose, patient, medicationName, r);
     publishPatientEvent(patient.id, { type: "dose_missed", scheduledDoseId: dose.id });
     return;

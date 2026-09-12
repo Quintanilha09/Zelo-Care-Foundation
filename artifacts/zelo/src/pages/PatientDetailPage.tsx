@@ -10,6 +10,7 @@ import { Pencil } from "lucide-react";
 import { CampoNumero } from "@/components/campo-numero";
 import { DoseCard } from "@/components/dose-card";
 import { SePrecisar, type SeNecessario } from "@/components/se-precisar";
+import { EscalaDePlantao } from "@/components/plantao";
 import { PushPermissionPrompt } from "@/components/push-permission-prompt";
 import { NotificationPreferencesCard } from "@/components/notification-preferences-card";
 import { PatientAccessCard } from "@/components/patient-access-card";
@@ -717,6 +718,18 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
             )}
           </div>
         )}
+
+        {/* ── Issue #177: de quem é a vez ─────────────────────────────
+
+            Perto do topo da ficha, junto do dia: a pergunta "quem dá o da
+            noite?" é respondida antes de olhar remédio por remédio.
+
+            Fechada atrás de um link quando não há escala — família que não
+            reveza não pode nem ver o assunto. */}
+        <EscalaDePlantao
+          patientId={Number(params.id)}
+          somenteLeitura={user?.caregiver?.role === "observer"}
+        />
 
         {/* ── Issue #169: o que já precisou ────────────────────────────
 

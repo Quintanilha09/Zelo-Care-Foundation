@@ -18,6 +18,7 @@ import medicationsRouter from "./medications";
 import medicationPhotosRouter from "./medication-photos";
 import treatmentsRouter from "./treatments";
 import doseRecordsRouter from "./dose-records";
+import plantaoRouter from "./plantao";
 import seNecessarioRouter from "./se-necessario";
 import notificationsRouter from "./notifications";
 import auditRouter from "./audit";
@@ -65,6 +66,9 @@ router.use(medicationsRouter);
 router.use(medicationPhotosRouter);
 router.use(treatmentsRouter);
 router.use(doseRecordsRouter);
+// Issue #177: a escala de plantao. Nao filtra nada — so guarda e devolve o
+// combinado da familia.
+router.use(plantaoRouter);
 // Issue #169: o remedio sem hora marcada. Depois de treatments e de
 // doseRecords porque compartilha o prefixo /patients/:patientId/treatments e
 // so acrescenta /uso e /usos — rota sem parametro nunca fica atras de rota
