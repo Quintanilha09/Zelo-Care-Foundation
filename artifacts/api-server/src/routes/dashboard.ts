@@ -15,7 +15,7 @@ import { Clock } from "../lib/clock";
 import { localDayBoundsUtc, toLocalDateTime } from "@workspace/scheduling";
 import { computeDaysRemaining, loadActiveTreatmentSchedule } from "../lib/stock.ts";
 import { getPlanLimits } from "../lib/plan-limits.ts";
-import { dosesDoDia, janelaDoDia } from "../lib/doses-do-dia.ts";
+import { dosesDoDia, seNecessarioDoDia, janelaDoDia } from "../lib/doses-do-dia.ts";
 
 const router = Router();
 
@@ -247,6 +247,23 @@ router.get("/dashboard/today-summary", requireAuth, async (req, res): Promise<vo
    * O nome do paciente vai junto, pelo mesmo motivo das doses: numa lista de
    * várias pessoas, "Losartana — 3 dias" sem dizer de quem não serve.
    */
+  /**
+   * ── "Se precisar", de todos — Issue #169 ───────────────────────────────
+   *
+   * Seção própria, e nunca misturada nas doses do dia. O dia responde *o
+   * que falta fazer*; esta lista responde *o que já precisou* — e são
+   * perguntas diferentes o bastante para o cuidador ler cada uma sem
+   * atrapalhar a outra.
+   *
+   * Vem sempre, mesmo sem uso nenhum hoje: o botão é o caminho de
+   * registrar, e escondê-lo "até precisar" esconderia justamente o
+   * momento em que se precisa.
+   */
+  const janelasPorPaciente = new Map(
+    patients.map((p, i) => [p.id, { inicioDoDia: janelas[i].inicioDoDia, fimDoDia: janelas[i].fimDoDia }]),
+  );
+  const sePrecisar = await seNecessarioDoDia(patients, janelasPorPaciente);
+
   const planLimits = await getPlanLimits(familyId);
   const nomePorPaciente = new Map(patients.map((p) => [p.id, p.name]));
   const fusoPorPaciente = new Map(patients.map((p) => [p.id, p.timezone]));
@@ -311,6 +328,7 @@ router.get("/dashboard/today-summary", requireAuth, async (req, res): Promise<vo
     patients: summaries,
     doses: doDia,
     madrugada: daMadrugada,
+    sePrecisar,
     lowStockItems,
     nextAppointment: nextAppointment
       ? {
@@ -396,6 +414,14 @@ router.get("/patients/:patientId/today-doses", requireAuth, async (req, res): Pr
   const doDia = dosesWithDisplayName.filter((d) => d.scheduledAt <= todayEnd);
   const daMadrugada = dosesWithDisplayName.filter((d) => d.scheduledAt > todayEnd);
 
+  // Issue #169: o "se precisar" deste paciente, com o retrato de hoje. A
+  // mesma função que a tela inicial usa — o dia tem um dono só (#178), e
+  // esta seção segue a mesma regra.
+  const sePrecisar = await seNecessarioDoDia(
+    [{ id: patient.id, name: patient.name }],
+    new Map([[patient.id, { inicioDoDia: todayStart, fimDoDia: todayEnd }]]),
+  );
+
   // ZELO-34: "baixo" é dias restantes (a partir da posologia prescrita),
   // não uma quantidade absoluta — a mesma definição usada em GET /stock e
   // no worker de decremento (lib/stock.ts), nunca reimplementada aqui.
@@ -449,6 +475,15 @@ router.get("/patients/:patientId/today-doses", requireAuth, async (req, res): Pr
     pendingDoses: doDia.filter((d) => d.status === "pending").length,
     lateDoses: doDia.filter((d) => d.status === "late").length,
     doses: doDia,
+    /**
+     * "Se precisar" — Issue #169.
+     *
+     * Fora de `doses` e fora das contagens acima, de propósito: ele não
+     * está pendente (não há hora marcada), não pode atrasar (não há hora a
+     * perder) e não entra na adesão (adesão é sobre o que estava marcado).
+     * Somá-lo em `totalDoses` faria a faixa "tudo em dia" mentir.
+     */
+    sePrecisar,
     /**
      * As doses da madrugada seguinte — Issue #154.
      *

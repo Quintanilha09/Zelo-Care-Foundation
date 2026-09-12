@@ -47,6 +47,7 @@ import {
 } from "@/hooks/use-pode-desfazer";
 import { DoseCard } from "@/components/dose-card";
 import { AcoesDaDose, DialogosDaDose } from "@/components/acoes-da-dose";
+import { SePrecisar, type SeNecessario } from "@/components/se-precisar";
 import { useRegistrarDose } from "@/hooks/use-registrar-dose";
 import { Button } from "@/components/ui/button";
 import {
@@ -88,6 +89,13 @@ interface ODia {
   doses: DoseDoDia[];
   /** Issue #154: as doses de amanhã até as 06:00, quando já é noite no fuso de cada paciente. */
   madrugada: DoseDoDia[];
+  /**
+   * Issue #169: os remédios "se precisar", de todos os pacientes.
+   *
+   * Fora de `doses` de propósito — eles não estão pendentes, não atrasam e
+   * não entram em contagem nenhuma desta tela.
+   */
+  sePrecisar: SeNecessario[];
   lowStockItems: {
     patientId: number; patientName: string; medicationId: number; medicationName: string;
     quantityRemaining: number; unit: string; effectiveDaysRemaining: number | null;
@@ -494,6 +502,18 @@ export default function HomePage() {
                 </AnimatePresence>
               </div>
             )}
+
+            {/* ── Issue #169: o que já precisou ────────────────────────────
+
+                Depois do dia inteiro, e antes do mapa de quem se cuida. É a
+                resposta a "o que já precisou", que só faz sentido depois de
+                "o que falta fazer" — e nunca no meio dele. */}
+            <SePrecisar
+              itens={dia.sePrecisar ?? []}
+              mostrarPaciente={varios}
+              somenteLeitura={isObserver}
+              aoRegistrar={() => void queryClient.invalidateQueries({ queryKey: ["o-dia"] })}
+            />
 
             {/* ── Issue #178: quem você cuida, no RODAPÉ ───────────────────
 

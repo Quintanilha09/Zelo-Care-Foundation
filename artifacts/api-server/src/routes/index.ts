@@ -18,6 +18,7 @@ import medicationsRouter from "./medications";
 import medicationPhotosRouter from "./medication-photos";
 import treatmentsRouter from "./treatments";
 import doseRecordsRouter from "./dose-records";
+import seNecessarioRouter from "./se-necessario";
 import notificationsRouter from "./notifications";
 import auditRouter from "./audit";
 import dashboardRouter from "./dashboard";
@@ -64,6 +65,11 @@ router.use(medicationsRouter);
 router.use(medicationPhotosRouter);
 router.use(treatmentsRouter);
 router.use(doseRecordsRouter);
+// Issue #169: o remedio sem hora marcada. Depois de treatments e de
+// doseRecords porque compartilha o prefixo /patients/:patientId/treatments e
+// so acrescenta /uso e /usos — rota sem parametro nunca fica atras de rota
+// com parametro.
+router.use(seNecessarioRouter);
 router.use(notificationsRouter);
 router.use(auditRouter);
 router.use(dashboardRouter);
