@@ -21,6 +21,7 @@ import { hashPassword } from "../lib/password.ts";
 import {
   generateDosesForTreatment, extendActiveTreatmentWindows, reconcileDoseQueue,
   markOverdueDosesAsLate, LATE_GRACE_MINUTES,
+  doseDoDegrau, diasDeViradaDeDegrau,
 } from "../lib/dose-generation.ts";
 import { boss, QUEUE_DOSE_SCHEDULED } from "../lib/queue.ts";
 import { Clock } from "../lib/clock.ts";
@@ -383,5 +384,69 @@ describe("markOverdueDosesAsLate — rede de segurança global (achado ao invest
     assert.equal(after.status, "taken", "dose já registrada não pode regredir para late");
 
     await db.delete(treatmentsTable).where(eq(treatmentsTable.id, treatmentId));
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * O DEGRAU DO DESMAME — Issue #172.
+ *
+ * `doseDoDegrau` é a conta que decide com que dose cada dose agendada nasce
+ * num desmame. Ela é pura e sem banco de propósito: é a peça que a geração e
+ * o aviso de véspera COMPARTILHAM, e duas contas separadas um dia
+ * discordariam — com o app avisando uma coisa e gerando outra.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+describe("O degrau do desmame", () => {
+  const degraus = [
+    { dose: "40mg", dias: 5 },
+    { dose: "20mg", dias: 5 },
+    { dose: "10mg", dias: 3 },
+  ];
+  const inicio = "2026-03-01";
+
+  it("cada faixa de dias devolve a dose do degrau dela", () => {
+    // Primeiro degrau: [dia 0, dia 5)
+    assert.equal(doseDoDegrau(degraus, inicio, "2026-03-01"), "40mg");
+    assert.equal(doseDoDegrau(degraus, inicio, "2026-03-05"), "40mg");
+    // Segundo: [dia 5, dia 10). O dia 6 do calendário é o dia 5 da conta —
+    // esta é exatamente a borda onde um off-by-one passaria despercebido.
+    assert.equal(doseDoDegrau(degraus, inicio, "2026-03-06"), "20mg");
+    assert.equal(doseDoDegrau(degraus, inicio, "2026-03-10"), "20mg");
+    // Terceiro: [dia 10, dia 13)
+    assert.equal(doseDoDegrau(degraus, inicio, "2026-03-11"), "10mg");
+    assert.equal(doseDoDegrau(degraus, inicio, "2026-03-13"), "10mg");
+  });
+
+  it("depois do ultimo degrau devolve null, e nao dose vazia", () => {
+    // null não é "sem dose": é "os degraus não falam deste dia", e quem
+    // chama cai na dose do tratamento. Dose vazia numa dose agendada seria
+    // um card sem posologia na tela de quem cuida.
+    assert.equal(doseDoDegrau(degraus, inicio, "2026-03-14"), null);
+    assert.equal(doseDoDegrau(degraus, inicio, "2026-04-01"), null);
+  });
+
+  it("antes do inicio devolve null", () => {
+    assert.equal(doseDoDegrau(degraus, inicio, "2026-02-28"), null);
+  });
+
+  it("sem degrau nenhum devolve null", () => {
+    assert.equal(doseDoDegrau([], inicio, "2026-03-01"), null);
+  });
+
+  it("atravessa a virada do mes e do ano sem perder um dia", () => {
+    // Datas civis são comparadas em UTC de propósito. Se a conta fosse feita
+    // no fuso do processo, uma máquina em São Paulo (UTC-3) empurraria a
+    // virada de degrau um dia para trás em toda troca de mês.
+    assert.equal(doseDoDegrau(degraus, "2026-12-29", "2027-01-02"), "40mg");
+    assert.equal(doseDoDegrau(degraus, "2026-12-29", "2027-01-03"), "20mg");
+  });
+
+  it("as viradas excluem o primeiro degrau", () => {
+    // O primeiro degrau começa junto com o tratamento. Avisar "amanhã a dose
+    // muda" na véspera dele seria avisar que o tratamento vai começar — que
+    // é outra coisa, e já tem aviso próprio.
+    assert.deepEqual(diasDeViradaDeDegrau(degraus), [5, 10]);
+    assert.deepEqual(diasDeViradaDeDegrau([{ dose: "x", dias: 3 }]), []);
   });
 });

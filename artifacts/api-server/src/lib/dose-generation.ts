@@ -81,9 +81,12 @@ export async function generateDosesForTreatment(treatmentId: number): Promise<nu
    * campo, e aí o mapa é vazio — todo horário cai na dose do tratamento,
    * exatamente como antes.
    */
-  const dosePorHorario =
-    (row.treatment.scheduleConfig as { dosePorHorario?: Record<string, string> })
-      .dosePorHorario ?? {};
+  const posologia = row.treatment.scheduleConfig as {
+    dosePorHorario?: Record<string, string>;
+    degraus?: DegrauDeDesmame[];
+  };
+  const dosePorHorario = posologia.dosePorHorario ?? {};
+  const degraus = posologia.degraus ?? [];
 
   await ensureQueueStarted();
 
@@ -110,7 +113,22 @@ export async function generateDosesForTreatment(treatmentId: number): Promise<nu
              * agendamento, ver #170): mudar a dose depois não reescreve o
              * que já foi agendado nem o que já foi tomado.
              */
-            dose: dosePorHorario[localTime] ?? row.treatment.dose,
+            /**
+             * A ordem de precedência da dose — cada nível responde a uma
+             * pergunta diferente:
+             *
+             *   1. o HORÁRIO (#171) — "2 comprimidos à noite"
+             *   2. o DEGRAU  (#172) — "20mg nesta semana do desmame"
+             *   3. o TRATAMENTO     — a dose de sempre
+             *
+             * O horário ganha do degrau porque é mais específico: quem diz
+             * "meio comprimido às 22:00" está falando daquele horário, e não
+             * da fase do desmame. Na prática os dois raramente convivem.
+             */
+            dose:
+              dosePorHorario[localTime] ??
+              doseDoDegrau(degraus, row.treatment.startDate, localDate) ??
+              row.treatment.dose,
           };
         })
       )
@@ -294,4 +312,79 @@ export async function markOverdueDosesAsLate(): Promise<number> {
 export async function cancelFutureDoses(treatmentId: number): Promise<void> {
   await clearFuturePendingDoses(treatmentId);
   await resolveOverdueDosesAsLate(treatmentId);
+}
+
+// ── Desmame: a dose que muda ao longo do tratamento — Issue #172 ───────────
+
+/**
+ * Um degrau de um desmame: uma dose que vale por um número de dias.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * "40mg POR 5 DIAS, 20mg POR 5, 10mg POR 5, DEPOIS PARA."
+ *
+ * Receita comum de corticoide, e também de ansiolítico e antidepressivo sendo
+ * retirados. Até a #172 era preciso criar quatro tratamentos e encerrar cada
+ * um à mão — e **cada transição era uma chance de esquecer**. Esquecer um
+ * degrau de desmame de corticoide não é um detalhe administrativo.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+export interface DegrauDeDesmame {
+  dose: string;
+  dias: number;
+}
+
+/**
+ * A dose que vale num dia do tratamento.
+ *
+ * Os degraus são contados a partir do **início do tratamento**, em dias
+ * civis: o primeiro cobre `[0, dias0)`, o segundo `[dias0, dias0+dias1)`, e
+ * assim por diante.
+ *
+ * ── Depois do último degrau, `null` ──────────────────────────────────────
+ *
+ * E `null` não é "sem dose": é "os degraus não falam deste dia". Quem chama
+ * cai na dose do tratamento, que é o comportamento de sempre. Um desmame bem
+ * cadastrado termina junto com a data de fim, e aí este caso não acontece —
+ * mas quem cadastrou degraus que somam menos que o tratamento não pode ficar
+ * com dose vazia no fim.
+ */
+export function doseDoDegrau(
+  degraus: DegrauDeDesmame[],
+  startDate: string,
+  localDate: string,
+): string | null {
+  if (degraus.length === 0) return null;
+
+  // Datas civis em UTC de propósito: as duas são "YYYY-MM-DD" sem hora, e
+  // interpretá-las no fuso do processo faria a conta pular um dia na virada.
+  const inicio = Date.parse(`${startDate}T00:00:00Z`);
+  const dia = Date.parse(`${localDate}T00:00:00Z`);
+  if (Number.isNaN(inicio) || Number.isNaN(dia)) return null;
+
+  const diasDesdeOInicio = Math.floor((dia - inicio) / 86_400_000);
+  if (diasDesdeOInicio < 0) return null;
+
+  let acumulado = 0;
+  for (const degrau of degraus) {
+    acumulado += degrau.dias;
+    if (diasDesdeOInicio < acumulado) return degrau.dose;
+  }
+  return null;
+}
+
+/**
+ * Os dias (a partir do início) em que a dose MUDA.
+ *
+ * O primeiro degrau não conta: ele começa junto com o tratamento, e avisar
+ * "amanhã a dose muda" na véspera do primeiro dia seria avisar que o
+ * tratamento vai começar — que é outra coisa, e já tem aviso próprio.
+ */
+export function diasDeViradaDeDegrau(degraus: DegrauDeDesmame[]): number[] {
+  const viradas: number[] = [];
+  let acumulado = 0;
+  for (const degrau of degraus.slice(0, -1)) {
+    acumulado += degrau.dias;
+    viradas.push(acumulado);
+  }
+  return viradas;
 }

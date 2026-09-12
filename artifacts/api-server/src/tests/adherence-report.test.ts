@@ -447,3 +447,82 @@ describe("A dose tomada em parte", () => {
     assert.equal(data.medications[0].adherenceRate, 1 / 2);
   });
 });
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * OS DEGRAUS COM AS DATAS — Issue #172.
+ *
+ * A #170 fez o relatório ler a dose de cada dose agendada, mas as juntava em
+ * ordem ALFABÉTICA: um desmame saía "10mg, 20mg, 40mg" — a ordem exata do
+ * contrário do que aconteceu, e sem dizer quando cada uma valeu.
+ *
+ * Num documento que vai ao médico, a sequência de um desmame É a informação.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+describe("Os degraus do desmame no relatorio", () => {
+  it("saem em ordem cronologica, com o primeiro e o ultimo dia de cada um", async () => {
+    for (const dia of ["2026-09-01", "2026-09-02"]) {
+      const id = await insertDose(dia, "08:00", "taken", "40mg");
+      await insertDoseRecord(id, "taken", `${dia}T08:05:00-03:00`);
+    }
+    for (const dia of ["2026-09-03", "2026-09-04"]) {
+      const id = await insertDose(dia, "08:00", "taken", "20mg");
+      await insertDoseRecord(id, "taken", `${dia}T08:05:00-03:00`);
+    }
+    for (const dia of ["2026-09-05", "2026-09-06"]) {
+      const id = await insertDose(dia, "08:00", "taken", "10mg");
+      await insertDoseRecord(id, "taken", `${dia}T08:05:00-03:00`);
+    }
+
+    const data = await computeReportData(patientId, "2026-09-01", "2026-09-06");
+    const med = data.medications[0];
+
+    assert.deepEqual(
+      med.dosePeriods,
+      [
+        { dose: "40mg", from: "2026-09-01", to: "2026-09-02" },
+        { dose: "20mg", from: "2026-09-03", to: "2026-09-04" },
+        { dose: "10mg", from: "2026-09-05", to: "2026-09-06" },
+      ],
+      "a ordem tem que ser a do desmame, não a do alfabeto",
+    );
+
+    // E a frase impressa carrega as datas, senão o médico vê três doses sem
+    // saber qual veio quando.
+    assert.equal(
+      med.dose,
+      "40mg (01/09/2026 a 02/09/2026), 20mg (03/09/2026 a 04/09/2026), 10mg (05/09/2026 a 06/09/2026)",
+    );
+  });
+
+  it("com uma dose so, nenhuma data aparece", async () => {
+    const id = await insertDose("2026-10-20", "08:00", "taken", "1 comprimido");
+    await insertDoseRecord(id, "taken", "2026-10-20T08:05:00-03:00");
+
+    const data = await computeReportData(patientId, "2026-10-20", "2026-10-20");
+    const med = data.medications[0];
+
+    // A esmagadora maioria dos tratamentos é de dose única. "1 comprimido
+    // (20/10/2026 a 20/10/2026)" seria ruído em todo relatório do app.
+    assert.equal(med.dose, "1 comprimido");
+    assert.deepEqual(med.dosePeriods, [{ dose: "1 comprimido", from: "2026-10-20", to: "2026-10-20" }]);
+  });
+
+  it("o PDF imprime um degrau por linha", async () => {
+    for (const [dia, dose] of [["2026-11-01", "40mg"], ["2026-11-02", "20mg"]] as const) {
+      const id = await insertDose(dia, "08:00", "taken", dose);
+      await insertDoseRecord(id, "taken", `${dia}T08:05:00-03:00`);
+    }
+
+    const data = await computeReportData(patientId, "2026-11-01", "2026-11-02");
+    const texto = extractPdfText(await generateReportPdf(data));
+
+    // Uma tira só com quatro ou cinco degraus é lida torto. Cada degrau na
+    // sua linha, com as datas ao lado.
+    assert.match(texto, /Doses no per/i);
+    assert.match(texto, /40mg.*01\/11\/2026.*02\/11\/2026|40mg.*01\/11\/2026/);
+    assert.match(texto, /20mg/);
+    // E o app não opina sobre o desenho do desmame em lugar nenhum (inv. 4).
+    assert.doesNotMatch(texto, /recomend|sugerimos|deve reduzir|pode parar/i);
+  });
+});

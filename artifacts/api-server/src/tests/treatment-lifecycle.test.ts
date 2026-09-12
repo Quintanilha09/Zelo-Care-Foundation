@@ -22,6 +22,7 @@ import { boss } from "../lib/queue.ts";
 import { Clock } from "../lib/clock.ts";
 import {
   closeExpiredTreatments, sendEndingSoonNotices, sendContinuousReviewReminders, REVIEW_INTERVAL_DAYS,
+  sendTaperStepNotices,
 } from "../lib/treatment-lifecycle.ts";
 import app from "../app.ts";
 import { puxarDoseParaAgora } from "./apoio-doses.ts";
@@ -504,6 +505,120 @@ describe("DELETE /treatments/:id — QUI-16", () => {
     assert.equal(porId.get(comRegistro), true);
 
     await db.delete(treatmentsTable).where(eq(treatmentsTable.patientId, patientId));
+    await db.delete(patientsTable).where(eq(patientsTable.id, patientId));
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * O AVISO DE VÉSPERA DO DEGRAU — Issue #172.
+ *
+ * A virada de degrau é onde o desmame se perde. Quem toma 40mg há cinco dias
+ * toma 40mg no sexto por hábito. O app sabe o dia da virada — ele é quem
+ * gerou as doses — e não avisar seria guardar a informação e não usá-la.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+describe("O aviso de vespera do degrau", () => {
+  async function criarDesmame(patientId: number, diasDoPrimeiroDegrau: number) {
+    const res = await api("POST", `/patients/${patientId}/treatments`, {
+      medicationId,
+      dose: "40mg",
+      scheduleConfig: {
+        scheduleType: "times_per_day",
+        times: ["00:01", "23:59"],
+        degraus: [
+          { dose: "40mg", dias: diasDoPrimeiroDegrau },
+          { dose: "20mg", dias: 5 },
+        ],
+      },
+      startDate: Clock.todayInTimezone("America/Sao_Paulo"),
+    });
+    return (res.body as { id: number }).id;
+  }
+
+  it("avisa na vespera da virada, e diz a dose nova", async () => {
+    const patientId = await createPatient("Dona Desmame Teste");
+    // Primeiro degrau de 1 dia: hoje é 40mg, amanhã já é 20mg. Hoje é a
+    // véspera, e é hoje que o aviso tem que sair.
+    const treatmentId = await criarDesmame(patientId, 1);
+
+    const enviados = await sendTaperStepNotices();
+    assert.ok(enviados >= 1);
+
+    const [notif] = await db
+      .select()
+      .from(notificationsTable)
+      .where(eq(notificationsTable.treatmentId, treatmentId));
+
+    assert.ok(notif, "a véspera da virada precisa gerar um aviso");
+    assert.match(notif.body ?? "", /20mg/, "o aviso precisa dizer qual é a dose nova");
+    // Mesma regra de toda mensagem de ciclo de vida: fato neutro, nunca
+    // opinião clínica. O app não desenha o desmame — ele transcreve.
+    assertNoClinicalLanguage(`${notif.title} ${notif.body ?? ""}`);
+
+    await db.delete(treatmentsTable).where(eq(treatmentsTable.id, treatmentId));
+    await db.delete(patientsTable).where(eq(patientsTable.id, patientId));
+  });
+
+  it("nao avisa duas vezes no mesmo dia", async () => {
+    const patientId = await createPatient("Dona Desmame Repetido Teste");
+    const treatmentId = await criarDesmame(patientId, 1);
+
+    await sendTaperStepNotices();
+    await sendTaperStepNotices();
+
+    const avisos = await db
+      .select()
+      .from(notificationsTable)
+      .where(eq(notificationsTable.treatmentId, treatmentId));
+
+    // O job é diário e pode ser executado à mão. Dois avisos iguais no mesmo
+    // dia treinam a pessoa a ignorar o aviso — que é o oposto do objetivo.
+    assert.equal(avisos.length, 1);
+
+    await db.delete(treatmentsTable).where(eq(treatmentsTable.id, treatmentId));
+    await db.delete(patientsTable).where(eq(patientsTable.id, patientId));
+  });
+
+  it("nao avisa em dia que nao e vespera de virada", async () => {
+    const patientId = await createPatient("Dona Desmame Longe Teste");
+    // Primeiro degrau de 30 dias: a virada está longe, e hoje não é véspera
+    // de nada.
+    const treatmentId = await criarDesmame(patientId, 30);
+
+    await sendTaperStepNotices();
+
+    const avisos = await db
+      .select()
+      .from(notificationsTable)
+      .where(eq(notificationsTable.treatmentId, treatmentId));
+    assert.equal(avisos.length, 0);
+
+    await db.delete(treatmentsTable).where(eq(treatmentsTable.id, treatmentId));
+    await db.delete(patientsTable).where(eq(patientsTable.id, patientId));
+  });
+
+  it("tratamento sem degraus nunca gera este aviso", async () => {
+    const patientId = await createPatient("Dona Sem Desmame Teste");
+    const treatmentId = await createTreatment(patientId, null);
+
+    const avisosAntes = await db
+      .select()
+      .from(notificationsTable)
+      .where(eq(notificationsTable.treatmentId, treatmentId));
+
+    await sendTaperStepNotices();
+
+    const avisosDepois = await db
+      .select()
+      .from(notificationsTable)
+      .where(eq(notificationsTable.treatmentId, treatmentId));
+
+    // A esmagadora maioria dos tratamentos é de dose única. Se este caso
+    // gerasse aviso, o app estaria avisando todo mundo todo dia.
+    assert.equal(avisosDepois.length, avisosAntes.length);
+
+    await db.delete(treatmentsTable).where(eq(treatmentsTable.id, treatmentId));
     await db.delete(patientsTable).where(eq(patientsTable.id, patientId));
   });
 });

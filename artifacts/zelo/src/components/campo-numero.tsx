@@ -37,6 +37,7 @@ export function CampoNumero({
   placeholder,
   sufixo,
   className,
+  "aria-label": rotulo,
 }: {
   /** Sempre string: campo vazio é `""`, não `0`. Zero é um valor legítimo. */
   value: string;
@@ -46,6 +47,15 @@ export function CampoNumero({
   step?: number;
   id?: string;
   placeholder?: string;
+  /**
+   * Nome acessível quando NÃO há um `<Label htmlFor>` apontando para o campo.
+   *
+   * Acontece em lista: os degraus de um desmame (#172) são linhas iguais, e
+   * um rótulo visível por linha viraria ruído. Sem isto o leitor de tela
+   * anuncia só "editar texto", e quem usa um não sabe qual degrau está
+   * mexendo.
+   */
+  "aria-label"?: string;
   /** Texto curto à direita do número, ex.: "horas", "dias". */
   sufixo?: string;
   className?: string;
@@ -97,6 +107,7 @@ export function CampoNumero({
           inputMode="numeric"
           // `pattern` faz o teclado numérico aparecer também no iOS antigo.
           pattern="[0-9]*"
+          aria-label={rotulo}
           value={value}
           onChange={(e) => aoDigitar(e.target.value)}
           placeholder={placeholder}

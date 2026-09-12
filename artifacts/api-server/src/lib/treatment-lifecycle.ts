@@ -14,13 +14,13 @@
  * - sendContinuousReviewReminders: lembrete a cada ~6 meses para tratamento
  *   sem data de fim — só "vale conferir a receita", nunca alarme.
  */
-import { eq } from "drizzle-orm";
+import { eq, and, gte } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { treatmentsTable, patientsTable, medicationsTable, notificationsTable } from "@workspace/db";
 import { tomorrowInTimezone } from "@workspace/scheduling";
 import { Clock } from "./clock.ts";
 import { audit } from "./audit.ts";
-import { cancelFutureDoses } from "./dose-generation.ts";
+import { cancelFutureDoses, doseDoDegrau, type DegrauDeDesmame } from "./dose-generation.ts";
 
 export const REVIEW_INTERVAL_DAYS = 182; // ~6 meses — cadência de lembrete, não prazo clínico
 
@@ -155,9 +155,87 @@ export async function sendContinuousReviewReminders(): Promise<number> {
 }
 
 /** Job diário único (registrado em lib/queue.ts): roda as três rotinas em ordem. */
-export async function runTreatmentLifecycleJob(): Promise<{ closed: number; endingSoonNotices: number; reviewReminders: number }> {
+export async function runTreatmentLifecycleJob(): Promise<{ closed: number; endingSoonNotices: number; reviewReminders: number; taperNotices: number }> {
   const endingSoonNotices = await sendEndingSoonNotices();
+  // Issue #172: a virada de degrau e onde o desmame se perde — quem toma
+  // 40mg ha cinco dias toma 40mg no sexto por habito.
+  const taperNotices = await sendTaperStepNotices();
   const closed = await closeExpiredTreatments();
   const reviewReminders = await sendContinuousReviewReminders();
-  return { closed, endingSoonNotices, reviewReminders };
+  return { closed, endingSoonNotices, reviewReminders, taperNotices };
+}
+
+/**
+ * O aviso na véspera de cada degrau do desmame — Issue #172.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * A VIRADA DE DEGRAU É ONDE O DESMAME SE PERDE.
+ *
+ * Quem toma 40mg há cinco dias toma 40mg no sexto por hábito. O app sabe o
+ * dia da virada — ele é quem gerou as doses — e o aviso custa uma linha de
+ * notificação. Não avisar seria guardar a informação e não usá-la.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * ── Mesmo mecanismo do aviso de fim (ZELO-20) ────────────────────────────
+ *
+ * Roda no mesmo job diário, e a véspera é sempre no fuso do PACIENTE — um
+ * filho em Portugal não pode receber o aviso um dia fora.
+ *
+ * ── A deduplicação sai da própria notificação, e não de coluna nova ──────
+ *
+ * O aviso de fim usa `endingNoticeSentAt` porque acontece **uma vez** por
+ * tratamento. Um desmame tem várias viradas, e uma coluna só guardaria a
+ * última — daí a pergunta ser feita à tabela de notificações: "já saiu um
+ * aviso deste tipo para este tratamento nas últimas 20 horas?".
+ *
+ * Vinte horas, e não vinte e quatro: o job é diário, e uma janela de 24 h
+ * exata engoliria o aviso do dia seguinte se uma execução atrasasse alguns
+ * minutos.
+ */
+export async function sendTaperStepNotices(): Promise<number> {
+  const candidatos = (await loadActiveTreatmentsWithContext()).filter((r) => {
+    const degraus = (r.treatment.scheduleConfig as { degraus?: DegrauDeDesmame[] }).degraus;
+    return Array.isArray(degraus) && degraus.length > 1;
+  });
+
+  let enviados = 0;
+  for (const row of candidatos) {
+    const degraus = (row.treatment.scheduleConfig as { degraus: DegrauDeDesmame[] }).degraus;
+    const amanha = tomorrowInTimezone(Clock.now(), row.patientTimezone);
+
+    // A dose de amanhã é diferente da de hoje? É isso, e só isso, que faz a
+    // véspera. Comparar as doses em vez de contar dias deixa a conta com um
+    // dono só — `doseDoDegrau`, a mesma que gerou as doses.
+    const hoje = Clock.todayInTimezone(row.patientTimezone);
+    const doseDeHoje = doseDoDegrau(degraus, row.treatment.startDate, hoje);
+    const doseDeAmanha = doseDoDegrau(degraus, row.treatment.startDate, amanha);
+    if (!doseDeHoje || !doseDeAmanha || doseDeHoje === doseDeAmanha) continue;
+
+    const jaAvisou = await db
+      .select({ id: notificationsTable.id })
+      .from(notificationsTable)
+      .where(and(
+        eq(notificationsTable.treatmentId, row.treatment.id),
+        eq(notificationsTable.type, "treatment_ending"),
+        gte(notificationsTable.sentAt, new Date(Clock.now().getTime() - 20 * 3_600_000)),
+      ))
+      .limit(1);
+    if (jaAvisou.length > 0) continue;
+
+    await db.insert(notificationsTable).values({
+      familyId: row.familyId,
+      patientId: row.treatment.patientId,
+      treatmentId: row.treatment.id,
+      // Reusa o tipo do aviso de fim: os dois dizem "a partir de amanhã é
+      // diferente", e criar um tipo novo obrigaria toda preferência de
+      // notificação já configurada a ganhar uma linha a mais.
+      type: "treatment_ending",
+      title: "A dose muda amanhã",
+      body: `A partir de amanhã, ${row.medicationName} passa a ser ${doseDeAmanha}.`,
+      sentAt: Clock.now(),
+    });
+
+    enviados++;
+  }
+  return enviados;
 }
