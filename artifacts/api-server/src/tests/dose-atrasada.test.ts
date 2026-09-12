@@ -35,6 +35,7 @@ import {
 import { generateAccessToken } from "../lib/tokens.ts";
 import { Clock } from "../lib/clock.ts";
 import { LATE_GRACE_MINUTES } from "../lib/dose-generation.ts";
+import { localDayBoundsUtc } from "@workspace/scheduling";
 import app from "../app.ts";
 
 const SUFIXO = "@atrasada.zelo.test";
@@ -42,7 +43,68 @@ const SUFIXO = "@atrasada.zelo.test";
 let testPort: number;
 let closeServer: () => Promise<void>;
 
+/**
+ * O relógio deste arquivo fica parado no meio do dia — Issue #189.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * O CENÁRIO AGENDA UMA DOSE EM `agora - 1 h`, E ISSO ATRAVESSA A MEIA-NOITE.
+ *
+ * A dose nasce com `scheduledLocalDate` = hoje, mas `scheduledAt` uma hora
+ * atrás. Rodando às 00:08, essa hora atrás é ONTEM — e `today-doses`, que
+ * recorta por instante, não devolve a dose. Três casos reprovavam o código
+ * que está certo.
+ *
+ * Medido em 12/09/2026 às 00:08, na árvore limpa do `main`. O CI roda em UTC,
+ * então a janela de falha era 03:00–04:00 UTC, todo dia — um PR aberto ali
+ * ficava vermelho sem motivo e o auto-merge não disparava.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * ── Por que congelar, e não deslocar as doses ────────────────────────────
+ *
+ * Dava para agendar "daqui a menos tempo" e caber no dia. Mas aí o teste
+ * passaria a depender da hora em que roda de outro jeito: perto das 00:30 a
+ * folga acabaria de novo, e alguém descobriria isso outra madrugada.
+ *
+ * Meio-dia em São Paulo tem doze horas de folga para cada lado. O que o
+ * arquivo mede — a distância entre `scheduledAt` e a carência — não depende
+ * da hora de parede, e agora o teste também não.
+ */
+const FUSO = "America/Sao_Paulo";
+
+/**
+ * O PRÓXIMO meio-dia em São Paulo — sempre à frente do relógio real.
+ *
+ * ── Por que à frente, e nunca atrás ─────────────────────────────────────
+ *
+ * `generateAccessToken` tira `iat` e `exp` do `Clock` (de propósito: é o que
+ * faz `Clock.advance` funcionar nos testes de escalonamento), mas quem
+ * confere o token é o `jwt.verify`, que usa o relógio REAL do sistema.
+ *
+ * Congelar o relógio no passado emite um token que já nasce vencido para
+ * quem o confere — todo caso deste arquivo respondeu 401 quando tentei uma
+ * data fixa de março. Para a frente não há esse problema: `exp` fica no
+ * futuro, e o `verify` não reprova `iat` futuro (não há `maxAge` aqui).
+ *
+ * O salto é de no máximo 24 h, e nada neste arquivo depende de qual dia é.
+ */
+function proximoMeioDia(): Date {
+  const agora = new Date();
+  for (const daquiADias of [0, 1]) {
+    const dia = new Intl.DateTimeFormat("en-CA", {
+      timeZone: FUSO, year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(new Date(agora.getTime() + daquiADias * 86_400_000));
+    // Meio-dia = começo do dia civil + 12 h. O Brasil não tem horário de
+    // verão desde 2019; se voltasse, o pior caso seria congelar às 11:00 ou
+    // 13:00 — e as doze horas de folga para cada lado continuam de pé.
+    const meioDia = new Date(localDayBoundsUtc(dia, FUSO).start.getTime() + 12 * 3_600_000);
+    if (meioDia.getTime() >= agora.getTime()) return meioDia;
+  }
+  throw new Error("não achei o próximo meio-dia");
+}
+
 before(async () => {
+  Clock.freezeAt(proximoMeioDia());
+
   await new Promise<void>((resolve, reject) => {
     const server = http.createServer(app);
     server.listen(0, "127.0.0.1", () => {
@@ -55,6 +117,9 @@ before(async () => {
 });
 
 after(async () => {
+  // Sem isto o relógio parado vaza para o próximo arquivo da suíte, que roda
+  // no mesmo processo — e o defeito reapareceria em outro lugar, pior de achar.
+  Clock.reset();
   await closeServer();
   await db.delete(usersTable).where(like(usersTable.email, `%${SUFIXO}`));
   await db.delete(familiesTable).where(like(familiesTable.name, "Família Fictícia Atrasada %"));
