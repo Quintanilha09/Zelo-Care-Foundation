@@ -73,6 +73,18 @@ export async function generateDosesForTreatment(treatmentId: number): Promise<nu
 
   if (dates.length === 0) return 0;
 
+  /**
+   * O mapa horário → dose, quando existe — Issue #171.
+   *
+   * Lido do `scheduleConfig` e não de coluna nova: ele é a posologia, e a
+   * dose de cada horário É parte da posologia. Tratamento antigo não tem o
+   * campo, e aí o mapa é vazio — todo horário cai na dose do tratamento,
+   * exatamente como antes.
+   */
+  const dosePorHorario =
+    (row.treatment.scheduleConfig as { dosePorHorario?: Record<string, string> })
+      .dosePorHorario ?? {};
+
   await ensureQueueStarted();
 
   return db.transaction(async (tx) => {
@@ -87,7 +99,18 @@ export async function generateDosesForTreatment(treatmentId: number): Promise<nu
             scheduledAt,
             scheduledLocalDate: localDate,
             scheduledLocalTime: localTime,
-            dose: row.treatment.dose,
+            /**
+             * A dose DESTE horário — Issue #171.
+             *
+             * "1 comprimido de manhã e 2 à noite" não cabia num campo só.
+             * O mapa é exceção declarada: horário fora dele usa a dose do
+             * tratamento, como sempre foi.
+             *
+             * Continua sendo INSTANTÂNEO (a coluna é cópia do momento do
+             * agendamento, ver #170): mudar a dose depois não reescreve o
+             * que já foi agendado nem o que já foi tomado.
+             */
+            dose: dosePorHorario[localTime] ?? row.treatment.dose,
           };
         })
       )

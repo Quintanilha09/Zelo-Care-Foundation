@@ -91,24 +91,84 @@ const WEEKDAYS = [
   { value: 3, label: "Qua" }, { value: 4, label: "Qui" }, { value: 5, label: "Sex" }, { value: 6, label: "Sáb" },
 ];
 
-function TimesList({ times, onChange }: { times: string[]; onChange: (t: string[]) => void }) {
+/**
+ * A lista de horários — e, quando a receita pede, a dose de cada um.
+ *
+ * ═══════════════════════════════════════════════════════════════════════
+ * "1 COMPRIMIDO DE MANHÃ E 2 À NOITE" — Issue #171.
+ *
+ * Não cabia: a dose era um texto só para o tratamento inteiro. O contorno
+ * era cadastrar o mesmo remédio duas vezes, e aí a ficha mostrava dois
+ * tratamentos para uma receita só.
+ * ═══════════════════════════════════════════════════════════════════════
+ *
+ * ── Fechado por padrão, e o motivo é medido em atrito ───────────────
+ *
+ * A maioria das receitas é uma dose só. Este formulário já é a tela de
+ * maior atrito do app — um campo a mais por horário, sempre visível,
+ * cobraria de todo mundo o preço de um caso que é minoria.
+ */
+function TimesList({
+  times,
+  onChange,
+  dosePorHorario,
+  onDoseChange,
+}: {
+  times: string[];
+  onChange: (t: string[]) => void;
+  dosePorHorario: Record<string, string>;
+  onDoseChange: (mapa: Record<string, string>) => void;
+}) {
+  const [porHorario, setPorHorario] = useState(Object.keys(dosePorHorario).length > 0);
+
   return (
     <div className="space-y-2">
       <CampoLabel obrigatorio>Horários</CampoLabel>
       {times.map((t, i) => (
-        <div key={i} className="flex gap-2">
-          <Input
-            type="time"
-            value={t}
-            onChange={(e) => onChange(times.map((x, j) => (j === i ? e.target.value : x)))}
-          />
-          {times.length > 1 && (
-            <Button type="button" variant="ghost" size="icon" onClick={() => onChange(times.filter((_, j) => j !== i))}>
-              <X className="w-4 h-4" />
-            </Button>
+        <div key={i} className="space-y-1">
+          <div className="flex gap-2">
+            <Input
+              type="time"
+              value={t}
+              onChange={(e) => onChange(times.map((x, j) => (j === i ? e.target.value : x)))}
+            />
+            {times.length > 1 && (
+              <Button type="button" variant="ghost" size="icon" onClick={() => onChange(times.filter((_, j) => j !== i))}>
+                <X className="w-4 h-4" />
+              </Button>
+            )}
+          </div>
+          {porHorario && (
+            <Input
+              aria-label={`Dose das ${t}`}
+              placeholder="Dose deste horário (ex: 2 comprimidos)"
+              value={dosePorHorario[t] ?? ""}
+              maxLength={120}
+              onChange={(e) => {
+                const mapa = { ...dosePorHorario };
+                // Campo vazio significa 'use a dose do tratamento', e não
+                // 'a dose deste horário é vazia'. Por isso apaga a chave.
+                if (e.target.value.trim()) mapa[t] = e.target.value;
+                else delete mapa[t];
+                onDoseChange(mapa);
+              }}
+            />
           )}
         </div>
       ))}
+      {!porHorario ? (
+        <button
+          type="button"
+          className="text-sm text-muted-foreground underline"
+          onClick={() => setPorHorario(true)}
+        >
+          A dose muda ao longo do dia
+        </button>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          Horário em branco usa a dose do tratamento.
+        </p>
+      )}
       <Button type="button" variant="secondary" size="sm" className="gap-1" onClick={() => onChange([...times, "08:00"])}>
         <Plus className="w-3.5 h-3.5" /> Adicionar horário
       </Button>
@@ -155,6 +215,8 @@ export function TreatmentForm({ patientId, onCreated, onCancel, tratamento }: Tr
     weekdays?: number[];
     onDays?: number;
     offDays?: number;
+    /** Issue #171: horário → dose. Ausente nos tratamentos anteriores a ela. */
+    dosePorHorario?: Record<string, string>;
   };
   const [medicationName, setMedicationName] = useState(tratamento?.medicationName ?? "");
   const [dose, setDose] = useState(tratamento?.dose ?? "");
@@ -188,6 +250,18 @@ export function TreatmentForm({ patientId, onCreated, onCancel, tratamento }: Tr
   const [prescriptionExpiresAt, setPrescriptionExpiresAt] = useState("");
 
   const [times, setTimes] = useState(cfg.times ?? ["08:00"]);
+  /**
+   * A dose de cada horário — Issue #171.
+   *
+   * Mapa ao lado de `times`, e não dentro dele: `times` é lido pela
+   * expansão de agenda do servidor, que não sabe nada de dose. Mexer na
+   * forma dele obrigaria a mexer na peça mais delicada do app.
+   *
+   * Vazio = a dose do tratamento vale para todos os horários, como sempre.
+   */
+  const [dosePorHorario, setDosePorHorario] = useState<Record<string, string>>(
+    cfg.dosePorHorario ?? {},
+  );
   const [intervalHours, setIntervalHours] = useState(cfg.intervalHours ?? 8);
   const [everyNStartTime, setEveryNStartTime] = useState(cfg.startTime ?? "08:00");
   const [weekdays, setWeekdays] = useState<number[]>(cfg.weekdays ?? [1, 3, 5]);
@@ -218,17 +292,26 @@ export function TreatmentForm({ patientId, onCreated, onCancel, tratamento }: Tr
   const [scheduleGuessApplied, setScheduleGuessApplied] = useState(false);
 
   function buildScheduleConfig() {
+    /**
+     * Só manda o mapa quando ele tem algo, e só para os tipos que têm
+     * lista de horários — Issue #171.
+     *
+     * `every_n_hours` fica de fora: ali os horários são calculados a partir
+     * de um intervalo, e não existem como lista para amarrar uma dose. Um
+     * mapa lá seria um campo que nunca casa com nada.
+     */
+    const comDose = Object.keys(dosePorHorario).length > 0 ? { dosePorHorario } : {};
     switch (scheduleType) {
       case "times_per_day":
-        return { scheduleType, times };
+        return { scheduleType, times, ...comDose };
       case "every_n_hours":
         return { scheduleType, intervalHours, startTime: everyNStartTime };
       case "specific_weekdays":
-        return { scheduleType, weekdays, times };
+        return { scheduleType, weekdays, times, ...comDose };
       case "alternate_days":
-        return { scheduleType, times, startDate };
+        return { scheduleType, times, startDate, ...comDose };
       case "cycle_with_pause":
-        return { scheduleType, onDays, offDays, times };
+        return { scheduleType, onDays, offDays, times, ...comDose };
     }
   }
 
@@ -648,7 +731,7 @@ export function TreatmentForm({ patientId, onCreated, onCancel, tratamento }: Tr
       </div>
 
       <div className="rounded-lg border p-4 bg-muted/30 space-y-4">
-        {scheduleType === "times_per_day" && <TimesList times={times} onChange={setTimes} />}
+        {scheduleType === "times_per_day" && <TimesList times={times} onChange={setTimes} dosePorHorario={dosePorHorario} onDoseChange={setDosePorHorario} />}
 
         {scheduleType === "every_n_hours" && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -681,11 +764,11 @@ export function TreatmentForm({ patientId, onCreated, onCancel, tratamento }: Tr
                 ))}
               </div>
             </div>
-            <TimesList times={times} onChange={setTimes} />
+            <TimesList times={times} onChange={setTimes} dosePorHorario={dosePorHorario} onDoseChange={setDosePorHorario} />
           </div>
         )}
 
-        {scheduleType === "alternate_days" && <TimesList times={times} onChange={setTimes} />}
+        {scheduleType === "alternate_days" && <TimesList times={times} onChange={setTimes} dosePorHorario={dosePorHorario} onDoseChange={setDosePorHorario} />}
 
         {scheduleType === "cycle_with_pause" && (
           <div className="space-y-4">
@@ -699,7 +782,7 @@ export function TreatmentForm({ patientId, onCreated, onCancel, tratamento }: Tr
                 <CampoNumero value={String(offDays)} onChange={(v) => setOffDays(v === "" ? 0 : Number(v))} min={0} sufixo="dias" />
               </div>
             </div>
-            <TimesList times={times} onChange={setTimes} />
+            <TimesList times={times} onChange={setTimes} dosePorHorario={dosePorHorario} onDoseChange={setDosePorHorario} />
           </div>
         )}
       </div>
