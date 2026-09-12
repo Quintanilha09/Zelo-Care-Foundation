@@ -9,6 +9,7 @@ import { TreatmentForm } from "@/components/treatment-form";
 import { Pencil } from "lucide-react";
 import { CampoNumero } from "@/components/campo-numero";
 import { DoseCard } from "@/components/dose-card";
+import { SePrecisar, type SeNecessario } from "@/components/se-precisar";
 import { PushPermissionPrompt } from "@/components/push-permission-prompt";
 import { NotificationPreferencesCard } from "@/components/notification-preferences-card";
 import { PatientAccessCard } from "@/components/patient-access-card";
@@ -217,6 +218,9 @@ const SCHEDULE_LABELS: Record<string, string> = {
   specific_weekdays: "dias específicos da semana",
   alternate_days: "dias alternados",
   cycle_with_pause: "ciclo com pausa",
+  // Issue #169: sem hora marcada. O rotulo diz isso, e nao um padrao de
+  // relogio que ele nao tem.
+  se_necessario: "se precisar",
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -238,11 +242,24 @@ async function fetchTreatments(id: string): Promise<Treatment[]> {
   return res.json();
 }
 
-async function fetchTodayDoses(id: string): Promise<ScheduledDose[]> {
+/**
+ * O dia do paciente: as doses marcadas e os remédios "se precisar".
+ *
+ * Issue #169 — as duas listas vêm da MESMA resposta, e continuam duas.
+ * Juntá-las aqui desfaria no navegador a separação que o servidor fez: um
+ * remédio sem hora marcada não é uma dose do dia, e no meio delas ele
+ * pareceria tarefa pendente.
+ */
+interface ODiaDoPaciente {
+  doses: ScheduledDose[];
+  sePrecisar: SeNecessario[];
+}
+
+async function fetchTodayDoses(id: string): Promise<ODiaDoPaciente> {
   const res = await authFetch(`/api/patients/${id}/today-doses`);
   if (!res.ok) throw new Error("Erro ao carregar doses de hoje");
-  const data = (await res.json()) as { doses: ScheduledDose[] };
-  return data.doses;
+  const data = (await res.json()) as { doses: ScheduledDose[]; sePrecisar?: SeNecessario[] };
+  return { doses: data.doses, sePrecisar: data.sePrecisar ?? [] };
 }
 
 async function fetchStock(id: string): Promise<StockEntry[]> {
@@ -292,7 +309,8 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
 
   const { data: patient } = useQuery({ queryKey: ["patient", params.id], queryFn: () => fetchPatient(params.id) });
   const { data: treatments, isLoading } = useQuery({ queryKey: ["treatments", params.id], queryFn: () => fetchTreatments(params.id) });
-  const { data: todayDoses } = useQuery({ queryKey: ["today-doses", params.id], queryFn: () => fetchTodayDoses(params.id) });
+  const { data: oDia } = useQuery({ queryKey: ["today-doses", params.id], queryFn: () => fetchTodayDoses(params.id) });
+  const todayDoses = oDia?.doses;
   const { data: stock } = useQuery({ queryKey: ["stock", params.id], queryFn: () => fetchStock(params.id) });
 
   // Issue #135: um pulso só para a tela inteira. O botão de desfazer some
@@ -699,6 +717,18 @@ export default function PatientDetailPage({ params }: { params: { id: string } }
             )}
           </div>
         )}
+
+        {/* ── Issue #169: o que já precisou ────────────────────────────
+
+            Depois de "Hoje", porque é outra pergunta: o dia diz o que
+            falta fazer, e esta lista diz o que já precisou. Some sozinha
+            quando o paciente não tem nenhum remédio assim. */}
+        <SePrecisar
+          itens={oDia?.sePrecisar ?? []}
+          mostrarPaciente={false}
+          somenteLeitura={user?.caregiver?.role === "observer"}
+          aoRegistrar={() => void queryClient.invalidateQueries({ queryKey: ["today-doses", params.id] })}
+        />
 
         {isLoading && <EsqueletoDeTratamentos />}
 

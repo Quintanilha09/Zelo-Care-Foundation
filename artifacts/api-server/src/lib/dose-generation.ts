@@ -57,6 +57,24 @@ export async function generateDosesForTreatment(treatmentId: number): Promise<nu
 
   if (!row || row.treatment.status !== "active") return 0;
 
+  /**
+   * O "se necessário" não gera dose agendada NENHUMA — Issue #169.
+   *
+   * ═══════════════════════════════════════════════════════════════════
+   * ESTA LINHA É A DEFINIÇÃO DO TIPO, E NÃO UMA OTIMIZAÇÃO.
+   *
+   * Sem hora marcada não há dose a agendar, e é daqui que saem todas as
+   * outras garantias de graça: ele nunca fica "pendente" (não nasce
+   * pendente), nunca fica "atrasada" (`markOverdueDosesAsLate` só mexe
+   * em pendente), e nenhum lembrete dispara (a fila é alimentada por
+   * dose agendada).
+   *
+   * O uso dele é registrado quando acontece, pela rota /uso, que cria a
+   * dose já tomada.
+   * ═══════════════════════════════════════════════════════════════════
+   */
+  if (row.treatment.scheduleType === "se_necessario") return 0;
+
   const windowStart = Clock.now();
   const windowEnd = new Date(windowStart.getTime() + DOSE_WINDOW_DAYS * 86_400_000);
 

@@ -21,7 +21,7 @@ import { getAuth } from "../lib/auth-types.ts";
  * cursor porque a navegação por mês já cumpre esse papel.
  */
 import { Router } from "express";
-import { sql, eq, and, gte, lte } from "drizzle-orm";
+import { sql, eq, ne, and, gte, lte } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@workspace/db";
 import {
@@ -98,6 +98,22 @@ router.get("/patients/:patientId/adherence-calendar", requireAuth, async (req, r
     eq(scheduledDosesTable.patientId, patientId),
     gte(scheduledDosesTable.scheduledLocalDate, from),
     lte(scheduledDosesTable.scheduledLocalDate, to),
+    /**
+     * O "se necessário" fica fora do calendário — Issue #169.
+     *
+     * ═════════════════════════════════════════════════════════════════
+     * SEM ESTA LINHA, UM DIA SEM NENHUMA DOSE MARCADA FICARIA VERDE.
+     *
+     * O uso de um "se necessário" vira uma dose já tomada, e o dia é
+     * pintado pela razão entre resolvidas e total. Uma dipirona dada num
+     * domingo em que não havia remédio nenhum marcado viraria "verde" —
+     * e verde aqui significa "tudo o que estava marcado foi feito".
+     *
+     * O calendário responde sobre a AGENDA. Sem agenda, não há o que
+     * pintar: o dia continua cinza, que é o honesto.
+     * ═════════════════════════════════════════════════════════════════
+     */
+    ne(treatmentsTable.scheduleType, "se_necessario"),
     medicationFilter
   );
 

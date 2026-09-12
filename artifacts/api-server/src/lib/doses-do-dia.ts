@@ -20,7 +20,7 @@
  * tela. Então o dia tem um dono, e é este arquivo.
  * ═══════════════════════════════════════════════════════════════════════════
  */
-import { eq, and, gte, lte, inArray } from "drizzle-orm";
+import { eq, ne, and, gte, lte, inArray, desc } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@workspace/db";
 import {
@@ -129,6 +129,18 @@ export async function dosesDoDia(
       inArray(scheduledDosesTable.patientId, pacientes.map((p) => p.id)),
       gte(scheduledDosesTable.scheduledAt, janela.de),
       lte(scheduledDosesTable.scheduledAt, janela.ate),
+      /**
+       * O "se necessário" fica FORA do dia — Issue #169.
+       *
+       * O uso dele vira uma dose agendada já tomada (é assim que ele
+       * reaproveita desfazer, corrigir e o histórico), e sem esta linha
+       * ele apareceria em "Já foi" no meio do que estava marcado.
+       *
+       * É outra pergunta. O dia responde *o que falta fazer*; o "se
+       * necessário" responde *o que já precisou* — e por isso tem seção
+       * própria, logo abaixo (`seNecessarioDoDia`).
+       */
+      ne(treatmentsTable.scheduleType, "se_necessario"),
     ))
     .orderBy(scheduledDosesTable.scheduledAt);
 
@@ -247,4 +259,120 @@ export function janelaDoDia(timezone: string, agora: Date): JanelaDoDia {
     fimDaBusca: ehNoite ? fimDaMadrugada : fimDoDia,
     ehNoite,
   };
+}
+// ── O "se necessário" do dia — Issue #169 ─────────────────────────────────
+
+/**
+ * Um remédio "se necessário" e o que já se precisou dele hoje.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * OS DOIS NÚMEROS SÃO REGISTRO, E NUNCA VIRAM JULGAMENTO.
+ *
+ * `intervaloMinimoHoras` e `tetoDiario` vêm da RECEITA e são devolvidos crus,
+ * do jeito que foram digitados. `ultimoUso` e `usosHoje` são fato registrado.
+ *
+ * O servidor NÃO compara os quatro, não conclui e não manda nada. A tela
+ * mostra "a última foi às 14:20 · já foram 2 hoje · a receita diz a cada 6 h,
+ * no máximo 4" e para por aí. Dizer "ainda não pode dar" seria prescrever, e
+ * o invariante 4 proíbe — quem interpreta é o médico, com o cuidador ao lado
+ * da pessoa.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+export interface SeNecessarioDoDia {
+  treatmentId: number;
+  patientId: number;
+  patientName: string;
+  medicationName: string;
+  dose: string | null;
+  /** Como a receita descreve o espaçamento. Só para mostrar. */
+  intervaloMinimoHoras: number | null;
+  /** Quantas por dia a receita permite. Só para mostrar. */
+  tetoDiario: number | null;
+  /** ISO do último uso REGISTRADO, de qualquer dia. Null se nunca foi usado. */
+  ultimoUso: string | null;
+  /** Quantos usos hoje, no fuso do paciente. */
+  usosHoje: number;
+  /** Os horários de hoje, em ordem, para a tela listar sem outra ida ao banco. */
+  horariosDeHoje: string[];
+}
+
+/**
+ * Os "se necessário" ativos dos pacientes, com o retrato de hoje.
+ *
+ * Uma consulta para os tratamentos e uma para os usos — não uma por
+ * tratamento. A tela inicial de quem cuida de quatro pessoas abriria N+1
+ * conexões para responder uma pergunta só.
+ */
+export async function seNecessarioDoDia(
+  pacientes: PacienteDoDia[],
+  janelasPorPaciente: Map<number, { inicioDoDia: Date; fimDoDia: Date }>,
+): Promise<SeNecessarioDoDia[]> {
+  if (pacientes.length === 0) return [];
+  const nomePorPaciente = new Map(pacientes.map((p) => [p.id, p.name]));
+
+  const tratamentos = await db
+    .select({
+      id: treatmentsTable.id,
+      patientId: treatmentsTable.patientId,
+      dose: treatmentsTable.dose,
+      scheduleConfig: treatmentsTable.scheduleConfig,
+      medicationName: medicationsTable.name,
+    })
+    .from(treatmentsTable)
+    .innerJoin(medicationsTable, eq(treatmentsTable.medicationId, medicationsTable.id))
+    .where(and(
+      inArray(treatmentsTable.patientId, pacientes.map((p) => p.id)),
+      eq(treatmentsTable.scheduleType, "se_necessario"),
+      eq(treatmentsTable.status, "active"),
+    ))
+    .orderBy(medicationsTable.name);
+
+  if (tratamentos.length === 0) return [];
+
+  // Todos os usos já registrados destes tratamentos, do mais recente para o
+  // mais antigo. O recorte do dia de cada paciente é feito em memória, com a
+  // janela dele — porque cada paciente pode ter fuso próprio (ZELO-19).
+  const usos = await db
+    .select({
+      treatmentId: scheduledDosesTable.treatmentId,
+      takenAt: doseRecordsTable.takenAt,
+      localTime: scheduledDosesTable.scheduledLocalTime,
+    })
+    .from(doseRecordsTable)
+    .innerJoin(scheduledDosesTable, eq(doseRecordsTable.scheduledDoseId, scheduledDosesTable.id))
+    .where(inArray(scheduledDosesTable.treatmentId, tratamentos.map((t) => t.id)))
+    .orderBy(desc(doseRecordsTable.takenAt));
+
+  return tratamentos.map((t) => {
+    const receita = (t.scheduleConfig ?? {}) as {
+      intervaloMinimoHoras?: number;
+      tetoDiario?: number;
+    };
+    const janela = janelasPorPaciente.get(t.patientId);
+    const meus = usos.filter((u) => u.treatmentId === t.id);
+    const deHoje = janela
+      ? meus.filter(
+          (u) =>
+            u.takenAt.getTime() >= janela.inicioDoDia.getTime() &&
+            u.takenAt.getTime() <= janela.fimDoDia.getTime(),
+        )
+      : [];
+
+    return {
+      treatmentId: t.id,
+      patientId: t.patientId,
+      patientName: nomePorPaciente.get(t.patientId) ?? "",
+      medicationName: t.medicationName,
+      dose: t.dose,
+      intervaloMinimoHoras: receita.intervaloMinimoHoras ?? null,
+      tetoDiario: receita.tetoDiario ?? null,
+      // O último de QUALQUER dia, e não só de hoje: às 00:30, "a última foi
+      // às 23:40" é a informação que importa, e zerar na virada do dia
+      // esconderia justamente o uso mais recente.
+      ultimoUso: meus[0]?.takenAt.toISOString() ?? null,
+      usosHoje: deHoje.length,
+      // Em ordem crescente para a tela ler como uma linha do tempo.
+      horariosDeHoje: deHoje.map((u) => u.localTime).reverse(),
+    };
+  });
 }

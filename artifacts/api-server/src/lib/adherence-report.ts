@@ -14,7 +14,7 @@
  * informativo, sem reagendamento real) — então, na prática, a dose
  * prescrita não foi tomada, mesma classificação de "pulada".
  */
-import { eq, and, gte, lte } from "drizzle-orm";
+import { eq, ne, and, gte, lte, desc } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { Clock } from "./clock.ts";
 import {
@@ -53,6 +53,32 @@ export interface DosePeriodRow {
   from: string;
   /** Último dia (YYYY-MM-DD). */
   to: string;
+}
+
+/**
+ * Um uso de remédio "se necessário" — Issue #169.
+ *
+ * ═══════════════════════════════════════════════════════════════════════
+ * FORA DA ADESÃO, E EM SEÇÃO PRÓPRIA.
+ *
+ * Adesão é sobre o que estava marcado. Um remédio que só devia ser tomado
+ * quando precisasse não tem o que aderir — e contá-lo no percentual faria
+ * o número que o relatório existe para levar virar ficção.
+ *
+ * Mas o uso em si é, muitas vezes, o dado MAIS importante da página:
+ * quantas vezes a bombinha de resgate foi usada nesta semana é sinal
+ * clínico. Por isso ele não some — ele muda de lugar.
+ * ═══════════════════════════════════════════════════════════════════════
+ */
+export interface PrnUseRow {
+  medicationName: string;
+  dose: string | null;
+  /** Dia civil do paciente, "YYYY-MM-DD". */
+  localDate: string;
+  /** "HH:mm" no relógio do paciente. */
+  localTime: string;
+  /** Por que precisou, se o cuidador escreveu. */
+  justification: string | null;
 }
 
 export interface MedicationReportRow {
@@ -103,6 +129,14 @@ export interface AdherenceReportData {
   periodEnd: string;
   generatedAt: Date;
   medications: MedicationReportRow[];
+  /**
+   * Os usos de "se necessário" no período — Issue #169.
+   *
+   * Do mais recente para o mais antigo, porque é assim que se lê um
+   * histórico de resgate. Vazio quando o paciente não tem nenhum — e aí
+   * a seção não é impressa.
+   */
+  prnUses: PrnUseRow[];
   measurements: MeasurementRow[];
 }
 
@@ -190,7 +224,20 @@ export async function computeReportData(
     .where(and(
       eq(scheduledDosesTable.patientId, patientId),
       gte(scheduledDosesTable.scheduledAt, start),
-      lte(scheduledDosesTable.scheduledAt, end)
+      lte(scheduledDosesTable.scheduledAt, end),
+      /**
+       * O "se necessário" NÃO entra na adesão — Issue #169.
+       *
+       * Esta linha é o critério de aceite inteiro. Sem ela, o uso de
+       * resgate entraria como dose tomada e inflaria o percentual; e o
+       * contorno antigo (horário inventado + pulo diário) o afundava.
+       * Nos dois casos o número que vai ao médico deixa de descrever o
+       * tratamento.
+       *
+       * Os usos aparecem logo abaixo, em `prnUses`, com data, hora e
+       * motivo.
+       */
+      ne(treatmentsTable.scheduleType, "se_necessario"),
     ));
 
   const byMedication = new Map<number, {
@@ -308,6 +355,49 @@ export async function computeReportData(
   });
   medications.sort((a, b) => a.medicationId - b.medicationId);
 
+  /**
+   * Os usos de "se necessário" no período — Issue #169.
+   *
+   * Consulta separada de propósito: ela pergunta pelo REGISTRO (quando o
+   * cuidador diz que deu), enquanto a de adesão pergunta pela AGENDA
+   * (quando estava marcado). Misturar as duas foi exatamente o que fez o
+   * contorno antigo sujar o número.
+   *
+   * O recorte é por `takenAt`, e não por `scheduledAt`: num uso lançado
+   * depois os dois são iguais por construção, mas se um dia alguém
+   * corrigir o horário (#136) é o `takenAt` que vale — é ele que diz
+   * quando a pessoa tomou.
+   */
+  const prnRows = await db
+    .select({
+      medicationName: medicationsTable.name,
+      dose: scheduledDosesTable.dose,
+      takenAt: doseRecordsTable.takenAt,
+      justification: doseRecordsTable.justification,
+    })
+    .from(doseRecordsTable)
+    .innerJoin(scheduledDosesTable, eq(doseRecordsTable.scheduledDoseId, scheduledDosesTable.id))
+    .innerJoin(treatmentsTable, eq(scheduledDosesTable.treatmentId, treatmentsTable.id))
+    .innerJoin(medicationsTable, eq(treatmentsTable.medicationId, medicationsTable.id))
+    .where(and(
+      eq(scheduledDosesTable.patientId, patientId),
+      eq(treatmentsTable.scheduleType, "se_necessario"),
+      gte(doseRecordsTable.takenAt, start),
+      lte(doseRecordsTable.takenAt, end),
+    ))
+    .orderBy(desc(doseRecordsTable.takenAt));
+
+  const prnUses: PrnUseRow[] = prnRows.map((u) => {
+    const { localDate, localTime } = toLocalDateTime(u.takenAt, patient.timezone);
+    return {
+      medicationName: u.medicationName,
+      dose: u.dose,
+      localDate,
+      localTime,
+      justification: u.justification,
+    };
+  });
+
   const measurementRows = await db
     .select({
       type: healthMeasurementsTable.type, value: healthMeasurementsTable.value,
@@ -327,6 +417,7 @@ export async function computeReportData(
     periodStart, periodEnd,
     generatedAt: Clock.now(),
     medications,
+    prnUses,
     measurements: measurementRows,
   };
 }
@@ -400,6 +491,32 @@ export function generateReportPdf(data: AdherenceReportData): Promise<Buffer> {
         }
       }
       doc.moveDown(0.8);
+    }
+
+    /**
+     * ── "Se precisar" — Issue #169 ────────────────────────────────────
+     *
+     * Seção própria, depois dos medicamentos e antes das aferições. Cada
+     * uso com data, hora e o motivo que o cuidador escreveu.
+     *
+     * Sem percentual, sem total por semana, sem média: a página traz os
+     * fatos registrados e o médico interpreta. Uma frase como "3 usos em
+     * 7 dias, acima do habitual" seria o app opinando (invariante 4).
+     */
+    if (data.prnUses.length > 0) {
+      if (doc.y > doc.page.height - 200) doc.addPage();
+      doc.fontSize(14).font("Helvetica-Bold").text("Remédios de uso \"se necessário\"");
+      doc.fontSize(10).font("Helvetica").fillColor("#444")
+        .text("Não entram no cálculo de adesão: não têm horário marcado.");
+      doc.fillColor("#000").fontSize(11);
+      for (const uso of data.prnUses) {
+        if (doc.y > doc.page.height - 80) doc.addPage();
+        const quando = `${emPortugues(uso.localDate)} às ${uso.localTime}`;
+        const quanto = uso.dose ? ` — ${uso.dose}` : "";
+        const porque = uso.justification ? ` — "${uso.justification}"` : "";
+        doc.text(`  ${quando}: ${uso.medicationName}${quanto}${porque}`);
+      }
+      doc.moveDown(1);
     }
 
     if (data.measurements.length > 0) {

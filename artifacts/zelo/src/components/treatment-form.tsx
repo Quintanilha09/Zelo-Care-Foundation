@@ -45,7 +45,20 @@ interface ExtractionConfidence {
   name: number; concentration: number; form: number; posologyText: number; scheduleGuess: number;
 }
 
-type ScheduleType = "times_per_day" | "every_n_hours" | "specific_weekdays" | "alternate_days" | "cycle_with_pause";
+type ScheduleType = "times_per_day" | "every_n_hours" | "specific_weekdays" | "alternate_days" | "cycle_with_pause" | "se_necessario";
+
+/**
+ * O "se precisar" não tem agenda, e por isso some da metade do formulário.
+ *
+ * Issue #169. Quantidade de doses (#173), desmame (#172), pré-visualização
+ * das próximas doses e escalonamento de lembrete são todos perguntas sobre
+ * uma AGENDA. Mostrá-los para um remédio que não tem hora marcada seria
+ * oferecer controles que não fazem nada — e o formulário de tratamento já
+ * é a tela de maior atrito do app.
+ */
+function temAgenda(tipo: ScheduleType): boolean {
+  return tipo !== "se_necessario";
+}
 
 const SCHEDULE_LABELS: Record<ScheduleType, string> = {
   times_per_day: "Vezes ao dia, em horários fixos",
@@ -53,6 +66,10 @@ const SCHEDULE_LABELS: Record<ScheduleType, string> = {
   specific_weekdays: "Dias específicos da semana",
   alternate_days: "Dias alternados",
   cycle_with_pause: "Ciclo com pausa",
+  // Issue #169: o sexto não responde "quando tomar" — responde "tomar
+  // se". Por isso o rótulo diz "sem hora marcada" em vez de descrever um
+  // padrão de relógio que ele não tem.
+  se_necessario: "Se precisar (sem hora marcada)",
 };
 
 // ZELO-30: controla até onde vai a cascata de lembrete quando ninguém
@@ -215,6 +232,9 @@ export function TreatmentForm({ patientId, onCreated, onCancel, tratamento }: Tr
     weekdays?: number[];
     onDays?: number;
     offDays?: number;
+    /** Issue #169: o que a receita diz do "se necessário". Só para mostrar. */
+    intervaloMinimoHoras?: number;
+    tetoDiario?: number;
     /** Issue #171: horário → dose. Ausente nos tratamentos anteriores a ela. */
     dosePorHorario?: Record<string, string>;
     /** Issue #172: os degraus de um desmame, em ordem. */
@@ -280,6 +300,23 @@ export function TreatmentForm({ patientId, onCreated, onCancel, tratamento }: Tr
   const [everyNStartTime, setEveryNStartTime] = useState(cfg.startTime ?? "08:00");
   const [weekdays, setWeekdays] = useState<number[]>(cfg.weekdays ?? [1, 3, 5]);
   const [onDays, setOnDays] = useState(cfg.onDays ?? 21);
+  /**
+   * O que a receita diz sobre o "se necessário" — Issue #169.
+   *
+   * ═══════════════════════════════════════════════════════════════════
+   * OS DOIS SÃO PARA MOSTRAR, E NUNCA PARA DECIDIR.
+   *
+   * "A cada 6 h se precisar, no máximo 4 por dia" vem da receita e é
+   * digitado aqui. Na hora de registrar, o app mostra isto ao lado de
+   * "a última foi às 14:20" e "já foram 2 hoje" — e para por aí.
+   *
+   * O app não compara, não bloqueia e não diz "ainda não pode dar".
+   * Isso seria prescrever, e o invariante 4 proíbe: quem interpreta é o
+   * médico, com o cuidador ao lado da pessoa.
+   * ═══════════════════════════════════════════════════════════════════
+   */
+  const [intervaloMinimoHoras, setIntervaloMinimoHoras] = useState(String(cfg.intervaloMinimoHoras ?? ""));
+  const [tetoDiario, setTetoDiario] = useState(String(cfg.tetoDiario ?? ""));
   const [offDays, setOffDays] = useState(cfg.offDays ?? 7);
 
   const [preview, setPreview] = useState<string[] | null>(null);
@@ -335,6 +372,23 @@ export function TreatmentForm({ patientId, onCreated, onCancel, tratamento }: Tr
         return { scheduleType, times, startDate, ...comDose, ...comDegraus };
       case "cycle_with_pause":
         return { scheduleType, onDays, offDays, times, ...comDose, ...comDegraus };
+      /**
+       * Sem `times`, e isso é o ponto inteiro — Issue #169.
+       *
+       * Nada de dose por horário nem de degrau aqui: os dois falam de uma
+       * agenda, e este tipo não tem uma. Mandá-los seria gravar um campo
+       * que nada lê.
+       *
+       * Campo em branco vira ausência, e não zero: a receita que não diz
+       * intervalo mínimo não tem intervalo mínimo, e um `0` ali seria o
+       * app inventando um número que ninguém prescreveu.
+       */
+      case "se_necessario":
+        return {
+          scheduleType,
+          ...(intervaloMinimoHoras ? { intervaloMinimoHoras: Number(intervaloMinimoHoras) } : {}),
+          ...(tetoDiario ? { tetoDiario: Number(tetoDiario) } : {}),
+        };
     }
   }
 
@@ -829,6 +883,57 @@ export function TreatmentForm({ patientId, onCreated, onCancel, tratamento }: Tr
             <TimesList times={times} onChange={setTimes} dosePorHorario={dosePorHorario} onDoseChange={setDosePorHorario} />
           </div>
         )}
+
+        {/* ── Issue #169: o remédio sem hora marcada ────────────────────
+
+            Não há lista de horários aqui, e é isso que define o tipo.
+            Dipirona para dor, bombinha de resgate, remédio de enjoo.
+
+            Os dois campos vêm da RECEITA e servem para o app MOSTRAR na
+            hora de registrar. Ele não compara, não bloqueia e não diz
+            "ainda não pode dar" — isso seria prescrever. */}
+        {scheduleType === "se_necessario" && (
+          <div className="space-y-4">
+            <div className="rounded-lg border bg-muted/40 p-3 space-y-3">
+              <p className="text-sm">
+                Este remédio não tem hora marcada. Ele não vai aparecer como
+                dose pendente, não vai atrasar e não entra na conta de adesão —
+                você registra quando precisar dar.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="tf-intervalo">Intervalo mínimo (opcional)</Label>
+                  <CampoNumero
+                    id="tf-intervalo"
+                    value={intervaloMinimoHoras}
+                    onChange={setIntervaloMinimoHoras}
+                    min={1}
+                    max={72}
+                    placeholder="6"
+                    sufixo="horas"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="tf-teto">No máximo por dia (opcional)</Label>
+                  <CampoNumero
+                    id="tf-teto"
+                    value={tetoDiario}
+                    onChange={setTetoDiario}
+                    min={1}
+                    max={24}
+                    placeholder="4"
+                    sufixo="por dia"
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                O que a receita disser. Na hora de registrar, o ZELO mostra isto
+                junto com a última vez e quantas já foram hoje. Ele não decide
+                se pode dar — quem decide é o médico.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -851,7 +956,7 @@ export function TreatmentForm({ patientId, onCreated, onCancel, tratamento }: Tr
           Fechado por padrão: a maioria informa a data, e quem não precisa
           disto não pode nem ver campo novo. O formulário de tratamento já
           é a tela de maior atrito do app. */}
-      {!porQuantidade ? (
+      {temAgenda(scheduleType) && (!porQuantidade ? (
         <button
           type="button"
           className="text-sm text-muted-foreground underline"
@@ -900,7 +1005,7 @@ export function TreatmentForm({ patientId, onCreated, onCancel, tratamento }: Tr
             </p>
           )}
         </div>
-      )}
+      ))}
 
       {/* ── Issue #172: o desmame ─────────────────────────────────────
 
@@ -914,7 +1019,7 @@ export function TreatmentForm({ patientId, onCreated, onCancel, tratamento }: Tr
           Só aparece nos tipos que têm lista de horários. Em
           `every_n_hours` o `buildScheduleConfig` não manda os degraus — e
           um campo que a gente não salva é pior que campo nenhum. */}
-      {scheduleType !== "every_n_hours" && (degraus.length === 0 ? (
+      {scheduleType !== "every_n_hours" && temAgenda(scheduleType) && (degraus.length === 0 ? (
         <button
           type="button"
           className="text-sm text-muted-foreground underline text-left"
@@ -1040,6 +1145,10 @@ export function TreatmentForm({ patientId, onCreated, onCancel, tratamento }: Tr
       </div>
       )}
 
+      {/* Issue #169: sem hora marcada não há "a tempo", e nenhum lembrete
+          dispara para este tipo. Oferecer a cascata aqui prometeria um
+          aviso que nunca vai sair. */}
+      {temAgenda(scheduleType) && (
       <div className="space-y-2">
         <Label>Se ninguém registrar a tempo</Label>
         <Select value={escalationProfile} onValueChange={(v) => setEscalationProfile(v as EscalationProfile)}>
@@ -1051,7 +1160,10 @@ export function TreatmentForm({ patientId, onCreated, onCancel, tratamento }: Tr
           </SelectContent>
         </Select>
       </div>
+      )}
 
+      {/* Não há próximas doses a ver quando não há agenda. */}
+      {temAgenda(scheduleType) && (
       <div className="space-y-3">
         <Button type="button" variant="outline" className="w-full gap-2" onClick={() => void handlePreview()} disabled={previewLoading}>
           <CalendarCheck className="w-4 h-4" />
@@ -1064,6 +1176,7 @@ export function TreatmentForm({ patientId, onCreated, onCancel, tratamento }: Tr
           </div>
         )}
       </div>
+      )}
 
       {/* ── Issue #174: o que esta mudança vai fazer ─────────────────────
 

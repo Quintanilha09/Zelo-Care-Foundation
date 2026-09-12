@@ -82,6 +82,44 @@ const ScheduleConfigBody = z.discriminatedUnion("scheduleType", [
   z.object({ scheduleType: z.literal("specific_weekdays"), weekdays: z.array(z.number().int().min(0).max(6)).min(1), times: z.array(TimeOfDay).min(1), dosePorHorario: DosePorHorario, degraus: Degraus }),
   z.object({ scheduleType: z.literal("alternate_days"), times: z.array(TimeOfDay).min(1), startDate: z.string(), dosePorHorario: DosePorHorario, degraus: Degraus }),
   z.object({ scheduleType: z.literal("cycle_with_pause"), onDays: z.number().int().positive(), offDays: z.number().int().min(0), times: z.array(TimeOfDay).min(1), dosePorHorario: DosePorHorario, degraus: Degraus }),
+  /**
+   * O remédio SEM hora marcada — Issue #169.
+   *
+   * ═══════════════════════════════════════════════════════════════════
+   * NÃO TEM `times`, E ISSO É O PONTO INTEIRO.
+   *
+   * Dipirona para dor, bombinha de resgate, remédio de enjoo, laxante,
+   * antitérmico. Toda receita que diz *se precisar*. O contorno de antes
+   * — inventar um horário e pular todo dia — fazia o relatório do médico
+   * dizer que o paciente NÃO TOMA o remédio que ele só devia tomar
+   * quando precisasse.
+   * ═══════════════════════════════════════════════════════════════════
+   *
+   * `intervaloMinimoHoras` e `tetoDiario` vêm da RECEITA e são digitados
+   * por quem cadastra. O app os MOSTRA na hora de registrar e não faz
+   * mais nada com eles: não bloqueia, não avisa que "pode dar", não
+   * calcula. Invariante 4 — mostrar "a última foi há 2 h" é registro;
+   * dizer "ainda não pode" é prescrição.
+   */
+  z.object({
+    scheduleType: z.literal("se_necessario"),
+    intervaloMinimoHoras: z.number().int().positive().max(72).optional(),
+    tetoDiario: z.number().int().positive().max(24).optional(),
+  })
+    /**
+     * `.strict()` só aqui, e é de propósito.
+     *
+     * Por padrão o zod DESCARTA campo desconhecido em silêncio. Quem
+     * mandasse `times` junto receberia 201 e um tratamento sem horário
+     * nenhum — a tela mostraria "se precisar" e quem cadastrou juraria ter
+     * marcado as 08:00. Um remédio que a pessoa acha que tem horário e não
+     * tem é pior que uma recusa.
+     *
+     * Nos outros cinco o padrão fica: eles ganharam campos ao longo do
+     * tempo (dose por horário, degraus), e apertar isso agora recusaria
+     * corpo que app publicado ainda manda.
+     */
+    .strict(),
 ]);
 
 const CreateTreatmentBody = z.object({

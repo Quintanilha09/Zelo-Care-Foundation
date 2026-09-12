@@ -19,12 +19,38 @@ import { medicationsTable } from "./medications";
 // - specific_weekdays: dias específicos da semana
 // - alternate_days: dias alternados
 // - cycle_with_pause: ciclo com pausa (ex: 21 dias tomando + 7 de pausa)
+// - se_necessario: SEM hora marcada — ver o bloco abaixo
+//
+// ═══════════════════════════════════════════════════════════════════════════
+// `se_necessario` NÃO É UM SEXTO PADRÃO DE RELÓGIO — Issue #169.
+//
+// Os cinco primeiros respondem "quando tomar". Este responde "tomar se".
+// Dipirona para dor, bombinha de resgate, remédio de enjoo, laxante,
+// antitérmico: toda receita que diz *se precisar*.
+//
+// Até aqui não cabia, e o contorno SUJAVA O DADO: quem cadastrava inventava
+// um horário e pulava todo dia, e o relatório do médico passava a dizer que
+// o paciente NÃO TOMA o remédio que ele só devia tomar quando precisasse.
+// A adesão — o número que o relatório existe para levar — virava ficção.
+//
+// E é justamente onde registrar importa mais: quantas vezes a bombinha de
+// resgate foi usada nesta semana é sinal clínico, às vezes mais importante
+// que a adesão ao remédio fixo.
+//
+// Consequências espalhadas pelo código, todas amarradas a ESTE valor:
+//   · a geração de doses NUNCA cria dose agendada para ele
+//   · ele nunca é "pendente" nem "atrasada" (não há hora, não há atraso)
+//   · ele NUNCA entra no percentual de adesão
+//   · nenhum lembrete dispara para ele
+//   · o relatório do médico o mostra em seção própria
+// ═══════════════════════════════════════════════════════════════════════════
 export const scheduleTypeEnum = pgEnum("schedule_type", [
   "times_per_day",
   "every_n_hours",
   "specific_weekdays",
   "alternate_days",
   "cycle_with_pause",
+  "se_necessario",
 ]);
 
 export const treatmentStatusEnum = pgEnum("treatment_status", [
@@ -64,6 +90,13 @@ export const treatmentsTable = pgTable("treatments", {
   // specific_weekdays:{ weekdays: [1,3,5], times: ["08:00"] }  (0=dom)
   // alternate_days:   { times: ["08:00"], startDate: "2025-01-01" }
   // cycle_with_pause: { onDays: 21, offDays: 7, times: ["08:00"] }
+  //
+  // se_necessario (#169): { intervaloMinimoHoras?: 6, tetoDiario?: 4 }
+  //   Os dois vêm da RECEITA e são digitados por quem cadastra. O app os
+  //   MOSTRA na hora de registrar e não faz mais nada com eles: não
+  //   bloqueia, não avisa que "pode dar", não calcula. Invariante 4 — o
+  //   ZELO registra, o médico interpreta. Dizer "ainda não pode" seria
+  //   prescrever.
   scheduleConfig: jsonb("schedule_config").notNull(),
   startDate: date("start_date", { mode: "string" }).notNull(),
   endDate: date("end_date", { mode: "string" }),
