@@ -199,6 +199,7 @@ ele foi migrado para cá justamente porque duas fontes divergiram e dois agentes
 | Armadilhas técnicas em detalhe | [planning/decisoes/ARMADILHAS.md](planning/decisoes/ARMADILHAS.md) |
 | Planos e limites | [planning/decisoes/PLANOS.md](planning/decisoes/PLANOS.md) |
 | Por que o verde da marca escureceu (e clareou no escuro) | [planning/decisoes/VERDE-DA-MARCA.md](planning/decisoes/VERDE-DA-MARCA.md) |
+| Por que o produto sai do Replit e vai para a AWS, e quanto custa | [planning/decisoes/MIGRACAO-PARA-AWS.md](planning/decisoes/MIGRACAO-PARA-AWS.md) |
 | Requisitos e roadmap | [planning/REQUIREMENTS.md](planning/REQUIREMENTS.md), [planning/ROADMAP.md](planning/ROADMAP.md) |
 | Regras de fase e violações bloqueantes | [planning/config.json](planning/config.json) |
 | Spec original do produto | [planning/referencia/ESPECIFICACAO.md](planning/referencia/ESPECIFICACAO.md) |
