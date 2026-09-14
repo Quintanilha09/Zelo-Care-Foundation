@@ -27,6 +27,13 @@
 
 import crypto from "node:crypto";
 import { Client } from "@replit/object-storage";
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  DeleteObjectCommand,
+  HeadObjectCommand,
+} from "@aws-sdk/client-s3";
 import { IS_PRODUCTION, allowsDevelopmentShortcuts } from "./environment.ts";
 import { safeLog } from "./safe-logger.ts";
 
@@ -48,7 +55,11 @@ export interface ArmazenamentoDeMidia {
  * bucket não serve nada por URL pública.
  */
 function prefixo(): string {
-  const dir = process.env.PRIVATE_OBJECT_DIR?.trim().replace(/^\/+|\/+$/g, "");
+  // `S3_PREFIX` é o nome novo (#193); `PRIVATE_OBJECT_DIR` era o do Replit.
+  // Os dois continuam sendo lidos durante a migração — enquanto os dois
+  // ambientes convivem, uma chave gerada num tem de ser encontrável no outro.
+  const bruto = process.env.S3_PREFIX ?? process.env.PRIVATE_OBJECT_DIR;
+  const dir = bruto?.trim().replace(/^\/+|\/+$/g, "");
   return dir ? `${dir}/zelo-midia` : "zelo-midia";
 }
 
@@ -101,6 +112,100 @@ class ArmazenamentoReplit implements ArmazenamentoDeMidia {
   }
 }
 
+// ── Implementação real: S3 da AWS ─────────────────────────────────────────
+
+/**
+ * O armazenamento de mídia na AWS — Issue #193.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ESTA CLASSE É A MIGRAÇÃO INTEIRA.
+ *
+ * O `@replit/object-storage` era o ÚNICO acoplamento real do código ao Replit
+ * fora dos plugins de desenvolvimento do Vite. O comentário no topo deste
+ * arquivo previu este dia e disse o que fazer: *"trocar por S3 ou GCS deve ser
+ * escrever uma classe, não caçar chamadas espalhadas pelas rotas"*.
+ *
+ * É isto. A interface não mudou uma linha, e nenhuma rota soube.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * ── A credencial não é passada aqui, de propósito ────────────────────────
+ *
+ * O `S3Client` sem `credentials` usa a cadeia padrão do SDK: variável de
+ * ambiente primeiro, papel de execução depois. Hoje o serviço de contêiner do
+ * Lightsail só oferece variável; amanhã, num ECS, o mesmo código passa a usar
+ * o papel da tarefa sem nenhuma alteração — e credencial que não existe em
+ * lugar nenhum é credencial que não vaza.
+ */
+export class ArmazenamentoS3 implements ArmazenamentoDeMidia {
+  private readonly cliente: S3Client;
+
+  constructor(private readonly bucket: string, region: string) {
+    this.cliente = new S3Client({ region });
+  }
+
+  async guardar(chave: string, bytes: Buffer, mimeType: string): Promise<void> {
+    await this.cliente.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: chave,
+        Body: bytes,
+        ContentType: mimeType,
+      }),
+    );
+  }
+
+  async ler(chave: string): Promise<Buffer | null> {
+    try {
+      const r = await this.cliente.send(
+        new GetObjectCommand({ Bucket: this.bucket, Key: chave }),
+      );
+      if (!r.Body) return null;
+      return Buffer.from(await r.Body.transformToByteArray());
+    } catch (err) {
+      // Chave ausente é resposta legítima, não falha: quem chama devolve 404.
+      // Qualquer outro erro (credencial, rede, permissão) PRECISA subir — se
+      // virasse `null` aqui, uma configuração errada pareceria "não existe" e
+      // a mídia sumiria em silêncio.
+      if (naoEncontrado(err)) return null;
+      throw err;
+    }
+  }
+
+  async apagar(chave: string): Promise<void> {
+    // `DeleteObject` no S3 já responde 204 para chave que não existe, então o
+    // expurgo por job (história 7) é idempotente sem nenhum cuidado extra —
+    // era o que o `ignoreNotFound` do Replit fazia à mão.
+    await this.cliente.send(
+      new DeleteObjectCommand({ Bucket: this.bucket, Key: chave }),
+    );
+  }
+
+  async existe(chave: string): Promise<boolean> {
+    try {
+      await this.cliente.send(
+        new HeadObjectCommand({ Bucket: this.bucket, Key: chave }),
+      );
+      return true;
+    } catch (err) {
+      if (naoEncontrado(err)) return false;
+      throw err;
+    }
+  }
+}
+
+/**
+ * O erro é "essa chave não existe", ou é outra coisa?
+ *
+ * O SDK sinaliza isso de duas formas conforme o comando: `GetObject` devolve
+ * o nome `NoSuchKey`, e `HeadObject` devolve `NotFound` — mas os dois trazem
+ * 404 no metadado. Olhar o código HTTP cobre os dois e não depende de o nome
+ * do erro continuar o mesmo entre versões do SDK.
+ */
+export function naoEncontrado(err: unknown): boolean {
+  const e = err as { name?: string; $metadata?: { httpStatusCode?: number } };
+  return e?.$metadata?.httpStatusCode === 404 || e?.name === "NoSuchKey" || e?.name === "NotFound";
+}
+
 // ── Implementação de teste e de desenvolvimento local ─────────────────────
 
 /**
@@ -131,11 +236,27 @@ export class ArmazenamentoEmMemoria implements ArmazenamentoDeMidia {
 
 let memoriaCompartilhada: ArmazenamentoEmMemoria | null = null;
 let replitCompartilhado: ArmazenamentoReplit | null = null;
+let s3Compartilhado: ArmazenamentoS3 | null = null;
 let jaAvisou = false;
 
 function bucketConfigurado(): string | null {
   const id = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID?.trim();
   return id && id.length > 0 ? id : null;
+}
+
+/**
+ * O bucket S3, quando houver — Issue #193.
+ *
+ * A região é obrigatória junto do nome: um `S3_BUCKET` sem `S3_REGION` faria
+ * o SDK procurar a região sozinho e, não achando, falhar só na primeira
+ * gravação — em produção, com um upload de verdade na mão de um cuidador.
+ * Melhor não existir do que existir pela metade.
+ */
+function bucketS3(): { bucket: string; region: string } | null {
+  const bucket = process.env.S3_BUCKET?.trim();
+  const region = process.env.S3_REGION?.trim();
+  if (!bucket || !region) return null;
+  return { bucket, region };
 }
 
 /** A capacidade de mídia existe neste ambiente? Usada por GET /config/midia. */
@@ -150,6 +271,19 @@ export function midiaConfigurada(): boolean {
  * Quem chama responde 503 com motivo, nunca 500.
  */
 export function obterArmazenamento(): ArmazenamentoDeMidia | null {
+  /**
+   * O S3 vem primeiro — Issue #193.
+   *
+   * Durante a migração os dois ambientes convivem, e cada um tem as suas
+   * variáveis. A ordem aqui decide qual vence se alguém deixar as duas
+   * configuradas por engano: ganha o S3, que é para onde o produto vai.
+   */
+  const s3 = bucketS3();
+  if (s3) {
+    s3Compartilhado ??= new ArmazenamentoS3(s3.bucket, s3.region);
+    return s3Compartilhado;
+  }
+
   const bucket = bucketConfigurado();
 
   if (bucket) {
@@ -162,7 +296,7 @@ export function obterArmazenamento(): ArmazenamentoDeMidia | null {
       jaAvisou = true;
       safeLog.error(
         { action: "media_storage_unconfigured" },
-        "[SEGURANCA] DEFAULT_OBJECT_STORAGE_BUCKET_ID ausente em producao. " +
+        "[SEGURANCA] Nenhum bucket configurado em producao (S3_BUCKET+S3_REGION). " +
           "O envio de midia fica DESABILITADO — cair para memoria perderia o arquivo no proximo restart."
       );
     }
@@ -185,5 +319,6 @@ export function obterArmazenamento(): ArmazenamentoDeMidia | null {
 export function reiniciarArmazenamentoParaTeste(): void {
   memoriaCompartilhada = null;
   replitCompartilhado = null;
+  s3Compartilhado = null;
   jaAvisou = false;
 }
