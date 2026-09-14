@@ -1,5 +1,8 @@
 // Types augmentation — must be referenced before express is imported
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
+import path from "node:path";
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
@@ -104,6 +107,91 @@ app.use("/api", router);
 app.use("/api", (_req: Request, res: Response): void => {
   res.status(404).json({ error: "Rota não encontrada" });
 });
+
+// ── O front, servido por este mesmo servidor — Issue #194 ─────────────────
+//
+// ═══════════════════════════════════════════════════════════════════════════
+// ATÉ AQUI, QUEM SERVIA O FRONT ERA A PLATAFORMA, E NÃO O CÓDIGO.
+//
+// O `.replit` tem `router = "application"`, e o Replit mandava `/api` para o
+// backend e todo o resto para o estático do Vite. Fora de lá esse roteamento
+// não existe: `GET /` devolvia 404 e o app não abria.
+//
+// Um contêiner só, uma origem só. A alternativa (estático no S3 + CloudFront)
+// traria de volta exatamente a complicação de origem cruzada que a
+// mesma-origem elimina de graça, para um ganho de cache que é teórico no
+// volume do ZELO. Menos peça é menos coisa para quebrar às 3h da manhã.
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// ── Por que depois das rotas de API, e nunca antes ───────────────────────
+//
+// Montado antes, um arquivo estático engoliria uma rota de API — e o defeito
+// seria mudo: a chamada devolveria HTML com status 200, e o cliente quebraria
+// no `JSON.parse` sem nenhuma pista de onde.
+//
+// ── Por que some quando a pasta não existe ───────────────────────────────
+//
+// Enquanto os dois ambientes convivem, o Replit continua servindo o front
+// dele. Se a pasta não estiver lá, este bloco simplesmente não é montado, e o
+// comportamento de hoje segue idêntico. Ambiente novo não pode quebrar o
+// antigo antes de provar que funciona.
+const frontDir = diretorioDoFront();
+if (frontDir) {
+  app.use(
+    express.static(frontDir, {
+      // O `index.html` NUNCA é cacheado: ele é o arquivo que aponta para os
+      // demais, e cacheá-lo prenderia a pessoa numa versão antiga do app sem
+      // ela ter como saber por quê.
+      setHeaders(res, caminho) {
+        if (caminho.endsWith("index.html")) {
+          res.setHeader("Cache-Control", "no-cache");
+        } else {
+          // O resto tem hash no nome (`index-4kTeGI-C.js`): o nome muda
+          // quando o conteúdo muda, então cachear para sempre é seguro.
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        }
+      },
+    }),
+  );
+
+  /**
+   * O retorno do SPA.
+   *
+   * O roteamento do app é do lado do cliente: `/pacientes/3` não é um arquivo.
+   * Sem esta linha, recarregar a página em qualquer tela interna devolveria
+   * 404 — e recarregar é o primeiro reflexo de quem acha que o app travou.
+   *
+   * Só GET: um POST para um caminho desconhecido tem que continuar sendo 404,
+   * nunca uma página HTML com status 200.
+   */
+  app.get(/^(?!\/api\/).*/, (_req: Request, res: Response): void => {
+    res.setHeader("Cache-Control", "no-cache");
+    res.sendFile(path.join(frontDir, "index.html"));
+  });
+}
+
+/**
+ * Onde está o front construído, se estiver em algum lugar.
+ *
+ * `FRONT_DIR` manda, e é o que a imagem de produção define (#195). Sem ela,
+ * tenta o caminho do monorepo — que é onde o `pnpm run build` deixa o
+ * resultado quando se roda tudo da raiz.
+ *
+ * Devolve `null` quando não há pasta nenhuma: sem front para servir, este
+ * servidor volta a ser só API, que é o que ele é hoje no Replit e no
+ * desenvolvimento local com o Vite noutra porta.
+ */
+function diretorioDoFront(): string | null {
+  const candidatos = [
+    process.env.FRONT_DIR,
+    path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../zelo/dist/public"),
+  ].filter((c): c is string => typeof c === "string" && c.length > 0);
+
+  for (const dir of candidatos) {
+    if (existsSync(path.join(dir, "index.html"))) return dir;
+  }
+  return null;
+}
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 app.use((err: unknown, req: Request, res: Response, _next: NextFunction): void => {
