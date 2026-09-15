@@ -78,33 +78,53 @@ WORKDIR /app
 # perceber, porque eles rodam sobre o node_modules real.
 #
 # Uma imagem só com `dist/` gera relatório quebrado. Já mordeu em 24/08/2026.
-COPY --from=construcao /pronto ./
+# ── O `--chown` aqui vale 156 MB, e isso foi medido ─────────────────────
+#
+# A forma óbvia é copiar e depois `RUN chown -R node:node /app`. Ela funciona
+# e é cara: camada de imagem é imutável, então mudar o dono de um arquivo
+# **grava uma cópia inteira dele** na camada nova. Medido em 14/09/2026, com
+# `docker history`: a linha do `chown -R` sozinha pesava 156 MB, num conteúdo
+# total de 149 MB — a imagem carregava tudo duas vezes.
+#
+# `COPY --chown` grava o dono certo de uma vez só, sem segunda cópia.
+COPY --from=construcao --chown=node:node /pronto ./
 
 # O app construído. `FRONT_DIR` aponta para cá, e é o que a #194 lê.
-COPY --from=construcao /origem/artifacts/zelo/dist/public ./front
+COPY --from=construcao --chown=node:node /origem/artifacts/zelo/dist/public ./front
 ENV FRONT_DIR=/app/front
 
 # Usuário sem privilégio. A imagem do Node já traz o `node` (uid 1000) — usar
 # o que já existe evita criar um e errar a permissão de alguma pasta.
-RUN chown -R node:node /app
+#
+# ── Efeito colateral bem-vindo: /app fica somente-leitura para o app ────
+#
+# O `WORKDIR` cria a pasta como root, e o `--chown` acima muda o dono do
+# CONTEÚDO, não o dela. Resultado: o processo lê tudo o que precisa e não
+# consegue criar arquivo nenhum dentro de /app.
+#
+# Isso é desejável e foi verificado em 14/09/2026: o api-server não escreve em
+# disco em lugar nenhum — o log vai para stdout, os dois `multer` usam
+# `memoryStorage()`, e o PDF é gerado em memória e transmitido. Um processo que
+# não precisa escrever não deve poder.
 USER node
 
 ENV PORT=5000
 EXPOSE 5000
 
-# ── Atenção: hoje esta rota AINDA checa o banco ─────────────────────────
+# ── É a rota RASA que entra aqui, e a escolha é deliberada ──────────────
 #
-# `/api/healthz` consulta o banco e responde 503 quando ele não responde. Aqui
-# dentro isso é informativo — o Docker não reinicia contêiner por conta da
-# verificação; quem reinicia é o orquestrador.
+# Desde a #196 existem duas perguntas separadas:
 #
-# No Lightsail, porém, o balanceador REINICIA o que responde fora da faixa. Se
-# o banco piscar, o contêiner seria derrubado por um problema que não é dele —
-# e o reinício levaria junto o pg-boss e as conexões SSE abertas.
+#   /api/healthz — "este processo está vivo?"   não toca no banco
+#   /api/readyz  — "ele consegue atender?"      consulta o banco
 #
-# É exatamente o que a #196 conserta, separando `/api/healthz` (o processo
-# está vivo?) de `/api/readyz` (ele consegue atender?). Quando ela entrar,
-# esta linha continua correta: é a rota rasa que o balanceador deve olhar.
+# Quem verifica aqui decide REINICIAR o contêiner, e banco fora do ar não é
+# motivo para isso: reiniciar não conserta o banco, e levaria junto o pg-boss
+# e todas as conexões SSE abertas — uma indisponibilidade curta do banco
+# viraria uma longa do aplicativo, causada pela própria verificação.
+#
+# Por isso `/api/healthz`. O `/api/readyz` é para o monitoramento externo, que
+# avisa uma pessoa em vez de derrubar o processo.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||5000)+'/api/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 

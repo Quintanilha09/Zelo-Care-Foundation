@@ -42,12 +42,31 @@ docs
 *.md
 !README.md
 
-# Testes e artefatos de teste.
-e2e
+# ═══════════════════════════════════════════════════════════════════════════
+# O CÓDIGO DE TESTE FICA NO CONTEXTO — E ISSO NÃO É DESCUIDO.
+#
+# A tentação é excluir `e2e/` e `**/*.test.ts`: eles não rodam em produção, e
+# cada arquivo a menos é contexto menor. Foi o que este arquivo fazia, e o
+# build quebrou em 14/09/2026:
+#
+#     error TS5083: Cannot read file '/origem/e2e/tsconfig.json'
+#
+# O `tsconfig.json` da raiz referencia `./e2e` como *project reference*, e o
+# `pnpm run build` começa por `tsc --build`. Sem a pasta, o portão de tipos não
+# chega nem a abrir um arquivo — o build morre na primeira linha.
+#
+# Deixá-los entrar também fecha uma diferença perigosa: assim o portão que roda
+# DENTRO da imagem é o mesmo que roda no CI. Se fosse mais fraco aqui, um
+# defeito poderia passar no CI e só aparecer no dia do deploy.
+#
+# **E nada disso chega à imagem final.** O estágio de produção copia só
+# `/pronto` (o pacote com as dependências de produção) e `dist/public` (o app
+# construído). Teste custa contexto de build, nunca tamanho de imagem.
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Resultado de execução de teste, esse sim, não serve para nada aqui.
 playwright-report
 test-results
-**/*.test.ts
-**/src/tests
 
 # Resíduos locais.
 .replit
