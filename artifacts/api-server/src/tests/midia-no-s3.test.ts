@@ -211,17 +211,27 @@ describe("A falha fechada em producao", () => {
       shell: process.platform === "win32",
     });
 
-    // O `safeLog` escreve no mesmo stdout, então a comparação é com o FIM da
-    // saída, não com ela inteira. E a linha de log que vem junto é justamente
-    // a segunda metade da garantia, conferida logo abaixo.
-    assert.ok(
-      stdout.trim().endsWith("NULO"),
+    /**
+     * A leitura é POR LINHA MARCADA, e não pelo fim da saída.
+     *
+     * A versão anterior fazia `stdout.trim().endsWith("NULO")` e reprovou no
+     * CI em 15/09/2026: o aviso de segurança sai pelo pino, que descarrega de
+     * forma assíncrona, e no runner ele chegou DEPOIS — grudado na palavra:
+     *
+     *     NULO{"level":50,"action":"media_storage_unconfigured",...}
+     *
+     * Era uma corrida entre dois escritores do mesmo stdout, não um defeito
+     * do código testado. Procurar a linha do marcador tira a ordem da conta.
+     */
+    const linha = stdout.split("\n").find((l) => l.includes("ZELO_RESULTADO:"));
+    assert.ok(linha, `o processo de apoio não imprimiu o resultado. Saída:\n${stdout}`);
+    const resultado = linha.slice(linha.indexOf("ZELO_RESULTADO:") + "ZELO_RESULTADO:".length).trim();
+
+    assert.equal(
+      resultado,
+      "NULO",
       "em produção sem bucket, obterArmazenamento() tem que devolver null — " +
         `cair para memória aceitaria o upload e perderia o arquivo. Saída: ${stdout}`,
-    );
-    assert.ok(
-      !stdout.includes("CAIU_PARA_ALGUMA_COISA"),
-      "produção não pode cair para memória em hipótese nenhuma",
     );
 
     /**
