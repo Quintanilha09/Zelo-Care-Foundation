@@ -18,6 +18,55 @@ import { Clock } from "./clock.ts";
 const isDev = allowsDevelopmentShortcuts();
 
 /**
+ * De onde veio a requisição — Issue #207.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ATÉ 14/09/2026 TODO LIMITADOR POR IP PODIA SER DESLIGADO POR QUEM QUISESSE.
+ *
+ * Os limitadores montavam a chave assim:
+ *
+ *     req.headers["x-forwarded-for"]?.split(",")[0]
+ *
+ * ou seja: liam o cabeçalho CRU e pegavam o PRIMEIRO valor da lista. O
+ * primeiro valor é o que o **cliente** mandou — não o que o proxy apurou.
+ * Trocar esse cabeçalho a cada tentativa dava um balde novo a cada
+ * requisição, e o limitador nunca disparava.
+ *
+ * Medido em 14/09/2026, contra o `adminLoginLimiter` (limite 5 por 15 min),
+ * sete requisições seguidas:
+ *
+ *     mesmo X-Forwarded-For forjado  → 200 200 200 200 200 429 429
+ *     forjado DIFERENTE a cada vez   → 200 200 200 200 200 200 200
+ *
+ * A segunda linha é a proteção inteira desligada com um cabeçalho.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * ── Por que `req.ip` resolve ──────────────────────────────────────────────
+ *
+ * O `app.ts` já configura `trust proxy` (um salto). É ISSO que ensina o
+ * Express a ler a lista pelo lado certo: ele monta
+ *
+ *     [ip do socket, ...lista do X-Forwarded-For invertida]
+ *
+ * e devolve o item que está a um salto de distância. Como o balanceador
+ * ACRESCENTA o IP de quem se conectou a ele — comportamento do ALB da AWS —,
+ * esse item é o cliente de verdade. O que o cliente escreveu fica à esquerda,
+ * onde ninguém olha.
+ *
+ * O código antigo passava por cima dessa conta que já existia.
+ *
+ * ── Por que a saída de emergência é um balde compartilhado ───────────────
+ *
+ * `req.ip` só vem indefinido se o socket já morreu. Nesse caso todo mundo cai
+ * em `"sem-origem"` — um balde só, que estoura rápido. É de propósito: quando
+ * não dá para saber quem está chamando, o limitador falha FECHADO. Recusar
+ * quem talvez fosse legítimo é ruim; deixar passar força bruta é pior.
+ */
+export function origemDaRequisicao(req: Request): string {
+  return req.ip ?? req.socket.remoteAddress ?? "sem-origem";
+}
+
+/**
  * Multiplicador dos limites. **Em produção é sempre 1, e não há como mudar.**
  *
  * ── Por que a variável existe ─────────────────────────────────────────────
@@ -128,7 +177,7 @@ export const loginByIpLimiter = rateLimit({
   limit: LOGIN_POR_IP * M,
   standardHeaders: "draft-7",
   legacyHeaders: false,
-  keyGenerator: (req) => `login:ip:${(req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ?? req.socket.remoteAddress ?? "unknown"}`,
+  keyGenerator: (req) => `login:ip:${origemDaRequisicao(req)}`,
   handler: (req, res) => {
     res.status(429).json({ error: mensagemDeEspera("aparelho", quandoLibera(req)) });
   },
@@ -156,7 +205,7 @@ export const registerLimiter = rateLimit({
   limit: 3 * M,
   standardHeaders: "draft-7",
   legacyHeaders: false,
-  keyGenerator: (req) => `register:${(req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ?? req.socket.remoteAddress ?? "unknown"}`,
+  keyGenerator: (req) => `register:${origemDaRequisicao(req)}`,
   message: { error: "Muitas tentativas. Aguarde antes de tentar novamente." },
 });
 
@@ -169,7 +218,7 @@ export const passwordResetLimiter = rateLimit({
   keyGenerator: (req) => {
     const body = req.body as Record<string, unknown> | undefined;
     const email = typeof body?.email === "string" ? body.email.toLowerCase() : "unknown";
-    const ip = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ?? req.socket.remoteAddress ?? "unknown";
+    const ip = origemDaRequisicao(req);
     return `reset:${ip}:${email}`;
   },
   message: { error: "Muitas tentativas. Aguarde antes de tentar novamente." },
@@ -201,15 +250,9 @@ export const resendVerificationLimiter = rateLimit({
   limit: 2 * M,
   standardHeaders: "draft-7",
   legacyHeaders: false,
-  keyGenerator: (req) => `resend:${(req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ?? req.socket.remoteAddress ?? "unknown"}`,
+  keyGenerator: (req) => `resend:${origemDaRequisicao(req)}`,
   message: { error: "Muitas tentativas. Aguarde antes de tentar novamente." },
 });
-
-function clientIp(req: { headers: Record<string, unknown>; socket: { remoteAddress?: string } }): string {
-  const fwd = req.headers["x-forwarded-for"];
-  const first = typeof fwd === "string" ? fwd.split(",")[0]?.trim() : undefined;
-  return first ?? req.socket.remoteAddress ?? "unknown";
-}
 
 /**
  * Extração de medicamento por foto: 20 por hora POR USUÁRIO.
@@ -230,7 +273,7 @@ export const photoExtractionLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: (req) => {
     const auth = (req as { user?: { userId?: number } }).user;
-    return `photo-extract:${auth?.userId ?? clientIp(req)}`;
+    return `photo-extract:${auth?.userId ?? origemDaRequisicao(req)}`;
   },
   message: { error: "Muitas fotos seguidas. Aguarde alguns minutos e tente de novo." },
 });
@@ -246,7 +289,7 @@ export const adminLoginLimiter = rateLimit({
   limit: 5 * M,
   standardHeaders: "draft-7",
   legacyHeaders: false,
-  keyGenerator: (req) => `admin-login:${clientIp(req)}`,
+  keyGenerator: (req) => `admin-login:${origemDaRequisicao(req)}`,
   message: { error: "Muitas tentativas. Aguarde antes de tentar novamente." },
 });
 
@@ -264,7 +307,7 @@ export const publicTokenLimiter = rateLimit({
   limit: 100 * M,
   standardHeaders: "draft-7",
   legacyHeaders: false,
-  keyGenerator: (req) => `public-token:${clientIp(req)}`,
+  keyGenerator: (req) => `public-token:${origemDaRequisicao(req)}`,
   message: { error: "Muitas tentativas. Aguarde alguns minutos." },
 });
 
@@ -280,7 +323,7 @@ export const refreshLimiter = rateLimit({
   limit: 60 * M,
   standardHeaders: "draft-7",
   legacyHeaders: false,
-  keyGenerator: (req) => `refresh:${clientIp(req)}`,
+  keyGenerator: (req) => `refresh:${origemDaRequisicao(req)}`,
   message: { error: "Muitas renovações de sessão. Aguarde alguns instantes." },
 });
 
@@ -317,7 +360,7 @@ export const mediaUploadLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: (req) => {
     const auth = (req as { user?: { userId?: number } }).user;
-    return `media-upload:${auth?.userId ?? clientIp(req)}`;
+    return `media-upload:${auth?.userId ?? origemDaRequisicao(req)}`;
   },
   message: { error: "Muitos envios seguidos. Aguarde alguns minutos e tente de novo." },
 });
@@ -338,6 +381,6 @@ export const mediaContentLimiter = rateLimit({
   limit: 300 * M,
   standardHeaders: "draft-7",
   legacyHeaders: false,
-  keyGenerator: (req) => `media-content:${clientIp(req)}`,
+  keyGenerator: (req) => `media-content:${origemDaRequisicao(req)}`,
   message: { error: "Muitas leituras seguidas. Aguarde alguns instantes." },
 });
