@@ -1,0 +1,55 @@
+# O que NÃO entra na imagem — Issue #195.
+#
+# Sem este arquivo, o `COPY . .` do Dockerfile levaria o `node_modules` do
+# Windows para dentro de uma imagem Linux. O `argon2` é módulo nativo: o
+# binário do Windows não roda lá, e o `pnpm install` do estágio de construção
+# seria por cima de um diretório que já existe — que é como se monta uma
+# imagem que constrói e quebra só no primeiro login de verdade.
+
+# Dependências: sempre instaladas dentro da imagem, para o sistema dela.
+node_modules
+**/node_modules
+
+# Resultado de build local: a imagem constrói o dela.
+dist
+**/dist
+**/.tsbuildinfo
+**/tsconfig.tsbuildinfo
+
+# Histórico e ferramentas do repositório.
+.git
+.github
+.claude
+.vscode
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SEGREDO NUNCA ENTRA NA IMAGEM.
+#
+# Camada de imagem é pública para quem tem a imagem, e apagar um arquivo numa
+# camada seguinte NÃO apaga da anterior. Segredo entra por variável de
+# ambiente do serviço, sempre.
+# ═══════════════════════════════════════════════════════════════════════════
+.env
+.env.*
+**/.env
+**/.env.*
+.secrets
+
+# Documentação e planejamento: não mudam o que o app faz, e cada arquivo a
+# mais é cache invalidado à toa.
+planning
+docs
+*.md
+!README.md
+
+# Testes e artefatos de teste.
+e2e
+playwright-report
+test-results
+**/*.test.ts
+**/src/tests
+
+# Resíduos locais.
+.replit
+replit.nix
+*.log
