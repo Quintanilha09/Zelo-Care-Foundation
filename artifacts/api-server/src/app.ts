@@ -13,8 +13,32 @@ import { allowsDevelopmentShortcuts } from "./lib/environment.ts";
 
 const app: Express = express();
 
-// Confia no proxy reverso do Replit para X-Forwarded-Proto / X-Forwarded-Host
-// Necessário para req.protocol e construção correta da redirect_uri do Google OAuth
+// ═══════════════════════════════════════════════════════════════════════════
+// UM SALTO. O NÚMERO IMPORTA, E É POR ISSO QUE ESTÁ EXPLICADO.
+//
+// `trust proxy` diz ao Express quantos intermediários na frente do app são
+// confiáveis, contando do app para fora. Com 1, ele lê
+//
+//     [ip do socket, ...X-Forwarded-For invertido]
+//
+// e devolve, em `req.ip`, o item a um salto de distância — o IP que o
+// balanceador apurou, e não o que o cliente escreveu no cabeçalho.
+//
+// **Um** é o certo nos dois ambientes de hoje: o proxy do Replit e o
+// balanceador do serviço de contêiner do Lightsail, cada um sendo um único
+// intermediário. Se algum dia entrar um CDN na frente, este número sobe junto
+// — e quem mexer precisa saber que ele não é decoração.
+//
+// ── Alto demais e baixo demais quebram coisas diferentes ─────────────────
+//
+// Alto demais: o Express passa a aceitar como origem um item que veio do
+// cliente, e todo limitador por IP volta a ser contornável (Issue #207).
+// Baixo demais: `req.ip` vira o IP do balanceador, e a família inteira do
+// Brasil divide um balde só.
+//
+// Também é ele que faz `req.protocol` dizer `https`, o que a `redirect_uri`
+// do Google OAuth precisa para ser montada certa (ver routes/google-auth.ts).
+// ═══════════════════════════════════════════════════════════════════════════
 app.set("trust proxy", 1);
 
 app.use(cookieParser());
