@@ -113,7 +113,16 @@ export default defineConfig({
       // `env` abaixo, entao o `export` nao faz falta — e assim o teste roda
       // nos dois sistemas.
       command: "pnpm --filter @workspace/api-server run build && pnpm --filter @workspace/api-server run start",
-      url: `http://localhost:${PORTA_API}/api/healthz`,
+      // `/readyz`, e nao `/healthz` — Issue #196.
+      //
+      // A partir da #196 o `/healthz` responde 200 assim que o processo sobe,
+      // sem tocar no banco: ele existe para o balanceador decidir se REINICIA
+      // o conteiner, e banco fora do ar nao e motivo para isso.
+      //
+      // Quem espera aqui quer outra coisa: "ja da para rodar teste contra
+      // isto?". Essa e a pergunta do `/readyz`, que so responde 200 com o
+      // banco atendendo.
+      url: `http://localhost:${PORTA_API}/api/readyz`,
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
       stdout: "pipe",

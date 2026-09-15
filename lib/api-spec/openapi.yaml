@@ -40,14 +40,38 @@ tags:
     description: Resumos e painel
 
 paths:
+  # Issue #196: sao DUAS perguntas, e trata-las como uma derruba o app.
+  # `/healthz` responde "o processo esta vivo?" e e para o balanceador, que
+  # REINICIA quem responde fora da faixa. `/readyz` responde "ele consegue
+  # atender?" e e para o monitoramento. Sem a separacao, um banco que piscasse
+  # fazia o balanceador reiniciar o conteiner por um problema que nao era dele.
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
-      summary: Health check
+      summary: O processo esta vivo (nao toca no banco)
       responses:
         "200":
-          description: Healthy
+          description: Vivo
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /readyz:
+    get:
+      operationId: readinessCheck
+      tags: [health]
+      summary: O processo consegue atender (checa o banco)
+      responses:
+        "200":
+          description: Pronto
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+        "503":
+          description: Banco de dados indisponivel
           content:
             application/json:
               schema:
@@ -785,7 +809,12 @@ components:
       type: object
       required: [status]
       properties:
-        status: { type: string }
+        status:        { type: string }
+        uptimeSeconds: { type: number }
+        # Os tres abaixo so vem do /readyz — o /healthz nao toca no banco.
+        db:            { type: string }
+        dbLatencyMs:   { type: number }
+        error:         { type: string }
 
     # ── Family ──────────────────────────────────────────────────────────────
     Family:

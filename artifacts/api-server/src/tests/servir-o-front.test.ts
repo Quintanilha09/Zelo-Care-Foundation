@@ -135,8 +135,9 @@ describe("As rotas de API continuam sendo de API", () => {
 
   it("a rota de saude continua respondendo, e nao vira o app", async () => {
     const r = await pedir("GET", "/api/healthz");
-    // 200 com banco, 503 sem — o que importa aqui é que NÃO é o index.html.
-    assert.ok(r.status === 200 || r.status === 503, `status inesperado: ${r.status}`);
+    // A partir da #196 o /healthz é raso: responde 200 sempre que o processo
+    // está de pé. O que importa aqui é que NÃO é o index.html.
+    assert.equal(r.status, 200, `status inesperado: ${r.status}`);
     assert.ok(!r.corpo.includes(MARCA_DO_INDEX));
   });
 
