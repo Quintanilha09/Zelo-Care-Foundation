@@ -206,5 +206,6 @@ ele foi migrado para cá justamente porque duas fontes divergiram e dois agentes
 | Auditoria §10 do GSD (em andamento) | [planning/auditorias/2026-08-23-gsd-secao-10.md](planning/auditorias/2026-08-23-gsd-secao-10.md) |
 | Última auditoria de segurança | [planning/auditorias/2026-08-21-seguranca.md](planning/auditorias/2026-08-21-seguranca.md) |
 | Montar o banco de produção | [planning/runbooks/banco-de-producao.md](planning/runbooks/banco-de-producao.md) |
+| Por que o serviço roda com UM nó, e o que fazer antes de subir | [planning/runbooks/escala-do-servico.md](planning/runbooks/escala-do-servico.md) |
 | LGPD | [docs/lgpd.md](docs/lgpd.md) |
 | Diário histórico (não é estado atual) | [planning/historico/](planning/historico/) |
