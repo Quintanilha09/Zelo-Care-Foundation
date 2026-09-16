@@ -1,0 +1,74 @@
+# O que NÃO entra na imagem — Issue #195.
+#
+# Sem este arquivo, o `COPY . .` do Dockerfile levaria o `node_modules` do
+# Windows para dentro de uma imagem Linux. O `argon2` é módulo nativo: o
+# binário do Windows não roda lá, e o `pnpm install` do estágio de construção
+# seria por cima de um diretório que já existe — que é como se monta uma
+# imagem que constrói e quebra só no primeiro login de verdade.
+
+# Dependências: sempre instaladas dentro da imagem, para o sistema dela.
+node_modules
+**/node_modules
+
+# Resultado de build local: a imagem constrói o dela.
+dist
+**/dist
+**/.tsbuildinfo
+**/tsconfig.tsbuildinfo
+
+# Histórico e ferramentas do repositório.
+.git
+.github
+.claude
+.vscode
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SEGREDO NUNCA ENTRA NA IMAGEM.
+#
+# Camada de imagem é pública para quem tem a imagem, e apagar um arquivo numa
+# camada seguinte NÃO apaga da anterior. Segredo entra por variável de
+# ambiente do serviço, sempre.
+# ═══════════════════════════════════════════════════════════════════════════
+.env
+.env.*
+**/.env
+**/.env.*
+.secrets
+
+# Documentação e planejamento: não mudam o que o app faz, e cada arquivo a
+# mais é cache invalidado à toa.
+planning
+docs
+*.md
+!README.md
+
+# ═══════════════════════════════════════════════════════════════════════════
+# O CÓDIGO DE TESTE FICA NO CONTEXTO — E ISSO NÃO É DESCUIDO.
+#
+# A tentação é excluir `e2e/` e `**/*.test.ts`: eles não rodam em produção, e
+# cada arquivo a menos é contexto menor. Foi o que este arquivo fazia, e o
+# build quebrou em 14/09/2026:
+#
+#     error TS5083: Cannot read file '/origem/e2e/tsconfig.json'
+#
+# O `tsconfig.json` da raiz referencia `./e2e` como *project reference*, e o
+# `pnpm run build` começa por `tsc --build`. Sem a pasta, o portão de tipos não
+# chega nem a abrir um arquivo — o build morre na primeira linha.
+#
+# Deixá-los entrar também fecha uma diferença perigosa: assim o portão que roda
+# DENTRO da imagem é o mesmo que roda no CI. Se fosse mais fraco aqui, um
+# defeito poderia passar no CI e só aparecer no dia do deploy.
+#
+# **E nada disso chega à imagem final.** O estágio de produção copia só
+# `/pronto` (o pacote com as dependências de produção) e `dist/public` (o app
+# construído). Teste custa contexto de build, nunca tamanho de imagem.
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Resultado de execução de teste, esse sim, não serve para nada aqui.
+playwright-report
+test-results
+
+# Resíduos locais.
+.replit
+replit.nix
+*.log
