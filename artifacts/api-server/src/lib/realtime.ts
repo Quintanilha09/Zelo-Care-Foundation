@@ -11,6 +11,36 @@
  * instâncias hoje), então EventEmitter em memória é suficiente e mais
  * simples que LISTEN/NOTIFY do Postgres — sem infra nova pra manter.
  *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * "SEM MÚLTIPLAS INSTÂNCIAS HOJE" É UMA CONDIÇÃO, NÃO UMA OBSERVAÇÃO — #197.
+ *
+ * A frase acima está aqui desde que este arquivo foi escrito, e estava certa.
+ * O que faltava era ela valer em algum lugar que um operador fosse ler antes
+ * de aumentar a escala do serviço — que é um seletor de número numa tela.
+ *
+ * Com dois nós, duas coisas quebram aqui, e nenhuma dá erro:
+ *
+ *   1. O evento não atravessa. Uma cuidadora conectada ao nó A não recebe a
+ *      dose registrada pela irmã através do nó B — a tela dela continua
+ *      mostrando "pendente". Num produto em que duas pessoas cuidam do mesmo
+ *      idoso, esse é o caminho para dose repetida.
+ *
+ *   2. `closeConnectionsForUser` só enxerga o mapa DESTE processo. Revogar o
+ *      acesso de um cuidador pelo nó A não fecha a conexão que ele tem aberta
+ *      no nó B: ele continua recebendo nome de medicamento, quem registrou e
+ *      situação da dose até a conexão cair sozinha.
+ *
+ * A segunda encosta no invariante 2 do produto — todo acesso a paciente é
+ * validado no servidor contra o vínculo familiar. Com dois nós, a revogação
+ * passaria a valer só para o nó que a atendeu.
+ *
+ * Sessão fixa (*sticky session*) não resolve nenhuma das duas: ela mantém a
+ * conexão no mesmo nó, e não faz o evento atravessar.
+ *
+ * O que precisa existir antes de subir a escala está em
+ * `planning/runbooks/escala-do-servico.md`.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
  * Duas estruturas:
  * - canal por paciente (patientEmitter): quem está vendo aquele paciente
  *   recebe os eventos dele.

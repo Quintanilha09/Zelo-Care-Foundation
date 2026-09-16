@@ -8,6 +8,26 @@
  * Em desenvolvimento os limites são dobrados para não atrapalhar testes.
  *
  * RESPOSTA PADRÃO EM EXCESSO: 429 com Retry-After em segundos.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * O CONTADOR É POR PROCESSO. COM DOIS NÓS, TODO LIMITE AQUI VALE O DOBRO.
+ *
+ * O `express-rate-limit` usa o armazenamento padrão, que é um mapa na memória
+ * do processo. Não há nada de errado nisso — com UM nó. Com dois, cada um
+ * conta o seu, e quem tenta senha cai ora num, ora noutro: o limite efetivo
+ * vira o dobro do número escrito abaixo. Com quatro nós, o quádruplo.
+ *
+ * Nenhum erro aparece. Nenhum log registra. O número no código continua
+ * dizendo 5, e a proteção real passou a ser 10.
+ *
+ * Por isso a escala do serviço é 1, de propósito — e subir exige trabalho
+ * antes. Este não é o único lugar que assume um processo só: o pub/sub ao
+ * vivo e a revogação de sessão (ver `realtime.ts`) assumem o mesmo, e o
+ * segundo é consequência de segurança.
+ *
+ * A lista do que precisa mudar antes está em
+ * `planning/runbooks/escala-do-servico.md` — Issue #197.
+ * ═══════════════════════════════════════════════════════════════════════════
  */
 
 import rateLimit from "express-rate-limit";
