@@ -360,12 +360,37 @@ dobro (US$ 30) e é um clique quando houver receita.
    uma requisição que chegue **sem** passar pelo balanceador tem seu único `X-Forwarded-For`
    tratado como legítimo, e a falha reabre. Não se resolve no código — é topologia de rede, e está
    anotado como item de aceite da **#200**.
-5. **Se o serviço de contêiner alcança o banco gerenciado em modo privado.** A documentação da AWS
-   é ambígua: a página do modo público diz "acessível apenas por *instâncias* Lightsail", e serviço
-   de contêiner não é instância; já o tutorial oficial que conecta os dois não manda ligar o modo
-   público. `NÃO VERIFICADO` — virou o primeiro checkpoint da #200, de propósito, porque a
-   alternativa (ligar acesso público e proteger por senha e TLS) mudaria o desenho da #200 e da #202.
-6. **Nenhum número de desempenho.** Nada foi medido em ambiente AWS ainda, porque ele não existe.
+5. **Nenhum número de desempenho.** Nada foi medido em ambiente AWS ainda.
+
+### Uma dúvida que saiu desta lista: o banco em modo privado — **VERIFICADO em 24/09/2026**
+
+Durante o planejamento isto era `NÃO VERIFICADO`, e era o risco que mais pesava: a documentação da
+AWS é ambígua. A página do modo público diz que um banco privado é *"acessível apenas por
+**instâncias** Lightsail"* — e serviço de contêiner **não** é instância. Já o tutorial oficial que
+conecta contêiner a banco não manda ligar o modo público, mas também não afirma que privado
+funciona.
+
+A alternativa, se não funcionasse, era ligar acesso público ao banco e proteger por senha e TLS —
+pior, e mudaria o desenho da #200 e da #202. Por isso virou o **primeiro checkpoint** da #200, de
+propósito: responder com recursos vazios custa vinte minutos; descobrir no dia do corte custa o dia.
+
+**Medido**, com um deployment descartável de `postgres:16-alpine` rodando
+`pg_isready -h <endpoint> -p 5432 -U dbmasteruser -t 30` no serviço `zelo`, contra o `zelo-db`
+recém-criado e **sem modo público**:
+
+```
+[24/set./2026:04:11:03] ls-….c9qmi8a66yho.sa-east-1.rds.amazonaws.com:5432 - accepting connections
+```
+
+**Funciona.** O banco continua fechado para a internet, e o contêiner o alcança por dentro. O
+desenho da #200 e da #202 fica como estava.
+
+Duas notas de execução que valem para a #201:
+
+- O campo **Launch command** do console não passa por um shell. Comando com `sh -c "…"`,
+  aspas ou `$VARIAVEL` é frágil ali; valores literais numa linha só são o caminho.
+- O contêiner de teste **termina** depois de responder, então o deployment aparece como *Failed*.
+  Isso é esperado e não é o resultado — o resultado é a linha no log.
 
 ---
 
