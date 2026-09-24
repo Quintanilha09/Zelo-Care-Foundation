@@ -43,9 +43,13 @@ que é a única coisa que este produto não pode errar.
 
 ---
 
-## Três defeitos que a migração conserta, e que já estão no código hoje
+## Quatro defeitos que a migração conserta, e que já estavam no código
 
-Nenhum deles mordeu ainda porque produção nunca foi ligada. Todos morderiam no primeiro usuário real.
+Os três primeiros foram encontrados ao planejar a migração, em 13/09/2026. **O quarto apareceu
+depois, trabalhando na #197** — e é o mais grave dos quatro.
+
+Nenhum deles mordeu, e o motivo é o mesmo para todos: produção nunca foi ligada. Todos morderiam
+no primeiro usuário real.
 
 ### 1. O lembrete de dose não sairia de madrugada
 
@@ -68,6 +72,30 @@ Fora de lá, `GET /` devolve 404. → **#194**
 Rodando `drizzle-kit push` em 12/09/2026, ele perguntou se queria **truncar `scheduled_doses`** — a
 tabela do histórico de dose. Um "sim" distraído apaga o registro de todo remédio que toda família já
 tomou. → **#198**
+
+### 4. Todo limitador por IP podia ser desligado com um cabeçalho — `VULNERABILIDADE CONFIRMADA`
+
+Encontrado em 14/09/2026, lendo `rate-limit.ts` para escrever a #197. Os limitadores montavam a
+chave lendo o `X-Forwarded-For` **cru** e pegando o **primeiro** valor da lista — que é o que o
+cliente escreve, não o que o proxy apura.
+
+Medido, com `NODE_ENV=production`, contra o `adminLoginLimiter` (limite 5 por 15 min):
+
+| Cenário | 7 requisições seguidas |
+|---|---|
+| Mesmo `X-Forwarded-For` forjado | `200 200 200 200 200` **`429 429`** |
+| Forjado **diferente a cada vez** | `200 200 200 200 200 200 200` |
+
+A segunda linha é a proteção inteira desligada. Atingia login, cadastro, recuperação de senha,
+renovação de sessão e — o pior caso — o **painel operacional**, cujo acesso é uma senha única e
+compartilhada e cuja única barreira era esse limite.
+
+O `app.ts` já configurava `trust proxy` desde sempre, e **todo o resto do código já usava
+`req.ip`**. O `rate-limit.ts` era o único fora do padrão. → **#207**
+
+**Este é o defeito que mais justifica a preparação ter vindo antes da infraestrutura.** Ele não
+tem nada a ver com Replit ou AWS: estava valendo em qualquer lugar onde o produto rodasse, desde
+sempre, e não havia como descobri-lo pela tela.
 
 ---
 
@@ -179,33 +207,59 @@ casa.
 
 ---
 
-## O que a migração exige — Issues #193 a #203
+## O que a migração exige — Issues #193 a #209
+
+> Situação medida em **24/09/2026**. Duas Issues nasceram durante o trabalho e não estavam no
+> plano original: a **#207** (a vulnerabilidade acima) e a **#209** (um teste instável meu).
 
 ### Preparar o código (não depende da AWS existir)
 
-| # | O quê | Por quê |
-|---|---|---|
-| [#193](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/193) | Armazenamento de mídia no S3 | é o **único** acoplamento real ao Replit |
-| [#194](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/194) | O servidor passa a servir o front | sem isso o app não abre fora do Replit |
-| [#195](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/195) | Dockerfile e imagem de produção | o Lightsail recebe uma imagem |
-| [#196](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/196) | O `healthz` não pode reiniciar o app quando o banco pisca | defeito encontrado ao planejar |
-| [#197](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/197) | Um nó só: o limitador de taxa é em memória | dois nós dobram o limite de login |
-| [#198](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/198) | Migrações de verdade | o `push` ofereceu truncar o histórico de dose |
-| [#199](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/199) | `pg_dump` de hora em hora para o S3 | backup **fora** do fornecedor |
+| # | O quê | Por quê | Situação |
+|---|---|---|---|
+| [#193](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/193) | Armazenamento de mídia no S3 | é o **único** acoplamento real ao Replit | ✅ PR #204 |
+| [#194](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/194) | O servidor passa a servir o front | sem isso o app não abre fora do Replit | ✅ PR #205 |
+| [#195](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/195) | Dockerfile e imagem de produção | o Lightsail recebe uma imagem | ✅ PR #208 |
+| [#196](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/196) | O `healthz` não pode reiniciar o app quando o banco pisca | defeito encontrado ao planejar | ✅ PR #206 |
+| [#197](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/197) | Um nó só, e dito por quê | **três** consequências, não uma — ver abaixo | ✅ PR #211 |
+| [#207](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/207) | O limitador por IP aceitava o `X-Forwarded-For` do cliente | `VULNERABILIDADE CONFIRMADA` | ✅ PR #210 |
+| [#209](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/209) | Teste instável: corrida entre o pino e o resultado | reprovava **qualquer** PR no CI | ✅ nos PRs #208 e #210 |
+| [#198](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/198) | Migrações de verdade | o `push` ofereceu truncar o histórico de dose | ⏳ pendente |
+| [#199](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/199) | `pg_dump` de hora em hora para o S3 | backup **fora** do fornecedor | ⏳ pendente |
+
+#### A #197 cresceu, e o plano dela estava errado
+
+A Issue conhecia **uma** consequência de subir a escala (o limitador dobra). Verificando o código
+para escrever o runbook, apareceram mais duas:
+
+2. **`realtime.ts` guarda o pub/sub num `EventEmitter` em memória.** Com dois nós, uma cuidadora
+   ligada ao nó A não recebe a dose registrada pela irmã pelo nó B — a tela dela segue mostrando
+   pendente. Num produto em que duas pessoas cuidam do mesmo idoso, é caminho para dose repetida.
+3. **`closeConnectionsForUser` só enxerga o mapa do próprio processo.** Revogar o acesso de um
+   cuidador pelo nó A não fecha a conexão SSE que ele tem aberta no nó B: ele continua recebendo
+   nome de medicamento e situação de dose até a conexão cair sozinha. **Encosta no invariante 2.**
+
+Isso corrige a alternativa futura que a própria Issue propunha: **não** é "mover o contador para o
+Postgres". São três mudanças (contador no Postgres, `LISTEN`/`NOTIFY` no lugar do `EventEmitter`, e
+a mesma `NOTIFY` para a revogação). Fazer só a primeira é pior que hoje, porque parece resolvido.
+Sessão fixa não substitui nenhuma. Ver [runbooks/escala-do-servico.md](../runbooks/escala-do-servico.md).
 
 ### A infraestrutura
 
-| # | O quê |
-|---|---|
-| [#200](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/200) | Provisionar a AWS em São Paulo: contêiner, banco, bucket, IAM, MFA, alarme de custo |
-| [#201](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/201) | Esteira de deploy pelo GitHub Actions |
+| # | O quê | Situação |
+|---|---|---|
+| [#200](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/200) | Provisionar a AWS em São Paulo: contêiner, banco, bucket, IAM, MFA, alarme de custo | 🔨 em andamento |
+| [#201](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/201) | Esteira de deploy pelo GitHub Actions | ⏳ pendente |
+
+Da #200, em 24/09/2026: conta criada, **MFA na raiz e no usuário administrativo**, alarme de custo
+em US$ 40, região `sa-east-1` fixada, e o serviço de contêiner `zelo` (Micro, **1 nó**) criado.
+Faltam o banco, o bucket, a credencial do app e o checkpoint do modo privado.
 
 ### O corte
 
-| # | O quê |
-|---|---|
-| [#202](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/202) | Domínio, TLS, as 19 variáveis de ambiente e a ordem do corte |
-| [#203](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/203) | Tirar o Replit do código — **só depois** de 7 dias servindo |
+| # | O quê | Situação |
+|---|---|---|
+| [#202](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/202) | Domínio, TLS, as 19 variáveis de ambiente e a ordem do corte | ⏳ pendente |
+| [#203](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/203) | Tirar o Replit do código | ⏳ pendente, e **agora sem espera** |
 
 ### O que já estava preparado
 
@@ -233,6 +287,60 @@ registrou e sumiu.
 
 ---
 
+## O Replit foi cancelado em 24/09/2026, antes de a AWS servir
+
+E isso contraria o que este documento e a #203 diziam — **"só depois de 7 dias servindo"**. A
+mudança não foi de opinião: foi a correção de um erro de premissa meu.
+
+### O que eu recomendei, e por que estava errado
+
+Quando o fundador perguntou quando poderia cancelar, eu respondi com sete condições e uma espera de
+sete dias: domínio apontado, backup restaurado, tráfego zerado, mídia migrada, e um alerta forte de
+que **trocar as chaves VAPID invalidaria todas as inscrições de notificação**.
+
+Ele empurrou de volta: não queria pagar os dois. Fui então verificar, e a resposta já estava escrita
+no próprio repositório:
+
+> `CONTEXT.md`: *"**Desenvolvimento apenas.** O banco de produção está **vazio e pausado** por
+> limite de gasto"* · *"…não haver usuário real"*
+
+**Aquela lista é o procedimento para desligar uma produção viva. O ZELO não tinha uma.** Cada razão
+que eu dei dependia de usuários que não existiam:
+
+| O que eu disse | Por que não valia |
+|---|---|
+| Trocar as chaves VAPID invalida as inscrições | não havia **nenhuma** inscrição |
+| Trocar o `SESSION_SECRET` desloga todo mundo | não havia ninguém logado |
+| Sete dias servindo antes de cortar | nada estava sendo servido a ninguém |
+| Tráfego zerado por vários dias | o tráfego já era zero |
+
+**A pergunta que faltava era mais simples que a checklist: *alguém está usando isto?*** Eu tinha
+acesso ao `CONTEXT.md` antes de recomendar a espera, e não olhei.
+
+### O que sobrou de verdade, e foi feito
+
+1. **Os oito segredos que importam**, copiados para fora do Replit — `ADMIN_PANEL_SECRET`,
+   `ANTHROPIC_API_KEY`, `GOOGLE_CLIENT_ID`/`SECRET`, `GOOGLE_MAPS_API_KEY`, `RESEND_API_KEY`,
+   `SESSION_SECRET` e o trio `VAPID_*`. Os outros quatro (`APP_URL`,
+   `DEFAULT_OBJECT_STORAGE_BUCKET_ID`, `PRIVATE_OBJECT_DIR`, `PUBLIC_OBJECT_SEARCH_PATHS`) são
+   específicos do Replit e morrem com ele.
+2. **Nenhum domínio próprio apontava para lá.** O acesso era por `*.replit.dev`, o endereço do
+   workspace de desenvolvimento.
+3. **16 fotos de teste** no Object Storage, em `.private/zelo-midia/image/`, ~1,7 MB. Descartadas:
+   ficariam órfãs no instante em que o banco novo subisse vazio, e dado de teste é reproduzível
+   pelo `seed`.
+
+### O que isso custa
+
+**Não há ambiente publicado até a #201.** Enquanto isso, o app roda localmente — foi provado em
+14/09/2026, com a imagem de produção servindo o front, a API e gerando PDF dentro do contêiner.
+
+`EMAIL_FROM` nunca existiu nos Secrets, e não precisava: `email.ts` tem o padrão
+`"ZELO <contato@zelocuida.com.br>"`. O que falta para o e-mail sair é o domínio verificado no
+Resend, que é item da #202.
+
+---
+
 ## Riscos aceitos, e o que NÃO foi verificado
 
 `RISCO POTENCIAL:` o banco **Standard** não tem réplica. Se a instância cair, há indisponibilidade até
@@ -243,11 +351,21 @@ dobro (US$ 30) e é um clique quando houver receita.
 
 1. **Se 512 MB bastam.** Por isso a recomendação é o Micro de 1 GB. A geração de PDF não foi medida.
 2. **O preço do pacote de Object Storage** do Lightsail. Estimado entre US$ 1 e US$ 5 no volume atual.
-3. **Se `trust proxy` com valor 1 é o certo** atrás do balanceador do Lightsail. Hoje o `app.ts` confia
-   em exatamente um salto. Se o balanceador acrescentar mais, `req.ip` passa a registrar o IP errado no
-   log de auditoria e no limitador de login. **Precisa ser conferido no ambiente real antes do corte**
-   — é item de aceite da #202.
-4. **Nenhum número de desempenho.** Nada foi medido em ambiente AWS ainda, porque ele não existe.
+3. **Se `trust proxy` com valor 1 é o certo** atrás do balanceador do Lightsail. Hoje o `app.ts`
+   confia em exatamente um salto, e desde a **#207 isso importa mais**: o limitador de taxa passou
+   a usar `req.ip`, que é calculado a partir desse número. Alto demais reabre a #207; baixo demais
+   faz o Brasil inteiro dividir um balde de limite. **Precisa ser conferido no ambiente real antes
+   do corte** — é item de aceite da #202, e está comentado no `app.ts`.
+4. **Que o balanceador seja o único caminho até o contêiner.** A correção da #207 depende disso:
+   uma requisição que chegue **sem** passar pelo balanceador tem seu único `X-Forwarded-For`
+   tratado como legítimo, e a falha reabre. Não se resolve no código — é topologia de rede, e está
+   anotado como item de aceite da **#200**.
+5. **Se o serviço de contêiner alcança o banco gerenciado em modo privado.** A documentação da AWS
+   é ambígua: a página do modo público diz "acessível apenas por *instâncias* Lightsail", e serviço
+   de contêiner não é instância; já o tutorial oficial que conecta os dois não manda ligar o modo
+   público. `NÃO VERIFICADO` — virou o primeiro checkpoint da #200, de propósito, porque a
+   alternativa (ligar acesso público e proteger por senha e TLS) mudaria o desenho da #200 e da #202.
+6. **Nenhum número de desempenho.** Nada foi medido em ambiente AWS ainda, porque ele não existe.
 
 ---
 
@@ -261,3 +379,21 @@ Duas coisas neste repositório previram esta migração e acertaram, e é por is
 
 Fornecedor muda. A lição fica. Por isso a #203 manda apagar o código do Replit e **manter os
 comentários que explicam por quê**.
+
+### E três que a execução acrescentou
+
+3. **Tirar o produto de uma plataforma é auditá-lo.** Dos quatro defeitos consertados, só um era
+   sobre o Replit. Os outros três — o `healthz` que derrubaria o app, a escala que quebra três
+   coisas em silêncio, e o limitador que qualquer um desligava com um cabeçalho — estavam ali
+   independentemente de fornecedor. A migração foi o motivo de alguém ler o código com atenção.
+
+4. **Suposição escrita em comentário não protege ninguém.** O `realtime.ts` dizia
+   *"este serviço roda como um único processo (sem múltiplas instâncias hoje)"* desde que foi
+   escrito, e estava certo. Mas a escala do serviço é um seletor de número numa tela de console, e
+   quem clica nele não abre o arquivo. Suposição que sustenta uma garantia precisa viver onde a
+   decisão é tomada — daí o runbook.
+
+5. **"Espere para ter certeza" soa prudente e às vezes é só caro.** A recomendação de manter o
+   Replit por mais sete dias custava R$ 120 e protegia contra riscos que não existiam. A pergunta
+   que teria evitado isso não era técnica: *alguém está usando isto?* — e a resposta já estava no
+   `CONTEXT.md`, verificável em dez segundos, antes da recomendação.
