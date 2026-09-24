@@ -163,10 +163,17 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # O banco de teste nasce das MIGRACOES, e nao do `push` — Issue #198.
+      #
+      # O `push` compara o esquema com o banco vivo e aplica a diferenca. Em
+      # 12/09/2026 ele ofereceu TRUNCAR `scheduled_doses`, que e o historico de
+      # dose. E o `push:raw`, que trazia o gatilho de imutabilidade do
+      # audit_log, era um passo separado: esquece-lo nao dava erro nenhum, o
+      # banco subia inteiro, e a protecao simplesmente nao existia.
+      #
+      # Com `migrate`, o CI exercita o MESMO caminho que producao vai usar.
       - name: Create test database schema
-        run: |
-          pnpm --filter @workspace/db push
-          pnpm --filter @workspace/db push:raw
+        run: pnpm --filter @workspace/db migrate
 
       # `--test-concurrency=1` esta no proprio script e e obrigatorio: a suite
       # divide um banco so. Paralelizar aqui exigiria um banco por worker, que
@@ -235,10 +242,17 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # O banco de teste nasce das MIGRACOES, e nao do `push` — Issue #198.
+      #
+      # O `push` compara o esquema com o banco vivo e aplica a diferenca. Em
+      # 12/09/2026 ele ofereceu TRUNCAR `scheduled_doses`, que e o historico de
+      # dose. E o `push:raw`, que trazia o gatilho de imutabilidade do
+      # audit_log, era um passo separado: esquece-lo nao dava erro nenhum, o
+      # banco subia inteiro, e a protecao simplesmente nao existia.
+      #
+      # Com `migrate`, o CI exercita o MESMO caminho que producao vai usar.
       - name: Create test database schema
-        run: |
-          pnpm --filter @workspace/db push
-          pnpm --filter @workspace/db push:raw
+        run: pnpm --filter @workspace/db migrate
 
       # So o chromium — os outros navegadores triplicariam o tempo sem mudar
       # nada do que este app precisa provar.

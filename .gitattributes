@@ -1,0 +1,19 @@
+# As migrações são identificadas por HASH DO CONTEÚDO — Issue #198.
+#
+# ═══════════════════════════════════════════════════════════════════════════
+# SEM ISTO, A MESMA MIGRAÇÃO TEM DOIS HASHES E PODE SER APLICADA DUAS VEZES.
+#
+# O drizzle guarda, na tabela `__drizzle_migrations`, o hash do conteúdo de
+# cada arquivo `.sql` já aplicado. Se o mesmo arquivo chegar com CRLF numa
+# máquina (Windows) e LF noutra (o runner do CI, o contêiner de produção), os
+# bytes diferem, o hash difere, e o drizzle conclui que é uma migração NOVA.
+#
+# Num banco novo isso não aparece. Contra um banco que já tem o esquema — ou
+# seja, produção — ele tenta recriar tudo e falha no meio, deixando a migração
+# pela metade.
+#
+# Forçar LF nestes arquivos faz o hash ser o mesmo em qualquer sistema.
+# ═══════════════════════════════════════════════════════════════════════════
+lib/db/migrations/**/*.sql   text eol=lf
+lib/db/migrations/**/*.json  text eol=lf
+lib/db/sql/*.sql             text eol=lf

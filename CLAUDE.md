@@ -171,14 +171,20 @@ pnpm run test:e2e                                  # Playwright: sobe API e fron
 pnpm --filter @workspace/api-server run lint:clock # proíbe new Date() em domínio
 pnpm run typecheck                                 # todos os pacotes
 PORT=5000 BASE_PATH=/ pnpm run build               # typecheck + build (as duas variáveis são obrigatórias)
-pnpm --filter @workspace/db run push               # schema (dev)
-pnpm --filter @workspace/db run push:raw           # trigger de imutabilidade do audit_log
+pnpm --filter @workspace/db run migrate            # schema — CI e PRODUÇÃO. Não pergunta, não apaga
+pnpm --filter @workspace/db run generate           # escreve uma migração nova a partir do schema
+pnpm --filter @workspace/db run push               # SÓ desenvolvimento local — ver o aviso abaixo
 pnpm --filter @workspace/db run plano -- --listar  # planos por família
 pnpm --filter @workspace/db run plano -- --familia 3 --plano professional
 pnpm --filter @workspace/db run limpar-orfas          # familias orfas de teste (simula)
 ```
 
 `DATABASE_URL` obrigatório. Segredos locais em `artifacts/api-server/.env.local` (fora do git).
+
+> **`push` nunca vai para produção — Issue #198.** Ele compara o esquema com o banco vivo e aplica
+> a diferença. Em 12/09/2026 perguntou se queria **truncar `scheduled_doses`**, que é o histórico
+> de dose. O caminho de produção é `migrate`, que aplica arquivos versionados em ordem, sem
+> perguntar e sem apagar. Detalhes em [lib/db/README.md](lib/db/README.md).
 
 ## Onde vive o contexto
 
