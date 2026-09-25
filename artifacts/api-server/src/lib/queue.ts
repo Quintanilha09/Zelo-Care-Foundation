@@ -73,6 +73,8 @@ export const QUEUE_OPERATIONAL_MONITOR = "operational-monitor";
 export const QUEUE_APPOINTMENT_REMINDER = "appointment-reminder";
 // #123: aviso diário de paciente sem responsável. Cron, sem payload.
 export const QUEUE_PACIENTE_SEM_CUIDADOR = "paciente-sem-cuidador";
+// #199: cópia de segurança de hora em hora para o S3. Cron, sem payload.
+export const QUEUE_BACKUP_DO_BANCO = "backup-do-banco";
 
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL must be set. Did you forget to provision a database?");
@@ -128,6 +130,7 @@ export async function startQueue(handlers: {
   runOperationalChecks: () => Promise<void>;
   purgeExpiredMedia: () => Promise<void>;
   avisarPacientesSemCuidador: () => Promise<void>;
+  fazerCopiaDeSeguranca: () => Promise<void>;
   onDoseTaken: (data: { patientId: number; medicationId: number }) => Promise<void>;
   onDoseReminder: (data: { scheduledDoseId: number; level?: number }) => Promise<void>;
   onDeliveryCheck: (data: { notificationId: number }) => Promise<void>;
@@ -141,6 +144,7 @@ export async function startQueue(handlers: {
   await boss.createQueue(QUEUE_OPERATIONAL_MONITOR, { policy: "singleton" });
   await boss.createQueue(QUEUE_PURGE_EXPIRED_MEDIA, { policy: "singleton" });
   await boss.createQueue(QUEUE_PACIENTE_SEM_CUIDADOR, { policy: "singleton" });
+  await boss.createQueue(QUEUE_BACKUP_DO_BANCO, { policy: "singleton" });
 
   // 03:00 UTC todo dia — não é crítico ser exato por fuso do paciente,
   // a janela é de 14 dias, algumas horas de folga não importam.
@@ -160,6 +164,17 @@ export async function startQueue(handlers: {
   // e e-mail de madrugada chega na caixa de quem acorda: ninguém precisa
   // resolver isso às três da manhã, e a janela é de dois dias.
   await boss.schedule(QUEUE_PACIENTE_SEM_CUIDADOR, "30 3 * * *", null, { tz: "UTC" });
+  /**
+   * Cópia de segurança, no minuto 10 de toda hora — Issue #199.
+   *
+   * ── Por que 10, e não 0 ─────────────────────────────────────────────────
+   *
+   * Meia-noite UTC é quando a cópia diária e a mensal também são gravadas, e
+   * 03:00, 03:05 e 03:20 já têm tarefa. O minuto 10 não divide o relógio com
+   * nada — um `pg_dump` competindo com a geração de dose seria lentidão
+   * evitável nas duas pontas.
+   */
+  await boss.schedule(QUEUE_BACKUP_DO_BANCO, "10 * * * *", null, { tz: "UTC" });
 
   await boss.work(QUEUE_EXTEND_DOSE_WINDOW, async () => {
     await handlers.extendWindows();
@@ -178,6 +193,9 @@ export async function startQueue(handlers: {
   });
   await boss.work(QUEUE_PACIENTE_SEM_CUIDADOR, async () => {
     await handlers.avisarPacientesSemCuidador();
+  });
+  await boss.work(QUEUE_BACKUP_DO_BANCO, async () => {
+    await handlers.fazerCopiaDeSeguranca();
   });
   await boss.work(QUEUE_DOSE_TAKEN, async (jobs) => {
     for (const job of jobs) {

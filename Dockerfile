@@ -65,6 +65,33 @@ ENV NODE_ENV=production
 # UTC garante que ele não entre nem por acidente.
 ENV TZ=UTC
 
+# ═══════════════════════════════════════════════════════════════════════════
+# O `pg_dump` VEM DO REPOSITÓRIO DO POSTGRESQL, E A VERSÃO IMPORTA — #199.
+#
+# A cópia de segurança de hora em hora roda `pg_dump` de dentro deste
+# contêiner. A imagem `node:24-bookworm-slim` não o traz, e o
+# `postgresql-client` do Debian bookworm é da série 15.
+#
+# `pg_dump` RECUSA despejar um servidor mais novo que ele. O banco de produção
+# é PostgreSQL 18.6, então o cliente 15 falharia com "server version mismatch"
+# — e falharia só na primeira execução do job, em produção, num horário em que
+# ninguém está olhando.
+#
+# Por isso o repositório oficial (PGDG), fixado na série 18.
+# ═══════════════════════════════════════════════════════════════════════════
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates curl gnupg \
+  && install -d /usr/share/postgresql-common/pgdg \
+  && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+       -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+  && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" \
+       > /etc/apt/sources.list.d/pgdg.list \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends postgresql-client-18 \
+  && apt-get purge -y curl gnupg \
+  && apt-get autoremove -y \
+  && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # O pacote pronto, com as dependências de produção dentro.
