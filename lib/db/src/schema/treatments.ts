@@ -79,9 +79,37 @@ export const treatmentsTable = pgTable("treatments", {
   patientId: integer("patient_id")
     .notNull()
     .references(() => patientsTable.id, { onDelete: "cascade" }),
+  /**
+   * `cascade` — Issue #213.
+   *
+   * ═════════════════════════════════════════════════════════════════════
+   * SEM ISTO, APAGAR UMA FAMÍLIA FALHAVA DEPOIS DE QUALQUER RESTAURAÇÃO.
+   *
+   * Apagar uma família dispara dois caminhos de cascata que competem:
+   *
+   *   famílias → pacientes → tratamentos   (cascata)
+   *   famílias → medicamentos              (cascata)
+   *
+   * Se o segundo terminasse primeiro, os medicamentos sumiam enquanto ainda
+   * havia tratamentos apontando para eles, e esta chave sem ação barrava
+   * tudo. A ordem em que cascatas disparam depende de OIDs internos de
+   * gatilho — e eles MUDAM numa restauração.
+   *
+   * Reproduzido em 24/09/2026: o mesmo `DELETE FROM families`, com os
+   * mesmos dados e 412 constraints byte a byte idênticas, funcionava no
+   * banco criado por migração e falhava no restaurado de um `pg_dump`.
+   *
+   * Significava que, depois de um desastre, a exclusão de dados da LGPD
+   * pararia de funcionar — e ninguém saberia até alguém pedir exclusão.
+   * ═════════════════════════════════════════════════════════════════════
+   *
+   * `cascade` é o certo aqui, e não `set null`: a coluna é `NOT NULL`
+   * porque tratamento sem medicamento não existe. Some o remédio, some o
+   * tratamento dele.
+   */
   medicationId: integer("medication_id")
     .notNull()
-    .references(() => medicationsTable.id),
+    .references(() => medicationsTable.id, { onDelete: "cascade" }),
   dose: text("dose"), // ex: "1 comprimido", "5ml"
   scheduleType: scheduleTypeEnum("schedule_type").notNull(),
   // JSON livre conforme scheduleType:

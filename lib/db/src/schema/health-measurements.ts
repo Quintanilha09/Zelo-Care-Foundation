@@ -36,7 +36,12 @@ export const healthMeasurementsTable = pgTable("health_measurements", {
   unit: text("unit"),   // "mmHg", "mg/dL", "kg", "°C", "%", "bpm"
   measuredAt: timestamp("measured_at", { withTimezone: true }).notNull(),
   notes: text("notes"),
-  caregiverId: integer("caregiver_id").references(() => caregiversTable.id),
+  // `set null` — Issue #213. A aferição é do PACIENTE: ela não pode sumir
+  // porque quem a anotou saiu da família. Sem a ação, o banco recusava
+  // remover o cuidador.
+  caregiverId: integer("caregiver_id").references(() => caregiversTable.id, {
+    onDelete: "set null",
+  }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

@@ -31,7 +31,11 @@ export const activitiesTable = pgTable("activities", {
   occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
   done: boolean("done").notNull().default(true),
   notes: text("notes"),
-  caregiverId: integer("caregiver_id").references(() => caregiversTable.id),
+  // `set null` — Issue #213. A atividade é da família e sobrevive à saída de
+  // quem a gerou; sem a ação, remover o cuidador era barrado pelo banco.
+  caregiverId: integer("caregiver_id").references(() => caregiversTable.id, {
+    onDelete: "set null",
+  }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

@@ -33,6 +33,7 @@ import { Clock } from "../lib/clock.ts";
 import { hasPaidAccess } from "../lib/subscription.ts";
 import { PLAN_LIMITS } from "../lib/plan-limits.ts";
 import { localDayBoundsUtc } from "@workspace/scheduling";
+import { nomeDeQuemRegistrou } from "../lib/cuidador-removido.ts";
 
 const router = Router();
 
@@ -164,13 +165,23 @@ router.get("/patients/:patientId/adherence-calendar", requireAuth, async (req, r
   const byCaregiverRows = await db
     .select({
       caregiverId: doseRecordsTable.caregiverId,
-      caregiverName: caregiversTable.name,
+      // Sem o segundo argumento: esta consulta parte de `dose_records` (o
+      // registro sempre existe) E agrupa. Citar `dose_records.id` dentro do
+      // `case` obrigaria a coluna a entrar no GROUP BY, o que desfaria a
+      // agregação — ver o comentário em `cuidador-removido.ts`.
+      caregiverName: nomeDeQuemRegistrou(caregiversTable.name),
       registeredCount: sql<number>`count(*)`.mapWith(Number),
     })
     .from(doseRecordsTable)
     .innerJoin(scheduledDosesTable, eq(doseRecordsTable.scheduledDoseId, scheduledDosesTable.id))
     .innerJoin(treatmentsTable, eq(scheduledDosesTable.treatmentId, treatmentsTable.id))
-    .innerJoin(caregiversTable, eq(doseRecordsTable.caregiverId, caregiversTable.id))
+    // `leftJoin`, e não `innerJoin` — Issue #213.
+    //
+    // Desde que apagar cuidador passou a pôr `null` aqui, um `innerJoin`
+    // DERRUBARIA as doses de quem saiu da família. Nesta lista, que é sobre
+    // reconhecer contribuição, isso faria as doses registradas somarem menos
+    // que o total de doses tomadas — o relatório se contradizendo sozinho.
+    .leftJoin(caregiversTable, eq(doseRecordsTable.caregiverId, caregiversTable.id))
     .where(rangeFilter)
     .groupBy(doseRecordsTable.caregiverId, caregiversTable.name)
     .orderBy(doseRecordsTable.caregiverId);
@@ -220,7 +231,9 @@ router.get("/patients/:patientId/adherence-calendar/day", requireAuth, async (re
       outcome: doseRecordsTable.outcome,
       registeredAt: doseRecordsTable.takenAt,
       registeredByCaregiverId: doseRecordsTable.caregiverId,
-      registeredByCaregiverName: caregiversTable.name,
+      // Parte da dose AGENDADA: aqui o nulo pode ser "ainda não foi tomada".
+      // `doseRecordsTable.id` distingue isso de "quem registrou saiu" (#213).
+      registeredByCaregiverName: nomeDeQuemRegistrou(caregiversTable.name, doseRecordsTable.id),
     })
     .from(scheduledDosesTable)
     .innerJoin(treatmentsTable, eq(scheduledDosesTable.treatmentId, treatmentsTable.id))
