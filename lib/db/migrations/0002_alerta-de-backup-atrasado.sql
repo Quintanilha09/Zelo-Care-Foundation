@@ -1,0 +1,1 @@
+ALTER TYPE "public"."operational_alert_type" ADD VALUE 'backup_atrasado';

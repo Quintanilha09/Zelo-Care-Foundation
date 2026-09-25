@@ -52,6 +52,7 @@ import { safeLog } from "../lib/safe-logger";
 import { audit } from "../lib/audit";
 import { Clock } from "../lib/clock";
 import { publishPatientEvent } from "../lib/realtime.ts";
+import { nomeDeQuemRegistrou } from "../lib/cuidador-removido.ts";
 
 const router = Router();
 
@@ -421,7 +422,8 @@ export async function listarUsos(
       scheduledDoseId: scheduledDosesTable.id,
       takenAt: doseRecordsTable.takenAt,
       justification: doseRecordsTable.justification,
-      caregiverName: caregiversTable.name,
+      // Parte de `dose_records`: nulo aqui só pode ser cuidador removido (#213).
+      caregiverName: nomeDeQuemRegistrou(caregiversTable.name, doseRecordsTable.id),
     })
     .from(doseRecordsTable)
     .innerJoin(scheduledDosesTable, eq(doseRecordsTable.scheduledDoseId, scheduledDosesTable.id))

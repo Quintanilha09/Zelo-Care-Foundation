@@ -105,10 +105,82 @@ async function checkNoSendWindow(): Promise<CheckResult> {
   };
 }
 
-const CHECKS: Record<"delivery_rate" | "queue_stuck" | "no_send_window", () => Promise<CheckResult>> = {
+/**
+ * A última cópia de segurança é velha demais? — Issue #199.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * BACKUP QUE FALHA CALADO É O MESMO QUE NÃO TER BACKUP.
+ *
+ * O job roda de hora em hora. Se ele parar — credencial expirada, bucket
+ * renomeado, `pg_dump` sumindo da imagem num deploy — nada quebra na tela, e
+ * ninguém percebe. A descoberta viria no dia em que se precisa restaurar, que
+ * é o pior dia possível para descobrir.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Três horas de tolerância: duas execuções perdidas. Uma só pode ser um
+ * reinício do contêiner na hora errada, e alertar nisso ensina a ignorar o
+ * alerta.
+ *
+ * ── Por que a fonte é o pg-boss, e não o S3 ──────────────────────────────
+ *
+ * Perguntar ao S3 exigiria dar `s3:ListBucket` do bucket de backup à
+ * credencial do app — e o desenho da #199 é justamente que ela só escreva.
+ * O pg-boss já registra quando cada job terminou, no mesmo banco.
+ *
+ * ── Por que só quando o backup está configurado ──────────────────────────
+ *
+ * Sem `BACKUP_S3_BUCKET` não há backup a cobrar: é o caso do dev local e do
+ * CI. Em produção sem configuração, quem grita é o próprio job, que registra
+ * `[SEGURANCA]` e falha — e job falhando acorda o `queue_stuck`.
+ */
+const BACKUP_TOLERANCIA_HORAS = 3;
+
+async function checkBackupAtrasado(): Promise<CheckResult> {
+  if (!process.env.BACKUP_S3_BUCKET?.trim()) {
+    return { triggered: false, message: "backup não configurado neste ambiente" };
+  }
+
+  // `completed_on` e escrito pelo pg-boss com o relogio REAL do Postgres, e
+  // nao pelo Clock — mesma ressalva do checkQueueStuck logo acima.
+  const corte = new Date(Date.now() - BACKUP_TOLERANCIA_HORAS * 60 * 60_000); // clock-lint-ok: pgboss.job.completed_on usa o relogio real do Postgres, nao o Clock
+
+  const resultado = await db.execute<{ ultimo: Date | null }>(sql`
+    SELECT max(completed_on) AS ultimo
+    FROM pgboss.job
+    WHERE name = 'backup-do-banco'
+      AND state = 'completed'
+  `);
+
+  const ultimo = resultado.rows[0]?.ultimo ?? null;
+
+  if (!ultimo) {
+    return {
+      triggered: true,
+      message:
+        "Nenhuma copia de seguranca bem-sucedida registrada. " +
+        "O banco esta sem backup proprio.",
+      metricValue: 0,
+      thresholdValue: BACKUP_TOLERANCIA_HORAS,
+    };
+  }
+
+  const horas = (Date.now() - new Date(ultimo).getTime()) / 3_600_000; // clock-lint-ok: comparado contra completed_on, que e do relogio do Postgres
+  return {
+    triggered: new Date(ultimo) < corte,
+    message: `Ultima copia de seguranca ha ${horas.toFixed(1)}h (tolerancia: ${BACKUP_TOLERANCIA_HORAS}h).`,
+    metricValue: Number(horas.toFixed(1)),
+    thresholdValue: BACKUP_TOLERANCIA_HORAS,
+  };
+}
+
+const CHECKS: Record<
+  "delivery_rate" | "queue_stuck" | "no_send_window" | "backup_atrasado",
+  () => Promise<CheckResult>
+> = {
   delivery_rate: checkDeliveryRate,
   queue_stuck: checkQueueStuck,
   no_send_window: checkNoSendWindow,
+  backup_atrasado: checkBackupAtrasado,
 };
 
 async function findActiveAlert(type: keyof typeof CHECKS): Promise<OperationalAlert | null> {
@@ -121,7 +193,7 @@ async function findActiveAlert(type: keyof typeof CHECKS): Promise<OperationalAl
 }
 
 /**
- * Roda as 3 checagens. Pra cada uma: condição verdadeira + sem alerta ativo
+ * Roda as 4 checagens. Pra cada uma: condição verdadeira + sem alerta ativo
  * do tipo -> cria (e loga ERROR, o "canal do operador"); condição falsa +
  * alerta ativo existente -> resolve. Reprocessar com a mesma condição não
  * cria linha nova nem loga de novo — só a TRANSIÇÃO de estado é evento.

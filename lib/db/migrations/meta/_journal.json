@@ -15,6 +15,20 @@
       "when": 1790274170029,
       "tag": "0001_gatilho-de-imutabilidade-do-audit-log",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790280299078,
+      "tag": "0002_alerta-de-backup-atrasado",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790299984919,
+      "tag": "0003_chaves-estrangeiras-com-acao",
+      "breakpoints": true
     }
   ]
 }

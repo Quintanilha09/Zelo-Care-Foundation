@@ -20,6 +20,10 @@ export const operationalAlertTypeEnum = pgEnum("operational_alert_type", [
   "delivery_rate", // taxa de entrega (delivered/sent) da última hora abaixo do limite
   "queue_stuck", // job(s) na fila além do horário esperado + folga
   "no_send_window", // nenhum envio numa janela em que deveria ter havido dose agendada
+  // #199: a última cópia de segurança bem-sucedida é velha demais. Backup que
+  // falha calado é o mesmo que não ter backup — e só se descobre no dia em que
+  // se precisa dele.
+  "backup_atrasado",
 ]);
 
 export const operationalAlertsTable = pgTable("operational_alerts", {

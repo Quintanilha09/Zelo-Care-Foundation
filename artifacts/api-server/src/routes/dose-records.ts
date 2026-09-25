@@ -45,6 +45,7 @@ import { Clock } from "../lib/clock";
 import { boss, QUEUE_DOSE_TAKEN, QUEUE_DOSE_REMINDER, ensureQueueStarted } from "../lib/queue.ts";
 import { ESCALATION_LEVEL_SNOOZE } from "../lib/dose-reminders.ts";
 import { publishPatientEvent } from "../lib/realtime.ts";
+import { nomeDeQuemRegistrou } from "../lib/cuidador-removido.ts";
 
 const router = Router();
 
@@ -191,7 +192,9 @@ router.get("/patients/:patientId/dose-records", requireAuth, async (req, res): P
       scheduledDoseId: doseRecordsTable.scheduledDoseId,
       patientId: doseRecordsTable.patientId,
       caregiverId: doseRecordsTable.caregiverId,
-      caregiverName: caregiversTable.name,
+      // Parte de `dose_records`: o registro sempre existe, então nulo aqui só
+      // pode ser cuidador removido (#213).
+      caregiverName: nomeDeQuemRegistrou(caregiversTable.name, doseRecordsTable.id),
       takenAt: doseRecordsTable.takenAt,
       outcome: doseRecordsTable.outcome,
       postponedTo: doseRecordsTable.postponedTo,
@@ -405,7 +408,8 @@ router.post("/patients/:patientId/dose-records", requireAuth, requireCapability(
   const [winner] = await db
     .select({
       id: doseRecordsTable.id, scheduledDoseId: doseRecordsTable.scheduledDoseId, patientId: doseRecordsTable.patientId,
-      caregiverId: doseRecordsTable.caregiverId, caregiverName: caregiversTable.name,
+      caregiverId: doseRecordsTable.caregiverId,
+      caregiverName: nomeDeQuemRegistrou(caregiversTable.name, doseRecordsTable.id),
       takenAt: doseRecordsTable.takenAt, outcome: doseRecordsTable.outcome, postponedTo: doseRecordsTable.postponedTo,
       notes: doseRecordsTable.notes, createdAt: doseRecordsTable.createdAt,
     })

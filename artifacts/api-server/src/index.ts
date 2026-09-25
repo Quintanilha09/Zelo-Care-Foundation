@@ -9,6 +9,7 @@ import { runOperationalChecks } from "./lib/operational-monitor";
 import { apagarMidiasVencidas } from "./lib/media-cleanup";
 import { avisarPacientesSemCuidador } from "./lib/paciente-sem-cuidador";
 import { sendAppointmentReminder } from "./lib/appointment-reminders";
+import { fazerCopiaDeSeguranca } from "./lib/backup";
 
 const rawPort = process.env["PORT"];
 
@@ -42,6 +43,9 @@ await startQueue({
   },
   avisarPacientesSemCuidador: async () => {
     await avisarPacientesSemCuidador();
+  },
+  fazerCopiaDeSeguranca: async () => {
+    await fazerCopiaDeSeguranca();
   },
   onDoseTaken: async ({ patientId, medicationId }) => {
     await decrementStockForDoseTaken(patientId, medicationId);
