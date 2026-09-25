@@ -31,6 +31,7 @@ import { UNDO_WINDOW_MS } from "../routes/dose-records.ts";
 import { LATE_GRACE_MINUTES } from "./dose-generation.ts";
 import { Clock } from "./clock.ts";
 import { localDayBoundsUtc, toLocalDateTime, tomorrowInTimezone } from "@workspace/scheduling";
+import { nomeDeQuemRegistrou } from "./cuidador-removido.ts";
 
 /**
  * Segundo join na mesma tabela, com apelido: quem REGISTROU e quem CORRIGIU
@@ -100,7 +101,9 @@ export async function dosesDoDia(
       dose: scheduledDosesTable.dose,
       medicationName: medicationsTable.name,
       registeredAt: doseRecordsTable.takenAt,
-      registeredByCaregiverName: caregiversTable.name,
+      // Nulo aqui pode ser "dose ainda não tomada" ou "quem registrou saiu da
+      // família" (#213). O `id` do registro separa os dois.
+      registeredByCaregiverName: nomeDeQuemRegistrou(caregiversTable.name, doseRecordsTable.id),
       registeredViaElderMode: doseRecordsTable.registeredViaElderMode,
       recordId: doseRecordsTable.id,
       /**

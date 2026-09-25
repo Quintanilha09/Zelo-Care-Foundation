@@ -47,9 +47,33 @@ export const doseRecordsTable = pgTable(
     patientId: integer("patient_id")
       .notNull()
       .references(() => patientsTable.id, { onDelete: "cascade" }),
-    caregiverId: integer("caregiver_id")
-      .notNull()
-      .references(() => caregiversTable.id),
+    /**
+     * Quem registrou — Issue #213.
+     *
+     * ═══════════════════════════════════════════════════════════════════
+     * ERA `NOT NULL` SEM AÇÃO DE CASCATA, E ISSO IMPEDIA REMOVER CUIDADOR.
+     *
+     * `routes/caregivers.ts` apaga a linha do cuidador ao revogar acesso.
+     * Com a chave estrangeira sem ação, o banco recusava enquanto houvesse
+     * um registro de dose apontando para ele — ou seja, para qualquer
+     * cuidador que já tivesse usado o app. A rota devolvia 500.
+     *
+     * Reproduzido em 24/09/2026:
+     *   DELETE FROM caregivers WHERE id = <quem registrou uma dose>
+     *   ERRO: viola restrição "dose_records_caregiver_id_caregivers_id_fk"
+     * ═══════════════════════════════════════════════════════════════════
+     *
+     * `set null`, e nunca `cascade`: **a dose não pode sumir porque a
+     * pessoa saiu da família.** O registro é do paciente, não de quem
+     * digitou — é o invariante 1 do produto.
+     *
+     * É a mesma decisão, com as mesmas palavras, que `correctedByCaregiverId`
+     * logo abaixo já tomava: *perde-se o nome, nunca a dose*. A coluna
+     * principal só não tinha recebido o mesmo tratamento.
+     */
+    caregiverId: integer("caregiver_id").references(() => caregiversTable.id, {
+      onDelete: "set null",
+    }),
     takenAt: timestamp("taken_at", { withTimezone: true }).notNull(),
     outcome: doseOutcomeEnum("outcome").notNull().default("taken"),
     // Só preenchido quando outcome="postponed" — o novo horário que o
