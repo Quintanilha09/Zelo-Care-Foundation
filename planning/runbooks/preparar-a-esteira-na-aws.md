@@ -7,6 +7,19 @@
 >
 > Depois disto, todo commit no `main` publica sozinho e você não volta aqui.
 
+> ## ⚠ Antes de você fazer o passo 1, a esteira já vai ter falhado uma vez — e está certo
+>
+> O workflow chegou ao `main` em 28/09/2026, no PR #217. **Esse merge é, ele mesmo, um commit no
+> `main`** — então a esteira disparou na hora, antes de existir papel nenhum na AWS.
+>
+> Ela para no passo *"Assumir o papel na AWS por OIDC"*, dizendo que não conseguiu obter
+> credencial. **Não é defeito, e nada foi publicado**: sem credencial ela não fala com a AWS, não
+> constrói imagem e não toca em nada. O mesmo vai acontecer a cada commit no `main` até você
+> terminar o passo 6.
+>
+> Se chegou um e-mail de falha do GitHub Actions, é este. Siga os passos abaixo; o primeiro commit
+> depois do passo 6 é que vale.
+
 ---
 
 ## O que estamos montando, e por quê
@@ -233,8 +246,8 @@ Secrets do GitHub) é exatamente o que este desenho evita.
 Se você **nunca** publicou, o registro do serviço está vazio. Não precisa de Docker na sua máquina:
 deixe a esteira fazer isso.
 
-1. Faça o merge do PR da #201.
-2. Vá em **Actions** → a execução **Publicar** vai rodar.
+1. Com os passos 1 a 6 feitos, mande um commit qualquer para o `main` — pode ser de documentação.
+2. Vá em **Actions** → o **Validate** roda os três checks e, quando fecharem, **Publicar** começa.
 3. Ela vai **construir e enviar a imagem** e depois **parar** com esta mensagem:
 
    > `O servico 'zelo' nao tem nenhum deployment no ar. A imagem desta execucao JA esta no
