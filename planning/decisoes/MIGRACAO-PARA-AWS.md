@@ -248,7 +248,7 @@ Sessão fixa não substitui nenhuma. Ver [runbooks/escala-do-servico.md](../runb
 | # | O quê | Situação |
 |---|---|---|
 | [#200](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/200) | Provisionar a AWS em São Paulo: contêiner, banco, bucket, IAM, MFA, alarme de custo | 🔨 em andamento |
-| [#201](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/201) | Esteira de deploy pelo GitHub Actions | ✅ entregue — falta a mão do fundador, ver abaixo |
+| [#201](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/201) | Esteira de deploy pelo GitHub Actions | ✅ PR #217 — falta a mão do fundador, ver abaixo |
 
 #### A #201 resolveu a pergunta que a #198 deixou: como migrar um banco privado
 
