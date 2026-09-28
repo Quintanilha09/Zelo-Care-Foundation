@@ -248,7 +248,33 @@ Sessão fixa não substitui nenhuma. Ver [runbooks/escala-do-servico.md](../runb
 | # | O quê | Situação |
 |---|---|---|
 | [#200](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/200) | Provisionar a AWS em São Paulo: contêiner, banco, bucket, IAM, MFA, alarme de custo | 🔨 em andamento |
-| [#201](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/201) | Esteira de deploy pelo GitHub Actions | ✅ PR #217 — falta a mão do fundador, ver abaixo |
+| [#201](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/201) | Esteira de deploy pelo GitHub Actions | ✅ PR #217 — a identidade já existe, ver abaixo |
+
+#### A identidade na AWS foi montada em 28/09/2026
+
+Conferido pela API, não pela tela:
+
+| O quê | Estado |
+|---|---|
+| Papel `zelo-deploy-github` | existe — `arn:aws:iam::…:role/zelo-deploy-github` |
+| Confiança | `sub` preso a `repo:Quintanilha09/Zelo-Care-Foundation:ref:refs/heads/main`. **Sem curinga** |
+| Política `zelo-esteira-lightsail` | 7 ações do Lightsail, todas com `aws:RequestedRegion = sa-east-1` |
+| Segredo `AWS_DEPLOY_ROLE_ARN` no GitHub | presente |
+
+**Não há chave permanente em lugar nenhum.** O GitHub apresenta uma identidade assinada a cada
+execução e a AWS devolve um acesso de minutos — não existe credencial para vazar, nem prazo de
+troca para anotar.
+
+Duas observações da montagem, para quem repetir:
+
+- O console do IAM **bloqueia o avanço por falta de NOME**, não por falta de política. Papel sem
+  política é criado normalmente; a política entra depois.
+- Ele escreve a condição como `StringLike` em vez de `StringEquals`. Sem curinga no valor, as duas
+  se comportam igual — não precisa trocar.
+
+**A primeira execução da esteira falhou de propósito**, no passo *"Assumir o papel na AWS por
+OIDC"*: ela disparou com o merge do PR #217, quando o papel ainda não existia. Nada foi publicado.
+É o comportamento certo — sem identidade, a esteira para em vez de tentar por outro caminho.
 
 #### A #201 resolveu a pergunta que a #198 deixou: como migrar um banco privado
 
