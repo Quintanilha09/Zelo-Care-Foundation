@@ -1,0 +1,554 @@
+name: Publicar
+
+# ─────────────────────────────────────────────────────────────────────────────
+# A ESTEIRA DE DEPLOY — Issue #201.
+#
+# O que ela faz, em uma linha: MIGRA o banco, PUBLICA a imagem nova, e
+# VERIFICA que o app responde. Nessa ordem, e parando no primeiro tropeco.
+#
+# ── Por que `workflow_run` e nao `push` ────────────────────────────────────
+#
+# O `main` exige tres checks (`Typecheck, lint e build`, `Testes de servidor`,
+# `Testes de tela (Playwright)`), e os tres vivem no workflow `Validate`.
+# Disparar no `push` faria esta esteira correr AO LADO deles — e publicaria
+# junto com um PR vermelho.
+#
+# `workflow_run` dispara DEPOIS que o `Validate` termina, e a condicao
+# `conclusion == 'success'` so e verdadeira quando o workflow inteiro passou,
+# ou seja, quando os tres jobs passaram. Um so gatilho, uma so condicao.
+#
+# ── A armadilha do `workflow_run`, e ela ja custou tempo a muita gente ─────
+#
+# O GitHub so dispara `workflow_run` a partir da versao do arquivo que esta no
+# BRANCH PADRAO. Enquanto este arquivo estiver so num PR, ele nao roda — nem
+# de mentira. A primeira execucao acontece no primeiro commit ao `main`
+# DEPOIS deste arquivo chegar la.
+#
+# ── O commit que sobe e o que foi testado, nao o topo do `main` ────────────
+#
+# O checkout usa `head_sha` do evento. Se dois commits entrarem em sequencia,
+# cada esteira publica o seu — e nao a soma acidental dos dois. Com
+# `cancel-in-progress: false`, a segunda espera a primeira terminar em vez de
+# mata-la no meio de uma migracao.
+#
+# ── Nenhum segredo do app mora no GitHub ───────────────────────────────────
+#
+# Esta esteira NAO carrega as variaveis de ambiente do app. Ela LE o
+# deployment que esta no ar, troca so a imagem, e devolve. As 19 variaveis
+# (#202) foram postas uma vez no console pelo fundador e ficam la.
+#
+# Consequencia boa: o `DATABASE_URL` que a migracao usa e, literalmente, o
+# mesmo do app — nao existe um segundo caminho ate o banco, que era o pedido
+# explicito da Issue.
+#
+# Consequencia a saber: a PRIMEIRA implantacao tem de ser feita a mao, no
+# console, com o ambiente completo. Sem ela, esta esteira para e diz isso.
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_run:
+    workflows: ["Validate"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  # `id-token: write` e o que permite pedir o token OIDC de curta duracao.
+  # Sem ele o `configure-aws-credentials` falha dizendo que nao consegue obter
+  # o token — e nao ha chave de AWS gravada em lugar nenhum para cair de volta.
+  id-token: write
+  contents: read
+
+concurrency:
+  group: publicar-producao
+  # NUNCA cancelar. Cancelar aqui pode matar o passo entre "migrei o banco" e
+  # "publiquei o app que sabe ler o esquema novo", que e o unico estado ruim
+  # que esta esteira consegue produzir.
+  cancel-in-progress: false
+
+jobs:
+  publicar:
+    name: Migrar, publicar e verificar
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # Tres condicoes, e as tres precisam ser verdade:
+    #   conclusion == success  → os tres checks fecharam verdes
+    #   event == push          → veio de commit no main, e nao da validacao de um PR
+    #   head_branch == main    → e o main, e nao outro branch protegido no futuro
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+
+    steps:
+      - name: Check out o commit que passou nos checks
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      # ── A declaracao do servico vive no repositorio ─────────────────────
+      #
+      # `deploy/lightsail.json` e a unica fonte de nome de servico, nome de
+      # conteiner e escala esperada. Mudar infraestrutura passa a ser um
+      # commit revisado, e nao um clique lembrado.
+      - name: Ler a declaracao do servico
+        run: |
+          set -euo pipefail
+          for campo in regiao servico container rotuloDaImagem containerDaMigracao escalaEsperada caminhoDeSaude caminhoDeProntidao; do
+            valor=$(jq -er ".$campo" deploy/lightsail.json) || {
+              echo "::error::deploy/lightsail.json nao tem o campo '$campo'"
+              exit 1
+            }
+            echo "$campo=$valor"
+          done
+          {
+            echo "REGIAO=$(jq -r .regiao deploy/lightsail.json)"
+            echo "SERVICO=$(jq -r .servico deploy/lightsail.json)"
+            echo "CONTAINER=$(jq -r .container deploy/lightsail.json)"
+            echo "ROTULO=$(jq -r .rotuloDaImagem deploy/lightsail.json)"
+            echo "CONTAINER_MIGRACAO=$(jq -r .containerDaMigracao deploy/lightsail.json)"
+            echo "ESCALA_ESPERADA=$(jq -r .escalaEsperada deploy/lightsail.json)"
+            echo "CAMINHO_SAUDE=$(jq -r .caminhoDeSaude deploy/lightsail.json)"
+            echo "CAMINHO_PRONTIDAO=$(jq -r .caminhoDeProntidao deploy/lightsail.json)"
+          } >> "$GITHUB_ENV"
+
+      # ── OIDC: identidade de minutos, e nao chave guardada ───────────────
+      #
+      # O GitHub assina um token dizendo "sou o workflow tal, do repositorio
+      # tal, no branch tal". A AWS confere a assinatura e devolve credencial
+      # que expira em uma hora. NAO existe chave permanente para vazar, e
+      # revogar e apagar um papel.
+      #
+      # O segredo `AWS_DEPLOY_ROLE_ARN` guarda so o ARN do papel. Ele nao abre
+      # nada sozinho — a confianca esta do lado da AWS, presa a
+      # `repo:Quintanilha09/Zelo-Care-Foundation:ref:refs/heads/main`. E
+      # segredo, e nao variavel, so para o numero da conta nao aparecer no log.
+      #
+      # Como criar tudo isso: planning/runbooks/preparar-a-esteira-na-aws.md
+      - name: Assumir o papel na AWS por OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.REGIAO }}
+          role-session-name: esteira-zelo-${{ github.run_id }}
+
+      # ── O `push-container-image` nao e AWS CLI puro ──────────────────────
+      #
+      # Ele e um comando de plugin: a CLI delega para o binario `lightsailctl`,
+      # que faz o upload. Sem o plugin, o comando falha com "the Lightsail Control
+      # (lightsailctl) plugin was not found".
+      #
+      # A URL e a que a propria AWS documenta. NAO ha soma de verificacao
+      # publicada por eles — `RISCO POTENCIAL` aceito e registrado: a esteira
+      # confia num binario baixado por HTTPS de um bucket da AWS. A alternativa
+      # (falar com o registro por `docker login` direto) exige credencial de
+      # registro de longa duracao, que e pior.
+      - name: Instalar o lightsailctl
+        run: |
+          set -euo pipefail
+          curl -fsSL "https://s3.us-west-2.amazonaws.com/lightsailctl/latest/linux-amd64/lightsailctl" \
+            -o /usr/local/bin/lightsailctl
+          chmod +x /usr/local/bin/lightsailctl
+          lightsailctl --help >/dev/null 2>&1 || true
+          echo "lightsailctl instalado"
+
+      # ═══════════════════════════════════════════════════════════════════
+      # DAQUI PARA BAIXO, NENHUMA SAIDA DA AWS CLI VAI PARA O LOG.
+      #
+      # `get-container-services` e `create-container-service-deployment`
+      # devolvem o deployment INTEIRO, e dentro dele as variaveis de ambiente
+      # COM OS VALORES. Um `aws ... ` sem redirecionar imprime a senha do
+      # banco, a chave do Resend e o segredo de sessao num log publico.
+      #
+      # Por isso: toda chamada termina em `> arquivo.json`, e nenhum desses
+      # arquivos e impresso. O que o log mostra sao NOMES de variavel, numeros
+      # de versao e estados.
+      # ═══════════════════════════════════════════════════════════════════
+
+      - name: Conferir a escala, e travar se alguem a subiu
+        run: |
+          set -euo pipefail
+          aws lightsail get-container-services --service-name "$SERVICO" > servico.json
+
+          escala=$(jq -r '.containerServices[0].scale' servico.json)
+          estado=$(jq -r '.containerServices[0].state' servico.json)
+          echo "servico=$SERVICO estado=$estado escala=$escala esperada=$ESCALA_ESPERADA"
+
+          if [ "$escala" != "$ESCALA_ESPERADA" ]; then
+            echo "::error::A escala do servico e $escala, e deploy/lightsail.json declara $ESCALA_ESPERADA."
+            echo "::error::Subir a escala quebra TRES coisas em silencio: o limitador de taxa dobra, a"
+            echo "::error::atualizacao ao vivo para de atravessar entre nos, e revogar o acesso de um"
+            echo "::error::cuidador deixa de fechar a conexao aberta no outro no (invariante 2)."
+            echo "::error::Leia planning/runbooks/escala-do-servico.md. Se a mudanca for deliberada,"
+            echo "::error::faca o trabalho que o runbook lista e ENTAO mude escalaEsperada no commit."
+            exit 1
+          fi
+
+      - name: Construir a imagem
+        run: |
+          set -euo pipefail
+          docker build -t "zelo-producao:${{ github.event.workflow_run.head_sha }}" .
+          docker image inspect "zelo-producao:${{ github.event.workflow_run.head_sha }}" \
+            --format 'imagem construida: {{.Size}} bytes'
+
+      # O `push-container-image` imprime o nome com que a imagem passa a ser
+      # referenciada (`:zelo.app.N`). Em vez de raspar essa saida, perguntamos
+      # ao proprio servico qual e a mais nova com este rotulo — o que tambem
+      # confirma que o envio chegou.
+      - name: Enviar a imagem para o registro do servico
+        run: |
+          set -euo pipefail
+          aws lightsail push-container-image \
+            --service-name "$SERVICO" \
+            --label "$ROTULO" \
+            --image "zelo-producao:${{ github.event.workflow_run.head_sha }}" > envio.log 2>&1 \
+            || { echo "::error::o envio da imagem falhou"; cat envio.log; exit 1; }
+
+          aws lightsail get-container-images --service-name "$SERVICO" > imagens.json
+          IMAGEM=$(jq -r --arg p ":$SERVICO.$ROTULO." \
+            '[.containerImages[] | select(.image | startswith($p))] | sort_by(.createdAt) | reverse | .[0].image // empty' \
+            imagens.json)
+
+          if [ -z "$IMAGEM" ]; then
+            echo "::error::a imagem foi enviada mas nao aparece no registro do servico com o rotulo '$ROTULO'"
+            exit 1
+          fi
+          echo "imagem registrada: $IMAGEM"
+          echo "IMAGEM=$IMAGEM" >> "$GITHUB_ENV"
+
+      # ── O ambiente do app e copiado, nunca redigitado ────────────────────
+      #
+      # Este e o passo que torna a esteira possivel sem segredo no GitHub: ela
+      # LE o deployment que esta no ar e herda tudo dele.
+      #
+      # ── Por que ele vem DEPOIS do envio da imagem, e nao antes ───────────
+      #
+      # Ordem contra-intuitiva, e ha um motivo. A PRIMEIRA implantacao tem de
+      # ser feita a mao, no console — e para faze-la e preciso escolher uma
+      # imagem, que so existe depois de alguem ter enviado uma.
+      #
+      # Com este passo aqui, a primeira execucao da esteira constroi, envia, e
+      # entao para dizendo "a imagem `:zelo.app.1` esta no registro, crie a
+      # implantacao com ela". O ovo e a galinha se resolvem sozinhos, e o
+      # fundador nao precisa de Docker na maquina dele.
+      #
+      # A conferencia de escala continua sendo a PRIMEIRA de todas, porque ela
+      # e o portao que protege o produto e custa uma chamada.
+      - name: Copiar o deployment que esta no ar
+        run: |
+          set -euo pipefail
+          # Reler: entre a conferencia de escala e agora passaram-se os minutos
+          # da construcao da imagem.
+          aws lightsail get-container-services --service-name "$SERVICO" > servico.json
+          jq '.containerServices[0].currentDeployment' servico.json > atual.json
+
+          if [ "$(jq -r 'type' atual.json)" = "null" ]; then
+            echo "::error::O servico '$SERVICO' nao tem nenhum deployment no ar."
+            echo "::error::A imagem desta execucao JA esta no registro: $IMAGEM"
+            echo "::error::A PRIMEIRA implantacao e manual, no console, porque e ela que define as 19"
+            echo "::error::variaveis de ambiente (#202). Desta esteira em diante elas sao herdadas e"
+            echo "::error::nenhum segredo do app precisa morar no GitHub."
+            echo "::error::Passo a passo (secao 8): planning/runbooks/preparar-a-esteira-na-aws.md"
+            exit 1
+          fi
+
+          if [ "$(jq -r --arg c "$CONTAINER" '.containers | has($c)' atual.json)" != "true" ]; then
+            echo "::error::O deployment no ar nao tem um conteiner chamado '$CONTAINER'."
+            echo "::error::Conteineres encontrados: $(jq -r '.containers | keys | join(", ")' atual.json)"
+            echo "::error::Ou renomeie o conteiner no console, ou ajuste 'container' em deploy/lightsail.json."
+            exit 1
+          fi
+
+          # ── Rede de seguranca contra vazamento no log ────────────────────
+          #
+          # Alem de nunca imprimir de proposito, marcamos cada valor longo como
+          # segredo: o GitHub passa a substitui-lo por *** em QUALQUER lugar do
+          # log, inclusive numa mensagem de erro que alguem nao previu.
+          #
+          # O corte em 8 caracteres e deliberado: mascarar "5000", "true" ou
+          # "/" tornaria o log ilegivel sem proteger nada. Segredo de verdade
+          # neste projeto e sempre longo.
+          #
+          # Efeito colateral conhecido e aceito: valores longos e inofensivos
+          # tambem sao mascarados. `NODE_ENV=production` tem 10 caracteres,
+          # entao a palavra "production" aparece como *** no log inteiro. E
+          # feio e nao e defeito — a alternativa (uma lista de variaveis
+          # "publicas") e uma lista que alguem esquece de atualizar no dia em
+          # que uma variavel nova e sensivel.
+          jq -r --arg c "$CONTAINER" '.containers[$c].environment | to_entries[] | .value' atual.json \
+            | while IFS= read -r valor; do
+                if [ "${#valor}" -gt 8 ]; then echo "::add-mask::$valor"; fi
+              done
+
+          jq -r --arg c "$CONTAINER" '.containers[$c].environment | keys | sort | .[]' atual.json > chaves.txt
+          echo "variaveis herdadas do app ($(wc -l < chaves.txt)):"
+          sed 's/^/  - /' chaves.txt
+
+          if ! grep -qx 'DATABASE_URL' chaves.txt; then
+            echo "::error::O deployment no ar nao define DATABASE_URL."
+            echo "::error::A migracao usa exatamente o mesmo endereco do app, de proposito: um segundo"
+            echo "::error::caminho ate o banco e uma segunda coisa para rodar errado no dia ruim."
+            exit 1
+          fi
+
+          echo "versao no ar: $(jq -r '.version' atual.json)"
+
+      # ═══════════════════════════════════════════════════════════════════
+      # MIGRAR — de DENTRO da AWS, porque nao ha outro jeito.
+      #
+      # O `zelo-db` e privado (`Public mode: disabled`, medido na #200): so
+      # recurso Lightsail da mesma regiao o alcanca. Este runner e externo.
+      # Ligar o modo publico do banco para migrar e a saida tentadora e errada
+      # — banco de saude exposto a internet, mesmo por minutos, e varrido por
+      # robo.
+      #
+      # ── Por que um deployment DESCARTAVEL, e por que ele "falha" ────────
+      #
+      # O conteiner de migracao roda, imprime o resultado e MORRE. Para o
+      # Lightsail, conteiner que termina e deployment que falhou — e e
+      # exatamente o que se quer: deployment que falha NAO substitui o que
+      # esta no ar. O app antigo segue servindo o tempo todo, intacto, e volta
+      # a ser o unico assim que este passo acaba.
+      #
+      # Foi observado na #200 que um deployment de teste roda e escreve log
+      # normalmente, e que ele aparece como *Failed* por terminar.
+      #
+      # `HIPOTESE`, e e a hipotese em que esta esteira inteira se apoia: que o
+      # deployment antigo continua servindo enquanto o descartavel e tentado.
+      # E o comportamento documentado do Lightsail, e NAO foi medido por
+      # ninguem deste projeto. A primeira execucao real e quem verifica —
+      # ver a secao "O que ainda nao foi medido" do runbook de deploy.
+      #
+      # ── O resultado e a LINHA NO LOG, e nao o estado do deployment ──────
+      #
+      # Por isso o passo seguinte procura `ZELO-MIGRACAO-OK`. Ausencia de marca
+      # e falha: silencio nunca vira sucesso.
+      # ═══════════════════════════════════════════════════════════════════
+      - name: Migrar o banco, de dentro da AWS
+        run: |
+          set -euo pipefail
+
+          # Ambiente identico ao do app — inclusive o DATABASE_URL.
+          jq --arg c "$CONTAINER" '.containers[$c].environment' atual.json > ambiente.json
+
+          jq -n \
+            --arg nome "$CONTAINER_MIGRACAO" \
+            --arg img "$IMAGEM" \
+            --argjson cmd "$(jq -c '.comandoDaMigracao' deploy/lightsail.json)" \
+            --argjson amb "$(cat ambiente.json)" \
+            '{ ($nome): { image: $img, command: $cmd, environment: $amb } }' > containers-migracao.json
+
+          # Sem `--public-endpoint`: este deployment nao atende ninguem.
+          # Guardamos o instante ANTES de criar, para so ler log a partir daqui
+          # e nao confundir com a execucao de um deploy anterior.
+          date -u +%Y-%m-%dT%H:%M:%SZ > inicio-migracao.txt
+          echo "INICIO_MIGRACAO=$(cat inicio-migracao.txt)" >> "$GITHUB_ENV"
+
+          aws lightsail create-container-service-deployment \
+            --service-name "$SERVICO" \
+            --containers file://containers-migracao.json > criacao-migracao.json
+
+          echo "deployment de migracao criado: versao $(jq -r '.containerService.nextDeployment.version // "?"' criacao-migracao.json)"
+
+      - name: Esperar a migracao dizer se deu certo
+        run: |
+          set -euo pipefail
+          limite=$(( $(date +%s) + 1200 ))   # 20 minutos
+          resultado="tempo-esgotado"
+
+          while [ "$(date +%s)" -lt "$limite" ]; do
+            aws lightsail get-container-log \
+              --service-name "$SERVICO" \
+              --container-name "$CONTAINER_MIGRACAO" \
+              --start-time "$INICIO_MIGRACAO" > log-migracao.json 2>/dev/null || true
+
+            jq -r '.logEvents[]?.message' log-migracao.json > log-migracao.txt 2>/dev/null || true
+
+            if grep -q 'ZELO-MIGRACAO-OK' log-migracao.txt 2>/dev/null; then resultado="ok"; break; fi
+            if grep -q 'ZELO-MIGRACAO-FALHOU' log-migracao.txt 2>/dev/null; then resultado="falhou"; break; fi
+
+            sleep 15
+          done
+
+          echo "─── log do conteiner de migracao ───────────────────────────"
+          cat log-migracao.txt || echo "(vazio)"
+          echo "────────────────────────────────────────────────────────────"
+
+          case "$resultado" in
+            ok)
+              echo "migracao concluida. Publicando o app."
+              ;;
+            falhou)
+              echo "::error::A MIGRACAO FALHOU. Nada foi publicado: a versao antiga do app continua"
+              echo "::error::no ar, servindo, com o esquema que ela conhece."
+              echo "::error::O que fazer esta em planning/runbooks/deploy-para-a-aws.md, secao"
+              echo "::error::'Quando a migracao falha'. Nao rode migracao a mao da sua maquina: o"
+              echo "::error::banco e privado e nao aceita conexao de fora."
+              exit 1
+              ;;
+            *)
+              echo "::error::20 minutos sem o conteiner de migracao dizer nada — nem OK, nem FALHOU."
+              echo "::error::Ausencia de resposta e tratada como falha, de proposito. Nada foi publicado."
+              echo "::error::Causas comuns: a imagem nao sobe, o banco nao aceitou a conexao (grupo de"
+              echo "::error::rede), ou DATABASE_URL aponta para outro lugar."
+              exit 1
+              ;;
+          esac
+
+      # O deployment descartavel ainda pode estar sendo tentado de novo pelo
+      # Lightsail quando a migracao ja terminou. Criar o deployment do app com
+      # o servico em transicao e recusado, entao esperamos ele assentar.
+      - name: Esperar o servico aceitar um deployment novo
+        run: |
+          set -euo pipefail
+          limite=$(( $(date +%s) + 900 ))   # 15 minutos
+          while [ "$(date +%s)" -lt "$limite" ]; do
+            aws lightsail get-container-services --service-name "$SERVICO" > servico-agora.json
+            estado=$(jq -r '.containerServices[0].state' servico-agora.json)
+            echo "estado do servico: $estado"
+            case "$estado" in
+              RUNNING|READY|DISABLED) exit 0 ;;
+            esac
+            sleep 15
+          done
+          echo "::error::o servico nao voltou a um estado que aceite deployment em 15 minutos"
+          exit 1
+
+      # ── Publicar: a MESMA especificacao, com a imagem trocada ───────────
+      #
+      # Conteineres, portas, ponto publico e verificacao de saude saem do
+      # deployment que estava no ar. A unica diferenca entre o que estava
+      # rodando e o que vai rodar e o campo `image`.
+      #
+      # E isso e uma propriedade, nao economia de linhas: a esteira nao tem
+      # como mudar configuracao de producao por acidente, porque ela nao
+      # escreve configuracao nenhuma.
+      - name: Publicar a versao nova do app
+        run: |
+          set -euo pipefail
+          jq --arg c "$CONTAINER" --arg img "$IMAGEM" \
+            '.containers | (.[$c].image) = $img' atual.json > containers-app.json
+          jq '.publicEndpoint' atual.json > endpoint.json
+
+          if [ "$(jq -r 'type' endpoint.json)" = "null" ]; then
+            echo "::error::o deployment no ar nao tem ponto publico — nada responderia na internet"
+            exit 1
+          fi
+
+          # ── Este e o unico passo que insiste, e ha um motivo ───────────────
+          #
+          # Neste ponto o banco JA FOI MIGRADO. Desistir aqui por uma recusa
+          # passageira ("o servico ainda esta em transicao") deixaria o estado
+          # mais incomodo que existe: esquema novo, app velho.
+          #
+          # O Lightsail pode ainda estar tentando de novo o deployment de
+          # migracao quando chegamos aqui — ele termina, e terminar, para o
+          # Lightsail, e falhar. O passo anterior espera o servico assentar,
+          # mas a janela e curta e a corrida e real.
+          #
+          # Dez tentativas a cada 30s = 5 minutos. Se nem assim, e problema de
+          # verdade e o erro sobe.
+          for tentativa in $(seq 1 10); do
+            if aws lightsail create-container-service-deployment \
+                 --service-name "$SERVICO" \
+                 --containers file://containers-app.json \
+                 --public-endpoint file://endpoint.json > criacao-app.json 2> erro-app.txt; then
+              break
+            fi
+            echo "tentativa $tentativa/10 recusada: $(head -c 200 erro-app.txt)"
+            if [ "$tentativa" = "10" ]; then
+              echo "::error::O Lightsail recusou o deployment do app 10 vezes em 5 minutos."
+              echo "::error::ATENCAO: o banco JA FOI MIGRADO nesta execucao. O app no ar e o ANTIGO."
+              echo "::error::Isso e seguro enquanto a migracao for aditiva — leia a secao 'A regra que"
+              echo "::error::torna a volta segura' em planning/runbooks/deploy-para-a-aws.md."
+              cat erro-app.txt
+              exit 1
+            fi
+            sleep 30
+          done
+
+          VERSAO=$(jq -r '.containerService.nextDeployment.version' criacao-app.json)
+          echo "deployment do app criado: versao $VERSAO"
+          echo "VERSAO=$VERSAO" >> "$GITHUB_ENV"
+
+      - name: Esperar a versao nova ficar ativa
+        run: |
+          set -euo pipefail
+          limite=$(( $(date +%s) + 1500 ))   # 25 minutos
+          while [ "$(date +%s)" -lt "$limite" ]; do
+            aws lightsail get-container-services --service-name "$SERVICO" > servico-agora.json
+            atualVersao=$(jq -r '.containerServices[0].currentDeployment.version // "nenhuma"' servico-agora.json)
+            proxima=$(jq -r '.containerServices[0].nextDeployment.state // "nenhuma"' servico-agora.json)
+            echo "no ar: versao $atualVersao | proxima: $proxima | esperando: versao $VERSAO"
+
+            if [ "$atualVersao" = "$VERSAO" ]; then
+              echo "versao $VERSAO esta no ar"
+              exit 0
+            fi
+            if [ "$proxima" = "FAILED" ]; then
+              echo "::error::O Lightsail recusou a versao $VERSAO — ela nao passou na verificacao de saude."
+              echo "::error::A versao $atualVersao continua servindo. O banco JA foi migrado: se voce for"
+              echo "::error::voltar atras, leia a secao 'Voltar para a versao anterior' do runbook antes."
+              aws lightsail get-container-log --service-name "$SERVICO" --container-name "$CONTAINER" \
+                > log-app.json 2>/dev/null || true
+              jq -r '.logEvents[]?.message' log-app.json 2>/dev/null | tail -60 || true
+              exit 1
+            fi
+            sleep 15
+          done
+          echo "::error::25 minutos e a versao $VERSAO nao ficou ativa"
+          exit 1
+
+      # ── A ultima palavra e de fora, pela internet ───────────────────────
+      #
+      # O Lightsail dizer ACTIVE significa que o conteiner passou na
+      # verificacao dele. Isto aqui e outra pergunta: o app responde para quem
+      # chega pelo endereco publico?
+      #
+      #   /api/healthz  este processo esta vivo?      nao toca no banco
+      #   /api/readyz   ele consegue atender?         consulta o banco
+      #
+      # O segundo e o que importa depois de uma migracao: ele so responde bem
+      # se o codigo novo conseguir falar com o esquema novo.
+      - name: Verificar pelo lado de fora
+        run: |
+          set -euo pipefail
+          URL=$(jq -r '.containerServices[0].url' servico-agora.json | sed 's:/*$::')
+          echo "endereco publico: $URL"
+
+          conferir() {
+            caminho="$1"
+            for tentativa in $(seq 1 20); do
+              codigo=$(curl -s -o corpo.txt -w '%{http_code}' --max-time 15 "$URL$caminho" || echo "000")
+              if [ "$codigo" = "200" ]; then
+                echo "  $caminho respondeu 200 na tentativa $tentativa"
+                return 0
+              fi
+              echo "  $caminho respondeu $codigo (tentativa $tentativa/20)"
+              sleep 10
+            done
+            echo "::error::$caminho nao respondeu 200 em 20 tentativas. Ultimo corpo:"
+            head -c 500 corpo.txt || true
+            return 1
+          }
+
+          conferir "$CAMINHO_SAUDE"
+          conferir "$CAMINHO_PRONTIDAO"
+
+      - name: Resumo
+        if: always()
+        run: |
+          {
+            echo "### Publicacao do ZELO"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| commit | \`${{ github.event.workflow_run.head_sha }}\` |"
+            echo "| imagem | \`${IMAGEM:-nao chegou a ser registrada}\` |"
+            echo "| versao do deployment | \`${VERSAO:-nao chegou a ser criada}\` |"
+            echo "| resultado | ${{ job.status }} |"
+            echo ""
+            if [ "${{ job.status }}" != "success" ]; then
+              echo "**Deu errado.** O caminho de volta e a leitura do que aconteceu estao em"
+              echo "\`planning/runbooks/deploy-para-a-aws.md\`."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -135,7 +135,11 @@ arquivo, e monitor de janela de contexto.
   órfã que quebrou a suíte. Trabalhe em branch quando houver outra sessão ativa.
 - **Bug reportado em ambiente real que você não explica pelo código: reproduza ANTES de editar.**
   Corrigir pelo sintoma já falhou duas vezes seguidas no mesmo bug.
-- **Ao fechar uma história, informe proativamente os comandos de deploy do Replit**, mesmo sem ninguém perguntar.
+- **Ao fechar uma história, diga como aquilo chega ao ar**, mesmo sem ninguém perguntar. Desde a
+  #201 a resposta normal é *"o merge no `main` publica sozinho"* — a esteira migra o banco, publica
+  e verifica. Se a mudança exigir algo que a esteira não faz (variável de ambiente nova, segredo
+  novo, passo no console da AWS), **diga qual, e onde**. A instrução antiga desta linha mandava
+  informar os comandos de deploy do **Replit**, que foi cancelado em 24/09/2026 e não existe mais.
 - **Toda implementação testável termina com um roteiro de teste para o fundador.** Regra dele,
   03/09/2026. Testável = tem comportamento que uma pessoa verifica usando o app. Mudança só de
   documentação, refatoração sem efeito observável e configuração de CI não geram roteiro.
@@ -186,6 +190,12 @@ pnpm --filter @workspace/db run limpar-orfas          # familias orfas de teste 
 > de dose. O caminho de produção é `migrate`, que aplica arquivos versionados em ordem, sem
 > perguntar e sem apagar. Detalhes em [lib/db/README.md](lib/db/README.md).
 
+> **Em produção, ninguém roda migração à mão — Issue #201.** O banco da AWS é privado: nem esta
+> máquina nem o runner do GitHub Actions o alcançam. Quem migra é um contêiner descartável que a
+> esteira dispara **dentro** da AWS, antes de publicar o app. Se a migração falha, o deploy para e
+> a versão antiga continua servindo. Como funciona, como voltar atrás e o que fazer quando falha:
+> [planning/runbooks/deploy-para-a-aws.md](planning/runbooks/deploy-para-a-aws.md).
+
 ## Onde vive o contexto
 
 **Tudo neste repositório.** Desde 23/08/2026 não há contexto do projeto no vault do Obsidian —
@@ -212,6 +222,8 @@ ele foi migrado para cá justamente porque duas fontes divergiram e dois agentes
 | Auditoria §10 do GSD (em andamento) | [planning/auditorias/2026-08-23-gsd-secao-10.md](planning/auditorias/2026-08-23-gsd-secao-10.md) |
 | Última auditoria de segurança | [planning/auditorias/2026-08-21-seguranca.md](planning/auditorias/2026-08-21-seguranca.md) |
 | Montar o banco de produção | [planning/runbooks/banco-de-producao.md](planning/runbooks/banco-de-producao.md) |
+| **Como o deploy funciona, e como VOLTAR para a versão anterior** | [planning/runbooks/deploy-para-a-aws.md](planning/runbooks/deploy-para-a-aws.md) |
+| Preparar a esteira na AWS — OIDC, papel, primeira implantação (uma vez só) | [planning/runbooks/preparar-a-esteira-na-aws.md](planning/runbooks/preparar-a-esteira-na-aws.md) |
 | Por que o serviço roda com UM nó, e o que fazer antes de subir | [planning/runbooks/escala-do-servico.md](planning/runbooks/escala-do-servico.md) |
 | Restaurar uma cópia de segurança | [planning/runbooks/restaurar-backup.md](planning/runbooks/restaurar-backup.md) |
 | LGPD | [docs/lgpd.md](docs/lgpd.md) |

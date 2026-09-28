@@ -15,7 +15,26 @@ async function buildAll() {
   await rm(distDir, { recursive: true, force: true });
 
   await esbuild({
-    entryPoints: [path.resolve(artifactDir, "src/index.ts")],
+    // ── Dois programas saem daqui, e o segundo é o de migração (#201) ──────
+    //
+    // `src/index.ts`  → `dist/index.mjs`   o servidor. É o CMD da imagem.
+    // `src/migrar.ts` → `dist/migrar.mjs`  aplica as migrações e MORRE.
+    //
+    // O de migração existe porque o banco de produção é privado: só recurso
+    // Lightsail da mesma região o alcança. A esteira não consegue migrar de
+    // fora — ela sobe um deployment descartável com esta MESMA imagem e o
+    // comando trocado para `node ./dist/migrar.mjs`.
+    //
+    // Mesma imagem de propósito: o esquema que a migração aplica e o código
+    // que vai usá-lo saem do mesmo commit, sempre. Duas imagens abririam a
+    // porta para migrar com uma versão e servir com outra.
+    //
+    // Sem `splitting`, cada entrada vira um arquivo autossuficiente — que é o
+    // que se quer aqui: o contêiner de migração não carrega o servidor junto.
+    entryPoints: [
+      path.resolve(artifactDir, "src/index.ts"),
+      path.resolve(artifactDir, "src/migrar.ts"),
+    ],
     platform: "node",
     bundle: true,
     format: "esm",

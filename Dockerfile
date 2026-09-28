@@ -120,6 +120,40 @@ COPY --from=construcao --chown=node:node /pronto ./
 COPY --from=construcao --chown=node:node /origem/artifacts/zelo/dist/public ./front
 ENV FRONT_DIR=/app/front
 
+# ═══════════════════════════════════════════════════════════════════════════
+# AS MIGRAÇÕES ENTRAM NA IMAGEM — #201.
+#
+# Até aqui elas não entravam, e isso não era descuido: até a #198 não havia
+# migração nenhuma, e depois dela o comando (`drizzle-kit migrate`) só rodava
+# de fora, pelo repositório.
+#
+# O que mudou é que o `zelo-db` é PRIVADO. Medido na #200: só recurso Lightsail
+# da mesma região o alcança — nem a máquina de quem desenvolve, nem o runner do
+# GitHub Actions. A migração passou a ter de rodar de DENTRO da AWS, e a única
+# coisa que roda lá dentro é um contêiner. Então os arquivos precisam estar
+# aqui.
+#
+# ── Por que os .sql e não o drizzle-kit ────────────────────────────────────
+#
+# O `drizzle-kit` é dependência de desenvolvimento e o `/pronto` acima traz só
+# as de produção. Quem aplica as migrações na imagem é o `dist/migrar.mjs`,
+# usando o aplicador que vem dentro do `drizzle-orm` — que é dependência de
+# produção. Os dois leem o mesmo `meta/_journal.json` e escrevem na mesma
+# tabela `drizzle.__drizzle_migrations`, então CI e produção contam a mesma
+# história (medido em 28/09/2026).
+#
+# Não trazer o `drizzle-kit` também tira da imagem a capacidade de comparar
+# esquema e aplicar diferença — que é o `push`, o comando que em 12/09/2026
+# ofereceu truncar o histórico de dose. O que não está na imagem não é rodado
+# por engano às onze da noite.
+#
+# ── Peso ───────────────────────────────────────────────────────────────────
+#
+# São arquivos de texto: os quatro .sql e o journal somam algumas dezenas de
+# KB. Não é decisão de tamanho, é decisão de alcance.
+# ═══════════════════════════════════════════════════════════════════════════
+COPY --from=construcao --chown=node:node /origem/lib/db/migrations ./migrations
+
 # Usuário sem privilégio. A imagem do Node já traz o `node` (uid 1000) — usar
 # o que já existe evita criar um e errar a permissão de alguma pasta.
 #

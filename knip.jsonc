@@ -17,7 +17,27 @@
 
   "workspaces": {
     "artifacts/api-server": {
-      "entry": ["src/index.ts", "src/seed.ts", "src/tests/*.test.ts", "scripts/*.mjs", "build.mjs"],
+      // ── Dois arquivos que ninguem importa e que NAO sao codigo morto ─────
+      //
+      // `src/migrar.ts` vira `dist/migrar.mjs` e e o COMANDO do conteiner de
+      // migracao que a esteira dispara dentro da AWS (#201).
+      //
+      // `src/restaurar-backup.ts` e a metade do backup que abre o arquivo
+      // cifrado (#199) — o runbook restaurar-backup.md manda rodar ele.
+      //
+      // Os dois sao alcancados por linha de comando, nunca por import. Sem
+      // esta linha o Knip os reporta como arquivos sem uso, e um dia alguem
+      // apaga acreditando no relatorio — inclusive o unico jeito de ler uma
+      // copia de seguranca.
+      "entry": [
+        "src/index.ts",
+        "src/migrar.ts",
+        "src/restaurar-backup.ts",
+        "src/seed.ts",
+        "src/tests/*.test.ts",
+        "scripts/*.mjs",
+        "build.mjs"
+      ],
       "project": ["src/**/*.ts"]
     },
     "artifacts/zelo": {
