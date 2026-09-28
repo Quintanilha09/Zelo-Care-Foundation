@@ -219,6 +219,9 @@ importers:
       pdfkit:
         specifier: ^0.17.2
         version: 0.17.2
+      pg:
+        specifier: ^8.22.0
+        version: 8.22.0
       pg-boss:
         specifier: ^12.27.0
         version: 12.27.0
@@ -256,6 +259,9 @@ importers:
       '@types/pdfkit':
         specifier: ^0.17.5
         version: 0.17.6
+      '@types/pg':
+        specifier: ^8.20.0
+        version: 8.20.0
       '@types/web-push':
         specifier: ^3.6.4
         version: 3.6.4

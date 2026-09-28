@@ -1,0 +1,13 @@
+{
+  "_leia": "A explicacao de cada campo esta em planning/runbooks/deploy-para-a-aws.md. Este arquivo e DADO: quem o le e o workflow .github/workflows/publicar.yml e o teste escala-do-servico.test.ts.",
+  "regiao": "sa-east-1",
+  "servico": "zelo",
+  "container": "zelo",
+  "rotuloDaImagem": "app",
+  "containerDaMigracao": "migracao",
+  "comandoDaMigracao": ["node", "./dist/migrar.mjs"],
+  "escalaEsperada": 1,
+  "_escala": "1 de proposito. Subir isto quebra TRES coisas em silencio — limitador de taxa, atualizacao ao vivo e revogacao de acesso de cuidador. Leia planning/runbooks/escala-do-servico.md antes de mexer.",
+  "caminhoDeSaude": "/api/healthz",
+  "caminhoDeProntidao": "/api/readyz"
+}

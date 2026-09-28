@@ -76,8 +76,32 @@ Das 10 fases do backlog original só sobraram três buracos, todos deixados de p
 
 ## Onde o desenvolvimento parou
 
-**Uma Issue aberta, e ela está bloqueada — medido em 12/09/2026 com `gh`.** Este bloco envelhece
-rápido: se a sessão for depois disso, meça de novo.
+### A migração para a AWS — medido com `gh` em 28/09/2026
+
+**Cinco Issues abertas:** #200 (provisionar), #201 (esteira), #202 (domínio, TLS e a ordem do
+corte), #203 (tirar o Replit do código) e a #124, bloqueada por pré-condições que não são código.
+
+**A #201 está entregue no código e parada nas mãos do fundador.** A esteira publica no Lightsail
+depois dos três checks: migra → publica → verifica. Para ela rodar uma primeira vez faltam três
+coisas, todas de console, e todas no runbook
+[runbooks/preparar-a-esteira-na-aws.md](runbooks/preparar-a-esteira-na-aws.md):
+
+1. o provedor OIDC do GitHub e o papel `zelo-deploy-github` no IAM;
+2. o segredo `AWS_DEPLOY_ROLE_ARN` no repositório;
+3. **a primeira implantação, manual**, que é quem define as 19 variáveis de ambiente (#202). A
+   esteira herda o ambiente dela em diante — por isso **nenhum segredo do app mora no GitHub**.
+
+Como o deploy funciona, como voltar atrás e o que fazer quando a migração falha:
+[runbooks/deploy-para-a-aws.md](runbooks/deploy-para-a-aws.md).
+
+`NÃO VERIFICADO`, e só a primeira publicação real resolve: que um commit no `main` publica
+sozinho, e que o app antigo continua servindo durante o deployment de migração. O runbook diz como
+medir os dois, e pede que os números sejam escritos lá.
+
+---
+
+**O bloco abaixo é de 12/09/2026.** Ele dizia "uma Issue aberta"; hoje são cinco, e a lista certa
+está logo acima.
 
 A fila de 10/09 (#132 a #138) **fechou inteira**. A varredura de QA e análise de negócio pedida
 pelo fundador em 11/09/2026 gerou uma segunda leva, também **fechada por inteiro** entre 11 e

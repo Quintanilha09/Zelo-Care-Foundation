@@ -248,7 +248,43 @@ Sessão fixa não substitui nenhuma. Ver [runbooks/escala-do-servico.md](../runb
 | # | O quê | Situação |
 |---|---|---|
 | [#200](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/200) | Provisionar a AWS em São Paulo: contêiner, banco, bucket, IAM, MFA, alarme de custo | 🔨 em andamento |
-| [#201](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/201) | Esteira de deploy pelo GitHub Actions | ⏳ pendente |
+| [#201](https://github.com/Quintanilha09/Zelo-Care-Foundation/issues/201) | Esteira de deploy pelo GitHub Actions | ✅ PR #217 — falta a mão do fundador, ver abaixo |
+
+#### A #201 resolveu a pergunta que a #198 deixou: como migrar um banco privado
+
+O `zelo-db` não aceita conexão de fora, e isso vale para o runner do GitHub Actions também. A
+Issue proibia migrar no boot do app (com dois nós, dois processos migrariam juntos). As duas
+restrições juntas só deixam um caminho: **um deployment descartável que só migra**, disparado
+pela esteira antes do deployment do app.
+
+O contêiner de migração roda, imprime o resultado e morre. Para o Lightsail, contêiner que termina
+é deployment que falhou — e deployment que falha **não substitui o que está no ar**. A garantia
+que a Issue pedia ("migração que falha deixa a versão antiga servindo") sai de graça disso.
+
+Três decisões que valem mais que o código:
+
+1. **Nenhum segredo do app foi para o GitHub.** A esteira lê o deployment que está no ar, troca só
+   o campo `image`, e devolve. As 19 variáveis (#202) ficam no console. Efeito colateral exigido
+   pela Issue: o `DATABASE_URL` da migração é literalmente o mesmo do app, e não um segundo
+   caminho aberto para o banco.
+2. **OIDC, e não chave gravada** — então não há prazo de troca de chave a anotar, porque não há
+   chave. O único segredo do repositório é o ARN de um papel.
+3. **A esteira não volta atrás sozinha.** Voltar o app não desfaz a migração; automatizar isso
+   transformaria um deploy ruim em um banco inconsistente. O caminho de volta é escrito, e é de
+   gente.
+
+**O que ficou `NÃO VERIFICADO`, e não dá para verificar sem credencial da AWS:** que um commit no
+`main` publica sozinho, e que o app antigo continua servindo durante o deployment de migração
+(`HIPÓTESE`, apoiada no comportamento documentado do Lightsail). As duas se verificam na primeira
+publicação real — [runbooks/deploy-para-a-aws.md](../runbooks/deploy-para-a-aws.md) diz como medir
+cada uma.
+
+**O que a #201 mediu, em 28/09/2026, com Docker de verdade** (e que tira a #199 e a #195 do
+`NÃO VERIFICADO`): a imagem constrói — 119 MB —, traz `pg_dump 18.6` (mesma série do banco de
+produção), leva as quatro migrações dentro, e o comando de migração cria as **40 tabelas** num
+PostgreSQL 18 vazio em **0,6 s**. Rodando de novo, nada muda. E os dois caminhos de migração — o
+`drizzle-kit migrate` do CI e o `dist/migrar.mjs` de produção — são **intercambiáveis nos dois
+sentidos**, medido: cada um depois do outro aplica zero migração nova.
 
 Da #200, em 24/09/2026: conta criada, **MFA na raiz e no usuário administrativo**, alarme de custo
 em US$ 40, região `sa-east-1` fixada, e o serviço de contêiner `zelo` (Micro, **1 nó**) criado.
