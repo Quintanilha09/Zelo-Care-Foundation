@@ -1,16 +1,35 @@
 /**
- * Claro, escuro, ou igual ao aparelho — Issue #138.
+ * Claro, escuro, ou igual ao aparelho — Issues #138 e #225.
  *
- * ── O pedido, e por que ele muda o padrão ─────────────────────────────────
+ * ── Duas decisões do fundador, e a segunda revisou a primeira ─────────────
  *
- * Do fundador, em 10/09/2026: *"implemente o modo noturno, pois minha visão
- * dói nesse modo claro"*.
+ * **10/09/2026 (#138):** *"implemente o modo noturno, pois minha visão dói
+ * nesse modo claro"*. O motivo era **dor**, não gosto — e por isso o padrão
+ * nasceu como "seguir o aparelho": quem tem sensibilidade à luz normalmente
+ * já configurou o celular no escuro, e abriria o app já escuro, sem descobrir
+ * botão nenhum.
  *
- * O motivo é **dor**, não gosto. Por isso o padrão é **seguir o aparelho**:
- * quem já configurou o celular no modo noturno — e quem tem sensibilidade à
- * luz normalmente já configurou — abre o app e ele nasce escuro, sem ter de
- * descobrir botão nenhum. A escolha manual existe para quem quer o contrário
- * do sistema, não para quem quer o óbvio.
+ * **29/09/2026 (#225):** *"Somente no primeiro acesso será o modo claro por
+ * padrão. Caso o usuário consiga logar, e em sua conta o modo escuro estiver
+ * configurado como preferência, ele já entra logado no modo escuro."*
+ *
+ * O padrão passou a ser **claro**, e o aparelho só manda quando a pessoa
+ * escolhe "Igual ao aparelho" com todas as letras.
+ *
+ * **O que isso custa, e foi dito antes de mudar:** quem tem o celular no
+ * escuro por sensibilidade à luz recebe uma tela branca na primeira abertura
+ * e precisa achar Ajustes → Aparência. Num app usado de madrugada, é o
+ * cenário para o qual o modo escuro foi feito. O fundador foi avisado e
+ * confirmou; as duas versões ficam aqui para quem chegar depois não achar que
+ * a primeira foi esquecida.
+ *
+ * ── A armadilha: "sistema" precisa ser GRAVADO ────────────────────────────
+ *
+ * Até a #225, `guardarTema("sistema")` apagava a chave, porque ausência já
+ * significava "sistema". Com ausência significando "claro", apagar passaria a
+ * ser o mesmo que escolher "Claro" — e a opção "Igual ao aparelho"
+ * continuaria na tela fazendo outra coisa, em silêncio, só na próxima
+ * abertura. Por isso ela grava.
  *
  * ── Por que a preferência é local, e não do servidor ──────────────────────
  *
@@ -24,15 +43,17 @@ export type Tema = "claro" | "escuro" | "sistema";
 
 export const CHAVE_DO_TEMA = "zelo_tema";
 
-/** O que está guardado, ou "sistema" quando não há nada (ou o valor é lixo). */
+/** O que está guardado, ou "claro" quando não há nada (ou o valor é lixo). */
 export function temaGuardado(): Tema {
   try {
     const bruto = localStorage.getItem(CHAVE_DO_TEMA);
-    return bruto === "claro" || bruto === "escuro" ? bruto : "sistema";
+    if (bruto === "claro" || bruto === "escuro" || bruto === "sistema") return bruto;
+    return "claro";
   } catch {
-    // Navegador com armazenamento bloqueado. Seguir o aparelho é o melhor
-    // palpite possível, e nunca é pior que travar em claro.
-    return "sistema";
+    // Navegador com armazenamento bloqueado: não há escolha para ler, então
+    // vale o padrão de quem nunca escolheu. É também o que o CSS já pinta e o
+    // que o script do `index.html` faz quando o `localStorage` lança.
+    return "claro";
   }
 }
 
@@ -68,8 +89,8 @@ export function aplicarTema(escolha: Tema): void {
 /** Guarda a escolha e aplica. Silencioso se o armazenamento estiver bloqueado. */
 export function guardarTema(escolha: Tema): void {
   try {
-    if (escolha === "sistema") localStorage.removeItem(CHAVE_DO_TEMA);
-    else localStorage.setItem(CHAVE_DO_TEMA, escolha);
+    // As três gravam, inclusive "sistema" — ver a armadilha no topo do arquivo.
+    localStorage.setItem(CHAVE_DO_TEMA, escolha);
   } catch {
     // Sem persistir, mas a sessão atual ainda obedece.
   }

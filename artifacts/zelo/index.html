@@ -50,9 +50,14 @@
       (function () {
         try {
           var escolha = localStorage.getItem("zelo_tema");
+          // `escolha === "sistema"`, e não `escolha !== "claro"` — Issue #225.
+          //
+          // A forma antiga fazia a AUSÊNCIA de escolha cair no aparelho. A nova
+          // só consulta o aparelho quando a pessoa pediu isso, com todas as
+          // letras, em Ajustes → Aparência. Primeiro acesso nasce claro.
           var escuro =
             escolha === "escuro" ||
-            (escolha !== "claro" &&
+            (escolha === "sistema" &&
               window.matchMedia &&
               window.matchMedia("(prefers-color-scheme: dark)").matches);
           if (escuro) {

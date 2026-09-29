@@ -260,6 +260,52 @@ describe("Tema escuro", () => {
     );
   });
 
+  it("o padrao e claro, e 'sistema' e GRAVADO em vez de apagado", () => {
+    // ── A armadilha da #225 ─────────────────────────────────────────────
+    //
+    // Até 29/09/2026, ausência de escolha significava "sistema", e por isso
+    // `guardarTema("sistema")` apagava a chave. A #225 fez ausência
+    // significar "claro".
+    //
+    // Se o `removeItem` tivesse ficado, escolher "Igual ao aparelho" viraria
+    // escolher "Claro" — em silêncio, e só na próxima abertura. A opção
+    // continuaria na tela fazendo outra coisa.
+    //
+    // O Playwright prova isso de verdade, com navegador. Este caso existe
+    // porque a suíte de tela leva 25 minutos e esta é uma linha.
+    const tema = readFileSync(fileURLToPath(new URL("artifacts/zelo/src/lib/tema.ts", raiz)), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/[^\n]*/g, "");
+
+    assert.doesNotMatch(
+      tema,
+      /removeItem\s*\(\s*CHAVE_DO_TEMA/,
+      "guardarTema não pode apagar a chave: ausência significa 'claro' desde a #225, " +
+        "então apagar transformaria 'Igual ao aparelho' em 'Claro' sem avisar",
+    );
+
+    // O script do `index.html` decide a mesma coisa, e antes do React. Os
+    // dois precisam concordar, ou a tela pisca no caminho.
+    //
+    // **Comentários fora, e isto não é zelo teórico.** A primeira versão
+    // deste caso procurava `escolha === "sistema"` no arquivo cru. Ele
+    // passava — porque o COMENTÁRIO que explica a mudança contém essa mesma
+    // frase. Devolvi a lógica antiga ao código para conferir, e o teste
+    // continuou verde. Um guardrail que só lê o próprio comentário não
+    // guarda nada.
+    const html = readFileSync(fileURLToPath(new URL("artifacts/zelo/index.html", raiz)), "utf8")
+      .replace(/<!--[\s\S]*?-->/g, "")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/[^\n]*/g, "");
+
+    assert.match(
+      html,
+      /escolha\s*===\s*["']sistema["']/,
+      "o script do <head> só pode consultar o aparelho quando a escolha for 'sistema'; " +
+        "a forma antiga (`escolha !== \"claro\"`) faz a ausência cair no aparelho de novo",
+    );
+  });
+
   it("o tema e aplicado antes da primeira pintura", () => {
     // Script inline no `head`. Qualquer coisa feita depois — React, efeito,
     // módulo importado — acontece depois de o navegador já ter pintado a
