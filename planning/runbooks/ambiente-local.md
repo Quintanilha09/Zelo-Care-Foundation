@@ -30,7 +30,7 @@ Ao terminar, imprime:
   Nesta máquina   http://localhost:5273
   No celular      http://192.168.x.x:5273   (mesma Wi-Fi)
 
-  Entrar como     joao.teste@zelo.test
+  Entrar como     gabriel.hemendinger@gmail.com
   Senha           zelo-local-123
 ```
 
@@ -191,6 +191,26 @@ Verificado nos dois cenários: com o diretório no PATH ele acha em (1); sem o
 diretório, cai em (2) e encontra a mesma versão 11.22.0.
 
 Por isso `node scripts/desenvolver.mjs` funciona mesmo onde `pnpm dev` não funciona.
+
+## A conta da semente é o e-mail real do fundador
+
+Pedido dele em 29/09/2026: entrar no ambiente local com o endereço que já usa.
+
+O desenho anterior usava `joao.teste@zelo.test`, e o TLD `.test` não era enfeite — ele
+é reservado pela RFC 2606 e **nunca resolve na internet**, então conta escapada não
+entregaria e-mail a ninguém.
+
+> **Essa rede de proteção deixou de existir.** Quem sustenta o risco agora é a guarda
+> de `IS_PRODUCTION` logo abaixo. Se ela cair, a semente passa a criar um acesso com
+> senha conhecida para um endereço real. As duas coisas andam juntas: não mexa numa
+> sem olhar a outra.
+
+O endereço em si não é novidade pública — ele já assina todo commit do repositório. A
+senha ao lado dele é.
+
+**A semente não sobrescreve senha de conta que já existe.** Se você se cadastrou pelo
+app e depois resemeou, ela reaproveita a conta, aponta para a família fictícia e
+mantém a senha que você escolheu.
 
 ## A semente não roda em produção
 

@@ -39,12 +39,24 @@ const SEED_FAMILY_SLUG = "familia-ficticia-teste";
  * conta**. Ninguém conseguia entrar para ver nada disso: o fundador tinha de se
  * cadastrar pelo app e recriar tudo à mão, toda vez que o banco era recriado.
  *
- * O endereço é `@zelo.test` de propósito. O TLD `.test` é reservado pela
- * RFC 2606 e nunca resolve na internet — se esta conta escapar para algum lugar
- * onde e-mail sai de verdade, nada é entregue a ninguém.
+ * ── Por que o e-mail real do fundador, e não um `@zelo.test` ───────────────
+ *
+ * Pedido dele em 29/09/2026, para entrar no ambiente local com o endereço que
+ * já usa. O primeiro desenho usava `@zelo.test` justamente porque o TLD `.test`
+ * é reservado pela RFC 2606 e nunca resolve na internet: conta escapada não
+ * entregaria e-mail a ninguém.
+ *
+ * **Essa rede de proteção deixou de existir, e quem sustenta o risco agora é a
+ * guarda de `IS_PRODUCTION` logo abaixo** — que é verificada por teste
+ * (`environment-hardening.test.ts`). Se a guarda cair, esta conta passa a ser
+ * um acesso com senha conhecida a um endereço real. Não mexa numa sem olhar a
+ * outra.
+ *
+ * O endereço em si não é novidade pública: ele já assina todo commit do
+ * repositório. A senha ao lado dele é.
  */
 const CONTA_DA_SEMENTE = {
-  email: "joao.teste@zelo.test",
+  email: "gabriel.hemendinger@gmail.com",
   senha: "zelo-local-123",
 };
 
@@ -136,24 +148,51 @@ async function seed() {
   //
   // `activeFamilyId` também não é opcional: é ele que resolve em qual família
   // a sessão começa (ver lib/active-family.ts). Sem ele a tela abre vazia.
-  const [user] = await db
-    .insert(usersTable)
-    .values({
-      email: CONTA_DA_SEMENTE.email,
-      name: "João Teste",
-      passwordHash: await hashPassword(CONTA_DA_SEMENTE.senha),
-      emailVerified: true,
-      status: "active",
-      activeFamilyId: family.id,
-    })
-    .returning();
+  // A conta pode já existir: a idempotência desta semente olha o slug da
+  // família, não o usuário. Quem apagar só a família (o comando está no aviso
+  // logo acima) e resemear chegaria aqui com o e-mail já gravado, e o
+  // `UNIQUE(email)` derrubaria a semente no meio, deixando família e paciente
+  // criados e nenhum acesso a eles.
+  //
+  // Mais provável ainda desde que o endereço passou a ser o real do fundador:
+  // ele pode ter se cadastrado pelo app antes de rodar isto.
+  const [jaExiste] = await db
+    .select({ id: usersTable.id })
+    .from(usersTable)
+    .where(eq(usersTable.email, CONTA_DA_SEMENTE.email))
+    .limit(1);
+
+  let user: { id: number };
+  if (jaExiste) {
+    // Não toca na senha de uma conta que já era — quem a criou escolheu uma, e
+    // sobrescrever sem avisar seria trocar a senha de alguém pelas costas.
+    await db
+      .update(usersTable)
+      .set({ activeFamilyId: family.id })
+      .where(eq(usersTable.id, jaExiste.id));
+    user = jaExiste;
+    console.log(`✓ Conta ${CONTA_DA_SEMENTE.email} já existia — apontada para esta família,`);
+    console.log("  com a senha que ela já tinha.");
+  } else {
+    const [novo] = await db
+      .insert(usersTable)
+      .values({
+        email: CONTA_DA_SEMENTE.email,
+        name: "João Teste",
+        passwordHash: await hashPassword(CONTA_DA_SEMENTE.senha),
+        emailVerified: true,
+        status: "active",
+        activeFamilyId: family.id,
+      })
+      .returning({ id: usersTable.id });
+    user = novo;
+    console.log(`✓ Conta de acesso: ${CONTA_DA_SEMENTE.email} / ${CONTA_DA_SEMENTE.senha}`);
+  }
 
   await db
     .update(caregiversTable)
     .set({ userId: user.id })
     .where(eq(caregiversTable.id, caregiver1.id));
-
-  console.log(`✓ Conta de acesso: ${CONTA_DA_SEMENTE.email} / ${CONTA_DA_SEMENTE.senha}`);
 
   // ── Medicamentos fictícios ───────────────────────────────────────────────
   const [med1] = await db

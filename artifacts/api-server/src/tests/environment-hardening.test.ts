@@ -142,7 +142,7 @@ describe("Nenhuma checagem de ambiente no formato inseguro", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 // A SEMENTE CRIA UMA CONTA DE SENHA CONHECIDA — Issue #221.
 //
-// `seed.ts` grava `joao.teste@zelo.test` com a senha escrita em texto puro no
+// `seed.ts` grava `gabriel.hemendinger@gmail.com` com a senha escrita em texto puro no
 // repositório, para o fundador entrar no ambiente local sem recriar tudo à mão.
 //
 // Em desenvolvimento isso é conveniência. Num banco de produção é porta dos

@@ -64,7 +64,7 @@ const PORTA_FRONT = 5273;
  * mude aqui — são os dois únicos lugares.
  */
 const CONTA_DA_SEMENTE = {
-  email: "joao.teste@zelo.test",
+  email: "gabriel.hemendinger@gmail.com",
   senha: "zelo-local-123",
 };
 
