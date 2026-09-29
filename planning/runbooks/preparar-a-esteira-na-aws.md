@@ -100,7 +100,10 @@ Abra o papel → aba **Trust relationships** → **Edit trust policy**. Ela prec
       "Condition": {
         "StringEquals": {
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-          "token.actions.githubusercontent.com:sub": "repo:Quintanilha09/Zelo-Care-Foundation:ref:refs/heads/main"
+          "token.actions.githubusercontent.com:sub": [
+            "repo:Quintanilha09@104573504/Zelo-Care-Foundation@1336251458:ref:refs/heads/main",
+            "repo:Quintanilha09/Zelo-Care-Foundation:ref:refs/heads/main"
+          ]
         }
       }
     }
@@ -111,10 +114,47 @@ Abra o papel → aba **Trust relationships** → **Edit trust policy**. Ela prec
 **A linha que importa é a do `sub`.** Sem ela, *qualquer* workflow de *qualquer* repositório do
 GitHub poderia assumir este papel. Com ela, só o `main` deste repositório.
 
-> **Se a esteira falhar no passo "Assumir o papel na AWS por OIDC"**, a mensagem de erro traz o
-> `sub` que o GitHub apresentou. Compare com o de cima antes de mexer. **Não relaxe a condição
-> para `*` para fazer funcionar** — isso abre o papel para o GitHub inteiro. Se o `sub` real for
-> outro, acrescente-o à lista (o campo aceita um array), sem tirar o que já está lá.
+### Por que são DOIS valores, e por que o primeiro tem números — 29/09/2026
+
+O primeiro deploy automático falhou aqui, e o motivo não é óbvio:
+
+```
+Could not assume role with OIDC: Not authorized to perform sts:AssumeRoleWithWebIdentity
+```
+
+O GitHub passou a emitir o assunto do token no **formato imutável**, com o ID numérico do dono
+e o do repositório embutidos:
+
+```
+repo:Quintanilha09@104573504/Zelo-Care-Foundation@1336251458:ref:refs/heads/main
+```
+
+A política estava escrita no formato antigo, só com os nomes, e deixou de casar. Os dois ficam
+na lista: o com ID porque é o que chega hoje, o sem ID porque é barato manter e cobre o caso de
+o GitHub voltar atrás.
+
+**O formato com ID é mais seguro, não menos.** Nome de usuário e de repositório podem ser
+trocados e reaproveitados por outra pessoa; o ID numérico, não.
+
+> **Não relaxe a condição para `*`.** `repo:Quintanilha09*/Zelo-Care-Foundation*` parece
+> inofensivo e não é: um usuário chamado `Quintanilha09x` com um repositório
+> `Zelo-Care-Foundation-teste` casaria, e teria deploy na sua conta. Acrescente o valor exato à
+> lista — o campo aceita um array.
+
+### Como descobrir o `sub` real, porque o log do GitHub não mostra
+
+A mensagem de erro do Actions **não traz** o assunto do token. Quem traz é o CloudTrail, que
+registra a tentativa recusada:
+
+```bash
+aws cloudtrail lookup-events \
+  --lookup-attributes AttributeKey=EventName,AttributeValue=AssumeRoleWithWebIdentity \
+  --max-results 5 --region sa-east-1 \
+  --query 'Events[].CloudTrailEvent' --output text
+```
+
+O campo `userIdentity.principalId` termina com o `sub` exato que o GitHub apresentou. Compare com
+a política e acrescente o que faltar.
 
 ---
 
