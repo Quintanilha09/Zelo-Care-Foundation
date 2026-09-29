@@ -170,6 +170,7 @@ arquivo, e monitor de janela de contexto.
 ## Comandos
 
 ```bash
+pnpm dev                                           # ambiente local inteiro: banco, semente, API e front
 pnpm --filter @workspace/api-server run test:all   # suíte completa (precisa de Postgres)
 pnpm run test:e2e                                  # Playwright: sobe API e front e usa navegador de verdade
 pnpm --filter @workspace/api-server run lint:clock # proíbe new Date() em domínio
@@ -221,6 +222,7 @@ ele foi migrado para cá justamente porque duas fontes divergiram e dois agentes
 | Spec original do produto | [planning/referencia/ESPECIFICACAO.md](planning/referencia/ESPECIFICACAO.md) |
 | Auditoria §10 do GSD (em andamento) | [planning/auditorias/2026-08-23-gsd-secao-10.md](planning/auditorias/2026-08-23-gsd-secao-10.md) |
 | Última auditoria de segurança | [planning/auditorias/2026-08-21-seguranca.md](planning/auditorias/2026-08-21-seguranca.md) |
+| **Testar na própria máquina — o que substituiu o Replit** | [planning/runbooks/ambiente-local.md](planning/runbooks/ambiente-local.md) |
 | Montar o banco de produção | [planning/runbooks/banco-de-producao.md](planning/runbooks/banco-de-producao.md) |
 | **Como o deploy funciona, e como VOLTAR para a versão anterior** | [planning/runbooks/deploy-para-a-aws.md](planning/runbooks/deploy-para-a-aws.md) |
 | Preparar a esteira na AWS — OIDC, papel, primeira implantação (uma vez só) | [planning/runbooks/preparar-a-esteira-na-aws.md](planning/runbooks/preparar-a-esteira-na-aws.md) |
