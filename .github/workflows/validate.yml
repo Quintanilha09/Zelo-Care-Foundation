@@ -209,7 +209,30 @@ jobs:
     #
     # Se voltar a apertar, o caminho nao e subir de novo: e paralelizar, hoje
     # impedido pelo banco compartilhado (workers: 1 no playwright.config.ts).
-    timeout-minutes: 25
+    #
+    # -- 29/09/2026, #218: apertou, e subiu assim mesmo --------------------
+    #
+    # A linha acima manda paralelizar em vez de subir. Ela continua certa, e
+    # virou a #219. Mas esse trabalho nao e de uma tarde (exige isolar os
+    # dados por worker) e, enquanto nao acontece, a esteira nao publica NADA:
+    # execucao cancelada nao e `success`, e o `publicar.yml` exige `success`.
+    #
+    # Medido em 29/09: `get-container-images` devolve lista vazia, e os passos
+    # 7 a 10 da #201 estao parados por causa disto.
+    #
+    # A checagem que a historia acima exige, feita ANTES de mexer no numero:
+    #
+    #   execucao 36499551015 - 392 passaram, 10 pulados, ZERO falhas, 24,3 min
+    #
+    # Zero falhas significa zero repeticao automatica. Foi exatamente essa a
+    # alegacao falsa de 11/09, e desta vez ela se sustenta:
+    #
+    #   11/09, 345 testes, 3,48 s/teste
+    #   29/09, 392 testes, 3,72 s/teste   (+13,6% em quantidade, +6,9% no custo)
+    #
+    # 35, e nao 40: da 44% de folga sobre os 24,3 medidos. 40 seria repetir o
+    # erro de 11/09 pelo outro lado - teto tao largo que nao pega travamento.
+    timeout-minutes: 35
     services:
       postgres:
         image: postgres:16-alpine
