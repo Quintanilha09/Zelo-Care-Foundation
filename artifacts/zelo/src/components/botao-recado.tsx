@@ -120,7 +120,7 @@ export function BotaoRecado() {
           "flex items-center gap-3 min-h-16 px-8 rounded-2xl border-2 text-2xl select-none touch-none " +
           (estado === "gravando"
             ? "border-zelo-amber bg-zelo-amber-bg text-zelo-amber-fg"
-            : "border-[#2D2D2B]/20 text-[#2D2D2B]")
+            : "border-foreground/20 text-foreground")
         }
       >
         <Mic className="w-8 h-8" />
@@ -132,7 +132,7 @@ export function BotaoRecado() {
       </button>
 
       {estado === "parado" && !erro && (
-        <p className="text-lg text-[#6B6B6B]">Segure o botão e fale. Solte quando terminar.</p>
+        <p className="text-lg text-muted-foreground">Segure o botão e fale. Solte quando terminar.</p>
       )}
 
       {erro && (

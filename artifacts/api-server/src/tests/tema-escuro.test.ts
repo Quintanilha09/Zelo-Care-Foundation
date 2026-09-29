@@ -28,7 +28,7 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const raiz = new URL("../../../../", import.meta.url);
@@ -203,6 +203,60 @@ describe("Tema escuro", () => {
       null,
       `o modo idoso passou a usar token de tema (${comTema?.join(", ")}) — ele escureceria junto, ` +
         "e o alto contraste da ZELO-40 é travado de propósito",
+    );
+  });
+
+  it("nenhuma tela do app usa cor fixa em vez de token", () => {
+    // ── Issue #223 ──────────────────────────────────────────────────────
+    //
+    // O fundador entrou no app com o aparelho no escuro e a tela de códigos
+    // de recuperação apareceu com o cartão BRANCO no meio da página escura.
+    //
+    // A causa não foi o tema: foi um arquivo anterior à #138 que nunca foi
+    // convertido e continuava com `bg-white` e `text-[#2D2D2B]` escritos à
+    // mão. Cor literal não tem versão escura — ela é a mesma nos dois temas,
+    // por definição.
+    //
+    // Eram cinco telas, e a pior delas guardava os códigos que impedem a
+    // pessoa de perder a conta para sempre.
+    //
+    // ── As exceções são declaradas, não descobertas ─────────────────────
+    //
+    // Cor fixa NÃO é proibida — ela é proibida por acidente. Quem precisar
+    // de uma acrescenta o arquivo aqui, e aí a escolha fica escrita.
+    const EXCECOES = new Set([
+      // Alto contraste travado da ZELO-40 — o teste acima já protege esta.
+      "pages/ElderModePage.tsx",
+      // Página de referência de desenho: ela EXIBE cores, então cita valores.
+      "pages/design-reference.tsx",
+    ]);
+
+    const base = fileURLToPath(new URL("artifacts/zelo/src/", raiz));
+    const infratores: string[] = [];
+
+    const varrer = (pasta: string, prefixo: string) => {
+      for (const item of readdirSync(pasta, { withFileTypes: true })) {
+        const caminho = `${pasta}/${item.name}`;
+        const relativo = prefixo ? `${prefixo}/${item.name}` : item.name;
+        if (item.isDirectory()) {
+          varrer(caminho, relativo);
+          continue;
+        }
+        if (!item.name.endsWith(".tsx") || EXCECOES.has(relativo)) continue;
+
+        const achados = readFileSync(caminho, "utf8").match(
+          /\b(?:bg-white|(?:bg|text|border)-\[#[0-9A-Fa-f]{3,8}\])/g,
+        );
+        if (achados) infratores.push(`${relativo} (${[...new Set(achados)].join(", ")})`);
+      }
+    };
+    varrer(base.replace(/\/$/, ""), "");
+
+    assert.deepEqual(
+      infratores,
+      [],
+      "Cor fixa não muda no escuro — use bg-card, text-foreground, text-muted-foreground, " +
+        `border-border. Se for deliberado, declare em EXCECOES com o motivo:\n  ${infratores.join("\n  ")}`,
     );
   });
 

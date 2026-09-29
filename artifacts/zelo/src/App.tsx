@@ -165,8 +165,8 @@ function Router() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center space-y-2">
-          <p className="text-lg font-medium text-[#2D2D2B]">ZELO</p>
-          <p className="text-sm text-[#6B6B6B]">Carregando…</p>
+          <p className="text-lg font-medium text-foreground">ZELO</p>
+          <p className="text-sm text-muted-foreground">Carregando…</p>
         </div>
       </div>
     );
