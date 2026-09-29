@@ -135,8 +135,8 @@ export function AtivacaoDoSegundoFator({ children }: { children: React.ReactNode
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center space-y-2">
-          <p className="text-lg font-medium text-[#2D2D2B]">ZELO</p>
-          <p className="text-sm text-[#6B6B6B]">Carregando…</p>
+          <p className="text-lg font-medium text-foreground">ZELO</p>
+          <p className="text-sm text-muted-foreground">Carregando…</p>
         </div>
       </div>
     );
@@ -146,9 +146,9 @@ export function AtivacaoDoSegundoFator({ children }: { children: React.ReactNode
     <div className="min-h-screen bg-background px-4 py-10">
       <div className="mx-auto w-full max-w-lg space-y-6">
         <header className="space-y-2">
-          <p className="text-xs font-medium uppercase tracking-widest text-[#6B6B6B]">Segurança da conta</p>
-          <h1 className="text-2xl font-bold text-[#2D2D2B]">Vamos proteger o acesso ao ZELO</h1>
-          <p className="text-sm text-[#5A5A58]">
+          <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Segurança da conta</p>
+          <h1 className="text-2xl font-bold text-foreground">Vamos proteger o acesso ao ZELO</h1>
+          <p className="text-sm text-muted-foreground">
             A partir de agora, entrar de um aparelho novo pede um código enviado para o seu e-mail. Sua
             senha, sozinha, deixa de bastar — mesmo que ela vaze em outro site.
           </p>
@@ -161,13 +161,13 @@ export function AtivacaoDoSegundoFator({ children }: { children: React.ReactNode
         )}
 
         {fase === "convite" && (
-          <div className="space-y-4 rounded-xl border bg-white p-5">
-            <p className="text-sm text-[#2D2D2B]">
+          <div className="space-y-4 rounded-xl border bg-card p-5">
+            <p className="text-sm text-foreground">
               Antes de ligar, você recebe <strong>10 códigos de recuperação</strong>. Eles são a sua
               chave reserva: servem para entrar no dia em que o e-mail não chegar, ou se você perder o
               acesso a ele.
             </p>
-            <p className="text-sm text-[#5A5A58]">
+            <p className="text-sm text-muted-foreground">
               Este aparelho já fica confiável por {estado?.diasDeConfianca ?? 30} dias, renovando toda
               vez que você usar o app. Na prática, você não vai ver código nenhum no dia a dia.
             </p>
@@ -178,7 +178,7 @@ export function AtivacaoDoSegundoFator({ children }: { children: React.ReactNode
         )}
 
         {fase === "codigos" && (
-          <div className="space-y-4 rounded-xl border bg-white p-5">
+          <div className="space-y-4 rounded-xl border bg-card p-5">
             <Alert>
               <AlertDescription>
                 <strong>Esta é a única vez que estes códigos aparecem.</strong> Guarde agora — depois
@@ -212,7 +212,7 @@ export function AtivacaoDoSegundoFator({ children }: { children: React.ReactNode
                 onCheckedChange={(v: boolean | "indeterminate") => setGuardei(v === true)}
                 aria-label="Guardei meus códigos"
               />
-              <span className="text-[#2D2D2B]">
+              <span className="text-foreground">
                 Guardei meus códigos num lugar seguro, fora deste aparelho.
               </span>
             </label>

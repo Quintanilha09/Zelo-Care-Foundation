@@ -133,8 +133,8 @@ export function AparelhosConfiaveis() {
   return (
     <div className="space-y-4">
       <div className="space-y-1">
-        <h3 className="text-base font-semibold text-[#2D2D2B]">Aparelhos confiáveis</h3>
-        <p className="text-sm text-[#5A5A58]">
+        <h3 className="text-base font-semibold text-foreground">Aparelhos confiáveis</h3>
+        <p className="text-sm text-muted-foreground">
           Estes aparelhos entram sem pedir código, por {estado.diasDeConfianca} dias, renovando a cada
           uso. Se você não reconhece algum, desligue.
         </p>
@@ -152,14 +152,14 @@ export function AparelhosConfiaveis() {
       )}
 
       {aparelhos.length === 0 ? (
-        <p className="text-sm text-[#6B6B6B]">Nenhum aparelho confiável no momento.</p>
+        <p className="text-sm text-muted-foreground">Nenhum aparelho confiável no momento.</p>
       ) : (
         <ul className="space-y-2">
           {aparelhos.map((a) => (
             <li key={a.id} className="flex items-center justify-between gap-3 rounded-md border p-3">
               <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-[#2D2D2B]">{a.label}</p>
-                <p className="text-xs text-[#6B6B6B]">
+                <p className="truncate text-sm font-medium text-foreground">{a.label}</p>
+                <p className="text-xs text-muted-foreground">
                   Último uso em {quando(a.lastUsedAt)}
                   {a.createdIp ? ` · registrado de ${a.createdIp}` : ""}
                 </p>
@@ -179,8 +179,8 @@ export function AparelhosConfiaveis() {
       )}
 
       <div className="space-y-2 border-t pt-4">
-        <h3 className="text-base font-semibold text-[#2D2D2B]">Códigos de recuperação</h3>
-        <p className="text-sm text-[#5A5A58]">
+        <h3 className="text-base font-semibold text-foreground">Códigos de recuperação</h3>
+        <p className="text-sm text-muted-foreground">
           Você tem <strong>{estado.codigosRestantes}</strong>{" "}
           {estado.codigosRestantes === 1 ? "código" : "códigos"} ainda válidos.
         </p>
@@ -195,8 +195,8 @@ export function AparelhosConfiaveis() {
         )}
 
         {novosCodigos.length > 0 && (
-          <div className="space-y-2 rounded-md border bg-white p-3">
-            <p className="text-sm font-medium text-[#2D2D2B]">
+          <div className="space-y-2 rounded-md border bg-card p-3">
+            <p className="text-sm font-medium text-foreground">
               Guarde agora — esta é a única vez que eles aparecem. Os antigos deixaram de valer.
             </p>
             <ul className="grid grid-cols-2 gap-2 font-mono text-sm">

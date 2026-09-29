@@ -47,25 +47,25 @@ export default function PatientAccessActivationPage() {
 
   if (!token) {
     return (
-      <div className="min-h-screen bg-[#F8F7F5] flex flex-col items-center justify-center px-6 py-10 text-center">
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center px-6 py-10 text-center">
         <AlertCircle className="w-14 h-14 text-zelo-amber-fg mb-4" />
-        <p className="text-2xl text-[#2D2D2B]">Este link está incompleto.</p>
-        <p className="text-xl text-[#6B6B6B] mt-2">Peça um novo para quem cuida de você.</p>
+        <p className="text-2xl text-foreground">Este link está incompleto.</p>
+        <p className="text-xl text-muted-foreground mt-2">Peça um novo para quem cuida de você.</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#F8F7F5] flex flex-col items-center justify-center px-6 py-10 text-center" translate="no">
+    <div className="min-h-screen bg-background flex flex-col items-center justify-center px-6 py-10 text-center" translate="no">
       <div className="w-full max-w-md space-y-8">
         <div className="space-y-3">
           <div className="w-20 h-20 mx-auto rounded-full bg-zelo-green-bg flex items-center justify-center">
             <Check className="w-12 h-12 text-zelo-green-fg" strokeWidth={3} />
           </div>
-          <p className="text-3xl font-bold text-[#2D2D2B] leading-tight">
+          <p className="text-3xl font-bold text-foreground leading-tight">
             Este celular vai te lembrar dos seus remédios
           </p>
-          <p className="text-xl text-[#6B6B6B]">
+          <p className="text-xl text-muted-foreground">
             É só tocar no botão abaixo. Você não precisa criar senha nem preencher nada.
           </p>
         </div>
