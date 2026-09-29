@@ -139,6 +139,50 @@ describe("Nenhuma checagem de ambiente no formato inseguro", () => {
   });
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// A SEMENTE CRIA UMA CONTA DE SENHA CONHECIDA — Issue #221.
+//
+// `seed.ts` grava `gabriel.hemendinger@gmail.com` com a senha escrita em texto puro no
+// repositório, para o fundador entrar no ambiente local sem recriar tudo à mão.
+//
+// Em desenvolvimento isso é conveniência. Num banco de produção é porta dos
+// fundos, publicada num repositório que qualquer um lê.
+//
+// A guarda que impede isso é UMA linha, e uma linha some numa refatoração sem
+// ninguém notar. Este teste é quem nota.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("A semente nunca roda em produção", () => {
+  // Comentários fora: eles citam `NODE_ENV` justamente para explicar por que a
+  // forma ingênua é perigosa, e dariam falso positivo.
+  const semente = ler("seed.ts")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\/\/[^\n]*/g, "");
+
+  it("importa IS_PRODUCTION de lib/environment", () => {
+    assert.match(
+      semente,
+      /import\s*\{[^}]*\bIS_PRODUCTION\b[^}]*\}\s*from\s*["'][^"']*lib\/environment/,
+      "seed.ts precisa importar IS_PRODUCTION — sem ele não há como recusar produção",
+    );
+  });
+
+  it("para com process.exit dentro de if (IS_PRODUCTION)", () => {
+    assert.match(
+      semente,
+      /if\s*\(\s*IS_PRODUCTION\s*\)\s*\{[\s\S]{0,500}?process\.exit\(/,
+      "seed.ts precisa encerrar com process.exit() dentro de `if (IS_PRODUCTION)`",
+    );
+  });
+
+  it("não compara NODE_ENV direto, que deixaria passar o ambiente sem a variável", () => {
+    assert.doesNotMatch(
+      semente,
+      /process\.env\.NODE_ENV\s*[!=]==?/,
+      "ausência de NODE_ENV é PRODUÇÃO neste código. A comparação direta deixaria a semente rodar justamente no ambiente mal configurado — use IS_PRODUCTION",
+    );
+  });
+});
+
 describe("Cabeçalhos de segurança e CORS", () => {
   it("CORS não é aberto pra qualquer origem", () => {
     const app = ler("app.ts");
