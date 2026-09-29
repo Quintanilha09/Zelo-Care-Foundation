@@ -2,24 +2,31 @@ import { test, expect } from "@playwright/test";
 import { criarConta, entrar, type ContaDeTeste } from "./apoio";
 
 /**
- * Modo noturno — Issue #138.
+ * Modo noturno — Issues #138 e #225.
  *
- * ── O pedido ──────────────────────────────────────────────────────────────
+ * ── Duas decisões do fundador, e a segunda revisou a primeira ─────────────
  *
- * Do fundador, em 10/09/2026: *"implemente o modo noturno, pois minha visão
- * dói nesse modo claro. Isso tem que ser implementado com cuidado, as cores
- * definidas têm que seguir o padrão do app"*.
+ * **10/09/2026 (#138):** *"implemente o modo noturno, pois minha visão dói
+ * nesse modo claro. Isso tem que ser implementado com cuidado, as cores
+ * definidas têm que seguir o padrão do app"*. O motivo era **dor**, não gosto
+ * — e foi o que fez o padrão nascer como "igual ao aparelho".
  *
- * O motivo é **dor**, não gosto — e é isso que faz o padrão ser "igual ao
- * aparelho" em vez de "claro".
+ * **29/09/2026 (#225):** *"Somente no primeiro acesso será o modo claro por
+ * padrão."* O padrão passou a ser **claro**, e o aparelho só manda quando a
+ * pessoa escolhe "Igual ao aparelho" com todas as letras.
+ *
+ * Os testes abaixo mudaram de lado por causa disso. O primeiro deles afirmava
+ * exatamente o contrário até hoje, e está aqui invertido de propósito — não
+ * por descuido.
  *
  * ── O que só a tela prova ─────────────────────────────────────────────────
  *
- * 1. Abrir com o aparelho no escuro já vem escuro, **sem lampejo branco**.
- * 2. A escolha sobrevive a fechar e reabrir.
- * 3. O modo idoso **não** herda o tema.
+ * 1. Primeiro acesso nasce claro, mesmo com o celular no escuro.
+ * 2. Quem escolhe escuro abre escuro, **sem lampejo branco**.
+ * 3. "Igual ao aparelho" devolve o comando ao celular, inclusive ao vivo.
+ * 4. A escolha sobrevive a fechar e reabrir.
  *
- * O primeiro é o que mais importa: um lampejo branco a cada abertura é, para
+ * O item 2 é o que mais importa: um lampejo branco a cada abertura é, para
  * quem tem dor de vista, o problema inteiro acontecendo de novo.
  */
 
@@ -32,12 +39,33 @@ test.beforeAll(async ({ request }) => {
 const escuro = (page: import("@playwright/test").Page) =>
   page.locator("html").evaluate((el) => el.classList.contains("dark"));
 
+/**
+ * Deixa uma escolha de tema guardada ANTES de a página carregar.
+ *
+ * `addInitScript` roda antes de qualquer script da página, inclusive o do
+ * `<head>` que aplica o tema. É a única forma de simular "esta pessoa já
+ * escolheu" sem passar pela interface — e a interface tem tela própria para
+ * isso, testada mais abaixo.
+ */
+const jaEscolheu = (page: import("@playwright/test").Page, valor: string) =>
+  page.addInitScript((v) => {
+    try {
+      localStorage.setItem("zelo_tema", v);
+    } catch {
+      /* armazenamento bloqueado: o teste que depende disso falha, e deve */
+    }
+  }, valor);
+
 test.describe("Modo noturno", () => {
-  test("com o aparelho no escuro, o app ja abre escuro", async ({ page }) => {
+  test("primeiro acesso nasce claro, mesmo com o aparelho no escuro", async ({ page }) => {
+    // Este caso afirmava o contrário até 29/09/2026. A inversão é a #225.
     await page.emulateMedia({ colorScheme: "dark" });
     await entrar(page, conta);
 
-    expect(await escuro(page), "o padrão é seguir o aparelho").toBe(true);
+    expect(
+      await escuro(page),
+      "sem escolha guardada o app nasce claro, mesmo com o celular no escuro",
+    ).toBe(false);
   });
 
   test("com o aparelho no claro, o app abre claro", async ({ page }) => {
@@ -47,9 +75,31 @@ test.describe("Modo noturno", () => {
     expect(await escuro(page)).toBe(false);
   });
 
-  test("a classe e aplicada ANTES da primeira pintura", async ({ page }) => {
-    await page.emulateMedia({ colorScheme: "dark" });
+  test("quem ja escolheu escuro abre escuro, com o aparelho no claro", async ({ page }) => {
+    // O espelho do caso acima: a escolha manda nos dois sentidos, e não só
+    // quando concorda com o celular.
+    await page.emulateMedia({ colorScheme: "light" });
+    await jaEscolheu(page, "escuro");
     await entrar(page, conta);
+
+    expect(await escuro(page), "a escolha guardada vence o aparelho").toBe(true);
+  });
+
+  test("Igual ao aparelho devolve o comando ao celular", async ({ page }) => {
+    await page.emulateMedia({ colorScheme: "dark" });
+    await jaEscolheu(page, "sistema");
+    await entrar(page, conta);
+
+    expect(await escuro(page), "com 'sistema' guardado, o celular volta a mandar").toBe(true);
+  });
+
+  test("a classe e aplicada ANTES da primeira pintura", async ({ page }) => {
+    // Com a escolha guardada, e não pelo aparelho: desde a #225 o aparelho
+    // sozinho não escurece nada, então o caso do lampejo branco só existe
+    // para quem escolheu escuro.
+    await jaEscolheu(page, "escuro");
+    await entrar(page, conta);
+    expect(await escuro(page)).toBe(true);
 
     // O script inline do `index.html` roda no `head`, antes de o `body`
     // existir. Se a classe fosse posta pelo React, ela só apareceria depois
@@ -64,26 +114,63 @@ test.describe("Modo noturno", () => {
     expect(antesDoBody, "o script do tema tem que estar inline no <head>").toBe(true);
   });
 
-  test("escolher Claro vence o aparelho, e sobrevive a reabrir", async ({ page }) => {
-    await page.emulateMedia({ colorScheme: "dark" });
+  test("escolher Escuro vence o padrao, e sobrevive a reabrir", async ({ page }) => {
+    // Invertido pela #225: antes se provava que "Claro" vencia o aparelho
+    // escuro. Agora claro é o padrão, então o que precisa de prova é o
+    // caminho contrário — e é o caminho de quem tem dor de vista.
+    await page.emulateMedia({ colorScheme: "light" });
     await entrar(page, conta);
-    expect(await escuro(page)).toBe(true);
+    expect(await escuro(page)).toBe(false);
 
     await page.goto("/ajustes/aparencia");
     await expect(page.getByRole("heading", { name: "Aparência" })).toBeVisible({ timeout: 15_000 });
 
-    await page.getByRole("radio", { name: /Claro/ }).click();
-    expect(await escuro(page), "a escolha manual vence o aparelho").toBe(false);
+    await page.getByRole("radio", { name: /Escuro/ }).click();
+    expect(await escuro(page), "a escolha manual vence o padrão").toBe(true);
 
     // Reabrir: é aqui que um tema guardado só na memória se perderia.
     await page.reload();
     await expect(page.getByRole("heading", { name: "Aparência" })).toBeVisible({ timeout: 15_000 });
-    expect(await escuro(page), "a escolha tem que sobreviver a reabrir").toBe(false);
+    expect(await escuro(page), "a escolha tem que sobreviver a reabrir").toBe(true);
+  });
+
+  test("escolher Igual ao aparelho GRAVA, e nao vira Claro ao reabrir", async ({ page }) => {
+    // ── A armadilha da #225 ───────────────────────────────────────────────
+    //
+    // Até a #225, escolher "Igual ao aparelho" APAGAVA a chave, porque
+    // ausência já significava "sistema". Com ausência significando "claro",
+    // apagar passaria a ser o mesmo que escolher "Claro" — e a opção
+    // continuaria na tela fazendo outra coisa, em silêncio, só na próxima
+    // abertura.
+    //
+    // Por isso o `reload` no meio: sem ele, este caso passa mesmo com o bug.
+    await page.emulateMedia({ colorScheme: "dark" });
+    await entrar(page, conta);
+    expect(await escuro(page)).toBe(false);
+
+    await page.goto("/ajustes/aparencia");
+    await expect(page.getByRole("heading", { name: "Aparência" })).toBeVisible({ timeout: 15_000 });
+
+    await page.getByRole("radio", { name: /Igual ao aparelho/ }).click();
+    expect(await escuro(page), "escolher 'igual ao aparelho' passa a seguir o celular").toBe(true);
+
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "Aparência" })).toBeVisible({ timeout: 15_000 });
+    expect(
+      await escuro(page),
+      "ao reabrir continua seguindo o celular — se virou claro, a escolha foi apagada em vez de gravada",
+    ).toBe(true);
   });
 
   test("as cores de dose continuam com o significado no escuro", async ({ page }) => {
+    // `jaEscolheu("sistema")` e não só `emulateMedia`: desde a #225 o
+    // aparelho sozinho não escurece nada. Este caso precisa do app escuro E
+    // seguindo o celular ao vivo, porque a segunda metade dele prova a troca
+    // em tempo real.
     await page.emulateMedia({ colorScheme: "dark" });
+    await jaEscolheu(page, "sistema");
     await entrar(page, conta);
+    expect(await escuro(page)).toBe(true);
 
     /**
      * ═══════════════════════════════════════════════════════════════════════
@@ -138,11 +225,14 @@ test.describe("Modo noturno", () => {
     // E a prova de que é a TROCA que muda a cor, e não um valor fixo: no
     // claro a MESMA classe pinta um tom alto.
     //
-    // Sem `reload`: com a escolha em "sistema" — o padrão — o app acompanha o
-    // aparelho ao vivo (`observarOAparelho` em `lib/tema.ts`). Esperar a
-    // classe sair do `<html>` é mais direto que recarregar, e de quebra prova
-    // essa troca ao vivo, que é o caso de quem usa o modo noturno agendado do
-    // celular com o app aberto.
+    // Sem `reload`: com a escolha em "sistema" o app acompanha o aparelho ao
+    // vivo (`observarOAparelho` em `lib/tema.ts`). Esperar a classe sair do
+    // `<html>` é mais direto que recarregar, e de quebra prova essa troca ao
+    // vivo, que é o caso de quem usa o modo noturno agendado do celular com o
+    // app aberto.
+    //
+    // Desde a #225 "sistema" deixou de ser o padrão e virou escolha — por
+    // isso o `jaEscolheu` no topo deste caso.
     await page.emulateMedia({ colorScheme: "light" });
     await expect(page.locator("html")).not.toHaveClass(/dark/, { timeout: 15_000 });
 
