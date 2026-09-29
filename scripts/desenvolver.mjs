@@ -240,35 +240,74 @@ function enderecosNaRede() {
 
 // ── Preparo ───────────────────────────────────────────────────────────────
 
-/**
- * O `pnpm` responde? — acrescentado em 29/09/2026, depois de morder.
- *
- * O fundador rodou `pnpm dev` e o PowerShell respondeu "não é reconhecido como
- * nome de cmdlet". A causa não era instalação faltando: o `pnpm` estava em
- * `AppData\Roaming\npm`, e esse caminho estava no PATH persistido do usuário.
- *
- * **A janela do terminal era mais velha que a entrada no PATH.** Processo lê o
- * PATH uma vez, ao nascer, e nunca mais. Toda janela aberta antes da instalação
- * continua sem enxergar.
- *
- * Quem entra por `pnpm dev` nem chega aqui — falha antes, no próprio pnpm. Mas
- * quem entra por `node scripts/desenvolver.mjs` (o `node` costuma estar em
- * outro caminho, e sobrevive) chegaria até o meio e quebraria com uma mensagem
- * de pnpm sem contexto nenhum.
- */
+// ═══════════════════════════════════════════════════════════════════════════
+// ACHAR O `pnpm` SOZINHO, EM VEZ DE CONFIAR NO PATH — 29/09/2026.
+//
+// O fundador rodou `pnpm dev` e o PowerShell respondeu "não é reconhecido".
+// Investiguei a máquina inteira e **estava tudo certo**:
+//
+//   PATH do usuário (registro) .... contém AppData\Roaming\npm
+//   tipo do valor ................. ExpandString
+//   comprimento total do PATH ..... 659 caracteres (sem truncamento)
+//   PATHEXT ....................... contém .CMD
+//   perfil do PowerShell .......... nenhum, em nenhum dos quatro caminhos
+//   os arquivos ................... pnpm, pnpm.cmd e pnpm.ps1 presentes
+//   chamada direta ao .cmd ........ responde 11.22.0
+//
+// Abrir um terminal novo não resolveu, o que derrubou a hipótese de janela
+// velha. A causa continua desconhecida naquela sessão específica.
+//
+// Então o script parou de depender disso. Ele já está rodando dentro do Node,
+// e o Node sabe onde mora — dá para achar o `pnpm` por conta própria em vez de
+// exigir que o terminal esteja bem configurado.
+//
+// A ordem tenta o mais limpo primeiro e cai para o mais específico.
+// ═══════════════════════════════════════════════════════════════════════════
+let PNPM = "pnpm";
+
+function acharPnpm() {
+  const tentativas = [{ comando: "pnpm", onde: "no PATH" }];
+
+  // `corepack` vem junto do Node, e mora ao lado do executável que está
+  // rodando este script — então se o `node` funciona, ele existe.
+  const aoLadoDoNode = path.join(
+    path.dirname(process.execPath),
+    process.platform === "win32" ? "corepack.cmd" : "corepack",
+  );
+  if (existsSync(aoLadoDoNode)) {
+    tentativas.push({ comando: `"${aoLadoDoNode}" pnpm`, onde: "pelo corepack do Node" });
+  }
+
+  // Onde o `npm install -g` põe os atalhos no Windows.
+  if (process.env.APPDATA) {
+    const doNpm = path.join(process.env.APPDATA, "npm", "pnpm.cmd");
+    if (existsSync(doNpm)) tentativas.push({ comando: `"${doNpm}"`, onde: doNpm });
+  }
+
+  tentativas.push({ comando: "corepack pnpm", onde: "corepack no PATH" });
+
+  for (const t of tentativas) {
+    const r = spawnSync(`${t.comando} --version`, { shell: true, encoding: "utf8" });
+    const versao = (r.stdout ?? "").trim();
+    if (r.status === 0 && /^\d+\.\d+/.test(versao)) {
+      return { ...t, versao };
+    }
+  }
+  return null;
+}
+
 function conferirPnpm() {
-  passo("Conferindo o pnpm");
-  const r = spawnSync("pnpm --version", { shell: true, encoding: "utf8" });
-  if (r.status !== 0) {
-    erro("O pnpm não respondeu neste terminal.");
-    console.error("  Quase sempre é janela velha: ela foi aberta antes do pnpm ser instalado,");
-    console.error("  e processo não relê o PATH depois de nascer.");
+  passo("Procurando o pnpm");
+  const achado = acharPnpm();
+  if (!achado) {
+    erro("Não achei o pnpm em lugar nenhum.");
+    console.error("  Tentei: o PATH, o corepack que vem com o Node, e AppData\\npm.");
     console.error("");
-    console.error("  Feche este terminal, abra outro, e rode de novo.");
-    console.error("  Se ainda assim não achar:  npm install -g pnpm");
+    console.error("  Para instalar:  npm install -g pnpm");
     process.exit(1);
   }
-  ok(`pnpm ${r.stdout.trim()}`);
+  PNPM = achado.comando;
+  ok(`pnpm ${achado.versao} — ${achado.onde}`);
 }
 
 function conferirDocker() {
@@ -444,24 +483,24 @@ async function principal() {
   const env = montarAmbiente();
 
   passo("Aplicando as migrações");
-  pnpmOuParar("pnpm --filter @workspace/db run migrate", "Migrar o banco", { env });
+  pnpmOuParar(`${PNPM} --filter @workspace/db run migrate`, "Migrar o banco", { env });
 
   passo("Semeando a família fictícia");
-  pnpmOuParar("pnpm --filter @workspace/api-server run seed", "Semear", { env });
+  pnpmOuParar(`${PNPM} --filter @workspace/api-server run seed`, "Semear", { env });
 
   passo("Construindo a API");
-  pnpmOuParar("pnpm --filter @workspace/api-server run build", "Construir a API", {
+  pnpmOuParar(`${PNPM} --filter @workspace/api-server run build`, "Construir a API", {
     env: { ...env, PORT: String(PORTA_API), BASE_PATH: "/" },
   });
 
   passo("Subindo API e front\n");
 
-  subir("api", "35", "pnpm --filter @workspace/api-server run start", {
+  subir("api", "35", `${PNPM} --filter @workspace/api-server run start`, {
     ...env,
     PORT: String(PORTA_API),
   });
 
-  subir("front", "34", "pnpm --filter @workspace/zelo run dev", {
+  subir("front", "34", `${PNPM} --filter @workspace/zelo run dev`, {
     ...env,
     PORT: String(PORTA_FRONT),
     BASE_PATH: "/",

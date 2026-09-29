@@ -15,6 +15,15 @@ pnpm dev
 É só isso. Ele confere o Docker, sobe o Postgres, cria o banco, aplica as migrações,
 semeia a família fictícia, constrói a API e sobe API e front juntos.
 
+> **Se o terminal disser que não conhece o `pnpm`**, use a outra porta de entrada —
+> ela faz exatamente a mesma coisa e só precisa do `node`:
+>
+> ```bash
+> node scripts/desenvolver.mjs
+> ```
+>
+> O script acha o `pnpm` sozinho, sem depender do PATH. A seção de problemas explica.
+
 Ao terminar, imprime:
 
 ```
@@ -141,25 +150,47 @@ A semente é idempotente: com a família presente ela não faz nada, e avisa.
 
 | Sintoma | Causa | O que fazer |
 |---|---|---|
-| **`pnpm` não é reconhecido** | **janela de terminal mais velha que a instalação do pnpm** | **feche o terminal e abra outro** |
+| **`pnpm` não é reconhecido** | **causa não encontrada — ver abaixo** | **use `node scripts/desenvolver.mjs`** |
 | "O Docker não respondeu" | Docker Desktop fechado ou ainda subindo | abra e espere o ícone parar de girar |
 | "A porta 5100 já está ocupada" | um `pnpm dev` anterior não morreu | `netstat -ano \| findstr :5100`, feche aquele processo |
 | Celular não abre o endereço | firewall, ou Wi-Fi diferente | confira a rede; no Windows libere para "redes privadas" |
 | Tela carrega mas nada funciona | o front subiu e a API não | olhe as linhas `[api]` no terminal |
 | Login diz senha errada | banco recriado sem semear | `pnpm dev` de novo, ou rode a semente |
 
-> **Sobre o "`pnpm` não é reconhecido", que aconteceu de verdade em 29/09/2026.**
->
-> Parece pnpm não instalado, e não é. Ele estava em `AppData\Roaming\npm`, e esse
-> caminho estava no PATH persistido do usuário — conferido no registro.
->
-> **A janela do PowerShell era mais velha que a entrada no PATH.** Um processo lê o
-> PATH uma única vez, ao nascer, e nunca mais. Qualquer terminal aberto antes da
-> instalação continua sem enxergar, para sempre, e a mensagem de erro é idêntica à de
-> um pnpm que realmente não existe.
->
-> Fechar e abrir o terminal resolve. O comando confere isso logo no primeiro passo e
-> diz exatamente essa frase.
+### O "`pnpm` não é reconhecido" — 29/09/2026
+
+Aconteceu de verdade, no PowerShell do fundador. **A causa nunca foi encontrada**, e
+isso está registrado aqui porque a investigação inteira deu certo e mesmo assim o
+erro continuou.
+
+Conferido na máquina, tudo correto:
+
+| O que | Resultado |
+|---|---|
+| PATH do usuário, no registro | contém `AppData\Roaming\npm` |
+| Tipo do valor | `ExpandString` (expande variáveis) |
+| Comprimento total do PATH | 659 caracteres — longe de qualquer truncamento |
+| `PATHEXT` | contém `.CMD` |
+| Perfil do PowerShell | não existe, em nenhum dos quatro caminhos |
+| Os arquivos | `pnpm`, `pnpm.cmd` e `pnpm.ps1` presentes |
+| Chamada direta ao `.cmd` | responde `11.22.0` |
+| Um processo novo de PowerShell | **acha o pnpm normalmente** |
+
+Abrir um terminal novo **não** resolveu, o que derrubou a hipótese de janela velha.
+
+**A saída foi tirar a dependência.** O script procura o `pnpm` por conta própria, e só
+precisa que o `node` funcione — ele já está rodando dentro do Node quando começa a
+procurar. A ordem:
+
+1. `pnpm` no PATH
+2. **`corepack`, que vem junto do Node** e mora ao lado do executável que está rodando
+3. `%APPDATA%\npm\pnpm.cmd`
+4. `corepack` no PATH
+
+Verificado nos dois cenários: com o diretório no PATH ele acha em (1); sem o
+diretório, cai em (2) e encontra a mesma versão 11.22.0.
+
+Por isso `node scripts/desenvolver.mjs` funciona mesmo onde `pnpm dev` não funciona.
 
 ## A semente não roda em produção
 
