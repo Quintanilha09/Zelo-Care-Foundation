@@ -240,6 +240,37 @@ function enderecosNaRede() {
 
 // ── Preparo ───────────────────────────────────────────────────────────────
 
+/**
+ * O `pnpm` responde? — acrescentado em 29/09/2026, depois de morder.
+ *
+ * O fundador rodou `pnpm dev` e o PowerShell respondeu "não é reconhecido como
+ * nome de cmdlet". A causa não era instalação faltando: o `pnpm` estava em
+ * `AppData\Roaming\npm`, e esse caminho estava no PATH persistido do usuário.
+ *
+ * **A janela do terminal era mais velha que a entrada no PATH.** Processo lê o
+ * PATH uma vez, ao nascer, e nunca mais. Toda janela aberta antes da instalação
+ * continua sem enxergar.
+ *
+ * Quem entra por `pnpm dev` nem chega aqui — falha antes, no próprio pnpm. Mas
+ * quem entra por `node scripts/desenvolver.mjs` (o `node` costuma estar em
+ * outro caminho, e sobrevive) chegaria até o meio e quebraria com uma mensagem
+ * de pnpm sem contexto nenhum.
+ */
+function conferirPnpm() {
+  passo("Conferindo o pnpm");
+  const r = spawnSync("pnpm --version", { shell: true, encoding: "utf8" });
+  if (r.status !== 0) {
+    erro("O pnpm não respondeu neste terminal.");
+    console.error("  Quase sempre é janela velha: ela foi aberta antes do pnpm ser instalado,");
+    console.error("  e processo não relê o PATH depois de nascer.");
+    console.error("");
+    console.error("  Feche este terminal, abra outro, e rode de novo.");
+    console.error("  Se ainda assim não achar:  npm install -g pnpm");
+    process.exit(1);
+  }
+  ok(`pnpm ${r.stdout.trim()}`);
+}
+
 function conferirDocker() {
   passo("Conferindo o Docker");
   if (rodar("docker", ["--version"]).status !== 0) {
@@ -405,6 +436,7 @@ async function principal() {
     }
   }
 
+  conferirPnpm();
   conferirDocker();
   await esperarPostgres();
   garantirBancoLocal();

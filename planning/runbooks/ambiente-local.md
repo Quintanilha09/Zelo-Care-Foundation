@@ -141,11 +141,25 @@ A semente é idempotente: com a família presente ela não faz nada, e avisa.
 
 | Sintoma | Causa | O que fazer |
 |---|---|---|
+| **`pnpm` não é reconhecido** | **janela de terminal mais velha que a instalação do pnpm** | **feche o terminal e abra outro** |
 | "O Docker não respondeu" | Docker Desktop fechado ou ainda subindo | abra e espere o ícone parar de girar |
 | "A porta 5100 já está ocupada" | um `pnpm dev` anterior não morreu | `netstat -ano \| findstr :5100`, feche aquele processo |
 | Celular não abre o endereço | firewall, ou Wi-Fi diferente | confira a rede; no Windows libere para "redes privadas" |
 | Tela carrega mas nada funciona | o front subiu e a API não | olhe as linhas `[api]` no terminal |
 | Login diz senha errada | banco recriado sem semear | `pnpm dev` de novo, ou rode a semente |
+
+> **Sobre o "`pnpm` não é reconhecido", que aconteceu de verdade em 29/09/2026.**
+>
+> Parece pnpm não instalado, e não é. Ele estava em `AppData\Roaming\npm`, e esse
+> caminho estava no PATH persistido do usuário — conferido no registro.
+>
+> **A janela do PowerShell era mais velha que a entrada no PATH.** Um processo lê o
+> PATH uma única vez, ao nascer, e nunca mais. Qualquer terminal aberto antes da
+> instalação continua sem enxergar, para sempre, e a mensagem de erro é idêntica à de
+> um pnpm que realmente não existe.
+>
+> Fechar e abrir o terminal resolve. O comando confere isso logo no primeiro passo e
+> diz exatamente essa frase.
 
 ## A semente não roda em produção
 
