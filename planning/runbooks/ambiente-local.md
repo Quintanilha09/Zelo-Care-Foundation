@@ -36,6 +36,12 @@ Ao terminar, imprime:
 
 `Ctrl+C` encerra os dois.
 
+> **Deixe o terminal aberto enquanto estiver testando.** É o processo dele que segura a
+> API e o front. Fechar a janela derruba os dois, e a tela do app passa a responder
+> `NetworkError when attempting to fetch resource` — que parece defeito do app e é só
+> servidor ausente. Uma aba já aberta continua mostrando a tela antiga, o que torna o
+> sintoma ainda mais confuso: recarregue depois de subir de novo.
+
 ## O que você encontra ao entrar
 
 A conta abre a **Família Fictícia Teste**, já montada:
