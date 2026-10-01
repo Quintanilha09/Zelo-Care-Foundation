@@ -85,6 +85,50 @@ auto-verifica e **nenhum e-mail sai**. Não é defeito — é o mesmo comportame
 Replit tinha. Roteiro que pede para "conferir o e-mail de boas-vindas" aqui está
 pedindo o impossível.
 
+## Quando o app pede um código que chegaria por e-mail
+
+Aconteceu com o fundador em 30/09/2026, abrindo no celular: o segundo fator (#79) viu um
+**aparelho novo**, pediu um código por e-mail, e o e-mail não existe aqui.
+
+**O código não aparece no log, e isso é de propósito.** `lib/email.ts` registra o link de
+entrada em desenvolvimento, nunca o código — a linha diz *"O código não passa pelo
+devLog — mesma regra dos outros códigos."* Código em log é código vazado.
+
+Três saídas, da melhor para a pior:
+
+### 1. Código de recuperação — é para isto que eles existem
+
+Na tela que pede o código, clique em **"Usar um código de recuperação"** e use um dos dez
+que apareceram quando você ligou o segundo fator. Eles funcionam sem rede, sem e-mail e
+sem servidor de fora.
+
+Esta é a melhor saída porque **não é um desvio**: é o recurso real, exercitado do jeito
+que uma pessoa trancada do lado de fora o exercitaria.
+
+Para conferir quantos ainda valem:
+
+```bash
+docker exec zelo-test-pg psql -U zelo_dev -d zelo_local -tAc \
+  "SELECT count(*) FILTER (WHERE used_at IS NULL) || ' de ' || count(*) FROM recovery_codes"
+```
+
+### 2. O computador onde você ligou o segundo fator já é confiável
+
+Ele entrou na lista de aparelhos conhecidos no momento da ativação. O celular é que é
+novo. Testar no computador não pede código.
+
+### 3. Desligar o segundo fator nesta conta local
+
+Último recurso, e só porque é um banco descartável:
+
+```bash
+docker exec zelo-test-pg psql -U zelo_dev -d zelo_local -c \
+  "UPDATE users SET segundo_fator_ativo_em = NULL WHERE email = 'gabriel.hemendinger@gmail.com'"
+```
+
+> **Nunca em produção.** Isto desarma a proteção que existe justamente para o caso de
+> alguém ter a senha. Aqui vale porque o banco é local e descartável; lá, não.
+
 ## Duas coisas que parecem detalhe e não são
 
 ### Portas 5100 e 5273, não 5000 e 5173
